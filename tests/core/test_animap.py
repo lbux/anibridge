@@ -283,3 +283,31 @@ def test_sync_db_refreshes_provenance_when_hash_matches(
         "/extra.json",
     ]
     assert [row.n for row in provenance_rows] == [0, 1]
+
+
+def test_sync_db_skips_invalid_range_strings(
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+) -> None:
+    """Invalid source/destination ranges are ignored during sync."""
+    mapping_data = {
+        "anilist:1": {
+            "tmdb:10": {
+                "1,2": "1-2",
+                "1-6|2": "1-3|2,4-6|2",
+                "2": "1,2",
+                "3": "1,,2",
+            }
+        }
+    }
+    _write_mapping_file(tmp_path, mapping_data)
+
+    asyncio.run(animap_client.sync_db())
+
+    with in_memory_db as ctx:
+        edges = _fetch_edges(ctx)
+
+    edge_ranges = {(edge.source_range, edge.destination_range) for edge in edges}
+    assert edge_ranges == {
+        ("1-6|2", "1-3|2,4-6|2"),
+        ("2", "1,2"),
+    }

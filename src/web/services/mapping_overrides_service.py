@@ -17,6 +17,7 @@ from src.exceptions import (
     MissingDescriptorError,
     SchedulerNotInitializedError,
 )
+from src.utils.mapping_ranges import is_valid_source_range, is_valid_target_range
 from src.web.state import get_app_state
 
 __all__ = ["MappingOverridesService", "get_mapping_overrides_service"]
@@ -116,7 +117,12 @@ class MappingOverridesService:
                     continue
                 if dst_range is not None and not isinstance(dst_range, str):
                     continue
-                normalized_ranges[str(src_range)] = dst_range
+                source_range = str(src_range)
+                if not is_valid_source_range(source_range):
+                    continue
+                if dst_range is not None and not is_valid_target_range(dst_range):
+                    continue
+                normalized_ranges[source_range] = dst_range
             cleaned[target_str] = normalized_ranges
         return cleaned
 
@@ -291,6 +297,15 @@ class MappingOverridesService:
                 raise MappingError("source_range is required for each range")
             if dest is not None and not isinstance(dest, str):
                 raise MappingError("destination_range must be a string or null")
+            if not is_valid_source_range(source_range):
+                raise MappingError(
+                    "source_range must match the mapping schema (no commas)"
+                )
+            if dest is not None and not is_valid_target_range(dest):
+                raise MappingError(
+                    "destination_range must match the mapping schema "
+                    "(comma-separated target ranges only)"
+                )
             normalized[source_range] = dest
 
         return normalized

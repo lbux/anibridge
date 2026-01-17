@@ -17,6 +17,7 @@ from src.config.database import db
 from src.core.mappings import MappingsClient
 from src.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from src.models.db.housekeeping import Housekeeping
+from src.utils.mapping_ranges import is_valid_source_range, is_valid_target_range
 
 __all__ = ["AnimapClient", "AnimapDescriptor", "AnimapEdge", "AnimapGraph"]
 
@@ -224,7 +225,7 @@ class AnimapClient:
             try:
                 source_desc = AnimapDescriptor.parse(raw_source)
             except ValueError:
-                log.warning("Invalid mapping descriptor $$'%s'$$; skipped", raw_source)
+                log.warning(f"Invalid mapping descriptor $$'{raw_source}'$$; skipped")
                 invalid_count += 1
                 continue
 
@@ -232,8 +233,8 @@ class AnimapClient:
 
             if not isinstance(targets, dict):
                 log.warning(
-                    "Descriptor $$'%s'$$ has non-object target payload; skipped",
-                    raw_source,
+                    f"Descriptor $$'{raw_source}'$$ has non-object target payload; "
+                    "skipped",
                 )
                 invalid_count += 1
                 continue
@@ -243,9 +244,8 @@ class AnimapClient:
                     target_desc = AnimapDescriptor.parse(raw_target)
                 except ValueError:
                     log.warning(
-                        "Invalid target descriptor $$'%s'$$ under $$'%s'$$; skipped",
-                        raw_target,
-                        raw_source,
+                        f"Invalid target descriptor $$'{raw_target}'$$ under "
+                        f"$$'{raw_source}'$$; skipped",
                     )
                     invalid_count += 1
                     continue
@@ -256,9 +256,8 @@ class AnimapClient:
                     continue
                 if not isinstance(ranges, dict):
                     log.warning(
-                        "Descriptor $$'%s'$$ → $$'%s'$$ has non-object ranges; skipped",
-                        raw_source,
-                        raw_target,
+                        f"Descriptor $$'{raw_source}'$$ → $$'{raw_target}'$$ has "
+                        "non-object ranges; skipped",
                     )
                     invalid_count += 1
                     continue
@@ -270,6 +269,22 @@ class AnimapClient:
                     if destination_range is not None and not isinstance(
                         destination_range, str
                     ):
+                        invalid_count += 1
+                        continue
+                    if not is_valid_source_range(source_range):
+                        log.warning(
+                            f"Invalid source range $$'{source_range}'$$ under "
+                            f"$$'{raw_source}'$$ → $$'{raw_target}'$$; skipped"
+                        )
+                        invalid_count += 1
+                        continue
+                    if destination_range is not None and not is_valid_target_range(
+                        destination_range
+                    ):
+                        log.warning(
+                            f"Invalid destination range $$'{destination_range}'$$ under"
+                            f" $$'{raw_source}'$$ → $$'{raw_target}'$$; skipped"
+                        )
                         invalid_count += 1
                         continue
 

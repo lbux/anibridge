@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from src import config as app_config
+from src.exceptions import MappingError
 from src.web.services.mapping_overrides_service import MappingOverridesService
 from src.web.state import get_app_state
 
@@ -112,3 +113,57 @@ async def test_get_mapping_detail_layers_upstream_and_custom(
             "inherited": False,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_save_override_rejects_invalid_source_range(
+    overrides_env: tuple[Path, DummyScheduler],
+) -> None:
+    """Invalid source ranges with commas are rejected."""
+    service = MappingOverridesService()
+
+    with pytest.raises(MappingError):
+        await service.save_override(
+            descriptor="anilist:500",
+            targets=[
+                {
+                    "provider": "tmdb",
+                    "entry_id": "900",
+                    "ranges": [
+                        {
+                            "source_range": "1,2",
+                            "destination_range": "1-2",
+                        }
+                    ],
+                }
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_save_override_allows_ratio_ranges(
+    overrides_env: tuple[Path, DummyScheduler],
+) -> None:
+    """Ratio-form ranges are accepted for source and destination."""
+    tmp_path, _scheduler = overrides_env
+    service = MappingOverridesService()
+
+    result = await service.save_override(
+        descriptor="anilist:501",
+        targets=[
+            {
+                "provider": "tmdb",
+                "entry_id": "901",
+                "ranges": [
+                    {
+                        "source_range": "1-6|2",
+                        "destination_range": "1-3|2,4-6|2",
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert result["layers"]["effective"]["tmdb:901"]["1-6|2"] == "1-3|2,4-6|2"
+    data = json.loads((tmp_path / "mappings.json").read_text(encoding="utf-8"))
+    assert data["anilist:501"]["tmdb:901"]["1-6|2"] == "1-3|2,4-6|2"
