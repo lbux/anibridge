@@ -113,7 +113,7 @@ _DB_FIELDS: tuple[QueryFieldSpec, ...] = (
     ),
     QueryFieldSpec(
         key="source.scope",
-        desc="Source entry scope (movie/s#)",
+        desc="Source entry scope (optional, e.g. s1)",
         kind=QueryFieldKind.DB_SCALAR,
         type=QueryFieldType.STRING,
         operators=(QueryFieldOperator.EQ,),
@@ -137,7 +137,7 @@ _DB_FIELDS: tuple[QueryFieldSpec, ...] = (
     ),
     QueryFieldSpec(
         key="target.scope",
-        desc="Destination entry scope (movie/s#)",
+        desc="Destination entry scope (optional, e.g. s1)",
         kind=QueryFieldKind.DB_EDGE_TARGET,
         type=QueryFieldType.STRING,
         operators=(QueryFieldOperator.EQ,),

@@ -20,7 +20,7 @@ export interface ProviderMediaMetadata {
 export interface MappingEdge {
     target_provider: string;
     target_entry_id: string;
-    target_scope: string;
+    target_scope: string | null;
     source_range: string;
     destination_range?: string | null;
     sources?: string[];
@@ -30,7 +30,7 @@ export interface Mapping {
     descriptor: string;
     provider: string;
     entry_id: string;
-    scope: string;
+    scope: string | null;
     edges: MappingEdge[];
     custom?: boolean;
     sources?: string[];
@@ -45,7 +45,7 @@ export interface RangeInputPayload {
 export interface TargetPayload {
     provider: string;
     entry_id: string;
-    scope: string;
+    scope?: string | null;
     ranges: RangeInputPayload[];
     deleted?: boolean;
 }
@@ -71,7 +71,7 @@ export interface MappingTarget {
     descriptor: string;
     provider: string;
     entry_id: string;
-    scope: string;
+    scope: string | null;
     origin: TargetOrigin;
     deleted?: boolean;
     ranges: MappingRangeView[];
@@ -87,7 +87,7 @@ export interface MappingDetail {
     descriptor: string;
     provider: string;
     entry_id: string;
-    scope: string;
+    scope: string | null;
     layers: MappingLayers;
     targets: MappingTarget[];
 }

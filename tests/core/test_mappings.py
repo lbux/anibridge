@@ -16,22 +16,22 @@ def test_deep_merge_merges_descriptor_targets(tmp_path: Path) -> None:
     """Deep merging of mappings combines descriptor targets correctly."""
     client = _make_client(tmp_path)
     left = {
-        "anilist:1:movie": {
-            "tmdb:10:movie": {"1": None},
+        "anilist:1": {
+            "tmdb:10": {"1": None},
         }
     }
     right = {
-        "anilist:1:movie": {
-            "tvdb:20:movie": {"1": "1-12"},
+        "anilist:1": {
+            "tvdb:20": {"1": "1-12"},
         },
-        "tmdb:2:movie": {"anilist:3:movie": {"1": None}},
+        "tmdb:2": {"anilist:3": {"1": None}},
     }
 
     merged = client._deep_merge(left, right)
 
-    assert merged["anilist:1:movie"]["tmdb:10:movie"] == {"1": None}
-    assert merged["anilist:1:movie"]["tvdb:20:movie"] == {"1": "1-12"}
-    assert merged["tmdb:2:movie"] == {"anilist:3:movie": {"1": None}}
+    assert merged["anilist:1"]["tmdb:10"] == {"1": None}
+    assert merged["anilist:1"]["tvdb:20"] == {"1": "1-12"}
+    assert merged["tmdb:2"] == {"anilist:3": {"1": None}}
 
 
 def test_resolve_path_handles_relative_paths_and_urls(tmp_path: Path) -> None:
@@ -75,8 +75,8 @@ async def test_get_provenance_preserves_descriptor_keys(tmp_path: Path) -> None:
     custom_path.write_text(
         json.dumps(
             {
-                "123": {"tmdb:1:movie": {"1": None}},
-                "abc:def:movie": {"tmdb:2:movie": {"1": None}},
+                "123": {"tmdb:1": {"1": None}},
+                "abc:def:s1": {"tmdb:2:s1": {"1": None}},
             }
         ),
         encoding="utf-8",
@@ -89,4 +89,4 @@ async def test_get_provenance_preserves_descriptor_keys(tmp_path: Path) -> None:
         await client.close()
 
     provenance = client.get_provenance()
-    assert set(provenance.keys()) == {"123", "abc:def:movie"}
+    assert set(provenance.keys()) == {"123", "abc:def:s1"}

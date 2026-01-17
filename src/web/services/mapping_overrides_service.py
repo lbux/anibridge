@@ -306,9 +306,10 @@ class MappingOverridesService:
         for entry in targets:
             provider = str(entry.get("provider", "")).strip()
             entry_id = str(entry.get("entry_id", "")).strip()
-            scope = str(entry.get("scope", "")).strip()
-            if not provider or not entry_id or not scope:
-                raise MappingError("provider, entry_id, and scope are required")
+            raw_scope = str(entry.get("scope", "") or "").strip()
+            if not provider or not entry_id:
+                raise MappingError("provider and entry_id are required")
+            scope = raw_scope or None
             target = AnimapDescriptor(provider=provider, entry_id=entry_id, scope=scope)
             if entry.get("deleted") is True:
                 normalized[target.key()] = None

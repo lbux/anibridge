@@ -74,7 +74,7 @@
 
     // scope doesn't need to be used for the known providers here
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    function externalUrl(provider: string, entryId: string, scope?: string) {
+    function externalUrl(provider: string, entryId: string, scope?: string | null) {
         if (!entryId) return null;
         switch (provider) {
             case "anilist":
@@ -100,7 +100,7 @@
     }
 
     function edgeKey(edge: MappingEdge) {
-        return `${edge.target_provider}:${edge.target_entry_id}:${edge.target_scope}:${edge.source_range}:${edge.destination_range ?? "all"}`;
+        return `${edge.target_provider}:${edge.target_entry_id}:${edge.target_scope ?? ""}:${edge.source_range}:${edge.destination_range ?? "all"}`;
     }
 </script>
 

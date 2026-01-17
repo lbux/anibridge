@@ -51,18 +51,19 @@
         ranges: EditableRange[];
     };
 
-    const DESCRIPTOR_RE = /^[^:\s]+:[^:\s]+:[^:\s]+$/;
+    const DESCRIPTOR_RE = /^[^:\s]+:[^:\s]+(?::[^:\s]+)?$/;
 
     const fieldInfo = {
         provider:
             "Provider that the override belongs to (e.g. 'anilist', 'tvdb_show', 'tmdb_movie').",
         entryId: "Entry identifier from the provider that the override targets.",
-        scope: "Scope to apply the override for (e.g. 'movie', 'sX').",
+        scope: "Optional scope to apply the override for (e.g. 's1').",
     } as const;
 
     const rangeFieldInfo = {
-        source: "Source number range to match (e.g. '1', '1-12').",
-        destination: "Destination number or range to map to (e.g. '1', '1-12').",
+        source: "Source number range to match (e.g. '1', '1-12', '1-').",
+        destination:
+            "Destination number or range to map to (e.g. '1', '1-12', '1-6|2').",
     };
 
     type DescriptorState = { provider: string; entryId: string; scope: string };
@@ -89,7 +90,7 @@
         },
         {
             field: "scope",
-            placeholder: "Scope",
+            placeholder: "Scope (optional)",
             aria: "Descriptor scope",
             info: fieldInfo.scope,
         },
@@ -131,7 +132,7 @@
             placeholder: "scope_placeholder",
             aria: "Target scope",
             info: fieldInfo.scope,
-            defaultLabel: "Scope",
+            defaultLabel: "Scope (optional)",
         },
     ];
 
@@ -141,6 +142,16 @@
     let saving = $state(false);
     let error = $state<string | null>(null);
 
+    function buildDescriptor(
+        provider: string,
+        entryId: string,
+        scope?: string | null,
+    ): string {
+        const base = `${provider}:${entryId}`;
+        const cleanedScope = (scope ?? "").trim();
+        return cleanedScope ? `${base}:${cleanedScope}` : base;
+    }
+
     function descriptorFromState(): string {
         const provider = descriptor.provider.trim();
         const entryId = descriptor.entryId.trim();
@@ -148,11 +159,14 @@
         if (!provider && !entryId && !scope) {
             return "";
         }
-        return `${provider}:${entryId}:${scope}`;
+        if (!provider || !entryId) {
+            return "";
+        }
+        return buildDescriptor(provider, entryId, scope);
     }
 
-    function setDescriptorFields(provider: string, entryId: string, scope: string) {
-        descriptor = { provider, entryId, scope };
+    function setDescriptorFields(provider: string, entryId: string, scope: string | null) {
+        descriptor = { provider, entryId, scope: scope ?? "" };
     }
 
     function canLoadDescriptor(): boolean {
@@ -167,10 +181,10 @@
                 key: entry.descriptor,
                 provider: isCustomEntry ? entry.provider : "",
                 entry_id: isCustomEntry ? entry.entry_id : "",
-                scope: isCustomEntry ? entry.scope : "",
+                scope: isCustomEntry ? entry.scope ?? "" : "",
                 provider_placeholder: entry.provider,
                 entry_id_placeholder: entry.entry_id,
-                scope_placeholder: entry.scope,
+                scope_placeholder: entry.scope ?? "",
                 origin: entry.origin,
                 deleted: entry.deleted ?? false,
                 original_descriptor: entry.descriptor,
@@ -190,7 +204,7 @@
 
     function hydrateDetail(data: MappingDetail) {
         entries = toEditableEntries(data);
-        setDescriptorFields(data.provider, data.entry_id, data.scope);
+        setDescriptorFields(data.provider, data.entry_id, data.scope ?? "");
     }
 
     function makeKey() {
@@ -315,7 +329,7 @@
     function buildPayload(): MappingOverridePayload | null {
         const descriptor = descriptorFromState();
         if (!descriptor || !DESCRIPTOR_RE.test(descriptor)) {
-            error = "Descriptor must be provider:entry:scope";
+            error = "Descriptor must be provider:entry[:scope]";
             return null;
         }
 
@@ -329,19 +343,20 @@
                 entry.entry_id.trim() || entry.entry_id_placeholder
             ).trim();
             const scope = (entry.scope.trim() || entry.scope_placeholder).trim();
-            if (!provider || !entryId || !scope) continue;
+            if (!provider || !entryId) continue;
 
             const originalProvider =
                 entry.provider_placeholder.trim() || entry.provider.trim();
             const originalEntryId =
                 entry.entry_id_placeholder.trim() || entry.entry_id.trim();
-            const originalScope = entry.scope_placeholder.trim() || entry.scope.trim();
+            const originalScope =
+                entry.scope_placeholder.trim() || entry.scope.trim();
             const originalDescriptor =
                 entry.original_descriptor ||
-                (originalProvider && originalEntryId && originalScope
-                    ? `${originalProvider}:${originalEntryId}:${originalScope}`
+                (originalProvider && originalEntryId
+                    ? buildDescriptor(originalProvider, originalEntryId, originalScope)
                     : "");
-            const newDescriptor = `${provider}:${entryId}:${scope}`;
+            const newDescriptor = buildDescriptor(provider, entryId, scope);
             const descriptorChanged =
                 newDescriptor !== originalDescriptor && !!originalDescriptor;
 
@@ -355,7 +370,7 @@
                 payloadTargets.push({
                     provider: originalProvider || provider,
                     entry_id: originalEntryId || entryId,
-                    scope: originalScope || scope,
+                    scope: (originalScope || scope) || null,
                     ranges: [],
                     deleted: true,
                 });
@@ -386,7 +401,7 @@
                 payloadTargets.push({
                     provider: originalProvider,
                     entry_id: originalEntryId,
-                    scope: originalScope,
+                    scope: originalScope || null,
                     ranges: [],
                     deleted: true,
                 });
@@ -396,7 +411,7 @@
             payloadTargets.push({
                 provider,
                 entry_id: entryId,
-                scope,
+                scope: scope || null,
                 ranges,
                 deleted: false,
             });
@@ -586,11 +601,11 @@
                                         ? "text-slate-500 line-through"
                                         : "text-slate-300"
                                 }`}>
-                                {entry.provider ||
-                                    entry.provider_placeholder ||
-                                    "?"}:{entry.entry_id ||
-                                    entry.entry_id_placeholder ||
-                                    "?"}:{entry.scope || entry.scope_placeholder || "?"}
+                                {buildDescriptor(
+                                    entry.provider || entry.provider_placeholder || "?",
+                                    entry.entry_id || entry.entry_id_placeholder || "?",
+                                    entry.scope || entry.scope_placeholder || "",
+                                )}
                             </span>
                             <span
                                 class={`rounded border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${

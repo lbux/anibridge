@@ -18,7 +18,7 @@ class AnimapEntry(Base):
 
     provider: Mapped[str] = mapped_column(String, nullable=False, index=True)
     entry_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    entry_scope: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    entry_scope: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     __table_args__ = (
         UniqueConstraint("provider", "entry_id", "entry_scope"),

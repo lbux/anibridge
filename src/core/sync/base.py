@@ -248,7 +248,7 @@ class BaseSyncClient[
             log.warning(
                 f"[{self.profile_name}] No list entries found for "
                 f"{item.media_kind.value} "
-                f"$$'{item.title}'$$ {ids_summary}"
+                f"{self._debug_log_title(item=item, child_item=None)} {ids_summary}"
             )
             await self._create_sync_history(
                 item=item,
@@ -338,9 +338,7 @@ class BaseSyncClient[
             resolved_list_descriptor.entry_id if resolved_list_descriptor else None
         )
 
-        debug_title = self._debug_log_title(
-            item=item, mapping=mapping, media_key=resolved_list_key
-        )
+        debug_title = self._debug_log_title(item=item, child_item=child_item)
         debug_ids = self._debug_log_ids(
             item=item,
             child_item=child_item,
@@ -577,9 +575,7 @@ class BaseSyncClient[
             for update in self._pending_updates:
                 diff_str = self._render_diff(update)
                 debug_title = self._debug_log_title(
-                    item=update.item,
-                    mapping=update.mapping,
-                    media_key=update.after.media_key,
+                    item=update.item, child_item=update.child
                 )
                 debug_ids = self._debug_log_ids(
                     item=update.item,
@@ -949,9 +945,9 @@ class BaseSyncClient[
     @abstractmethod
     def _debug_log_title(
         self,
+        *,
         item: ParentMediaT,
-        mapping: MappingGraph | None = None,
-        media_key: str | None = None,
+        child_item: ChildMediaT | None = None,
     ) -> str:
         """Return a debug-friendly title representation."""
         ...
@@ -990,7 +986,7 @@ class BaseSyncClient[
         if resolved_list_descriptor is None:
             raise ValueError(
                 f"Unable to determine list media key for {item.media_kind.value} "
-                f"{self._debug_log_title(item=item, mapping=mapping, media_key=None)}"
+                f"{self._debug_log_title(item=item, child_item=child_item)}"
             )
 
         return await self.list_provider.build_entry(resolved_list_descriptor.entry_id)

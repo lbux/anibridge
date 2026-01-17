@@ -114,8 +114,8 @@ def animap_client(
 
 def _mapping_data():
     return {
-        "anilist:1:movie": {"tmdb:10:movie": {"1": None}},
-        "anilist:2:s1": {"tvdb:20:s1": {"s1": "e1-e12"}},
+        "anilist:1": {"tmdb:10": {"1": None}},
+        "anilist:2:s1": {"tvdb:20:s1": {"1-12": "1-12"}},
     }
 
 
@@ -194,8 +194,8 @@ def test_sync_db_creates_entries_mappings_and_provenance(
     assert hash_entry.value == expected_hash
 
     assert {(e.provider, e.entry_id, e.entry_scope) for e in entries} == {
-        ("anilist", "1", "movie"),
-        ("tmdb", "10", "movie"),
+        ("anilist", "1", None),
+        ("tmdb", "10", None),
         ("anilist", "2", "s1"),
         ("tvdb", "20", "s1"),
     }
@@ -214,8 +214,8 @@ def test_sync_db_creates_entries_mappings_and_provenance(
         for edge in edges
     }
     assert edge_keys == {
-        ("anilist", "1", "movie", "tmdb", "10", "movie", "1", None),
-        ("anilist", "2", "s1", "tvdb", "20", "s1", "s1", "e1-e12"),
+        ("anilist", "1", None, "tmdb", "10", None, "1", None),
+        ("anilist", "2", "s1", "tvdb", "20", "s1", "1-12", "1-12"),
     }
 
     expected_source = str(mappings_path.resolve())
@@ -247,22 +247,22 @@ def test_get_graph_for_ids_returns_edges_for_providers(
             e.destination_range,
         )
         for e in tvdb_edges
-    } == {("anilist", "tvdb", "s1", "e1-e12")}
+    } == {("anilist", "tvdb", "1-12", "1-12")}
 
 
 def test_sync_db_refreshes_provenance_when_hash_matches(
     animap_client: AnimapClient, in_memory_db: AniBridgeDB
 ) -> None:
     """Syncing the database again with the same mappings refreshes provenance."""
-    base_mappings = {"anilist:1:movie": {"tmdb:1:movie": {"1": None}}}
+    base_mappings = {"anilist:1": {"tmdb:1": {"1": None}}}
     fake_client = FakeMappingsClient(
         mappings=base_mappings,
-        provenance={"anilist:1:movie": ["/initial.json"]},
+        provenance={"anilist:1": ["/initial.json"]},
     )
     animap_client.mappings_client = cast(MappingsClient, fake_client)
     asyncio.run(animap_client.sync_db())
 
-    fake_client.provenance = {"anilist:1:movie": ["/updated.json", "/extra.json"]}
+    fake_client.provenance = {"anilist:1": ["/updated.json", "/extra.json"]}
     asyncio.run(animap_client.sync_db())
 
     with in_memory_db as ctx:

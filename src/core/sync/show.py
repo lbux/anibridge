@@ -314,10 +314,15 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
     def _debug_log_title(
         self,
         item: LibraryShow,
+        child_item: LibrarySeason | None = None,
         mapping: MappingGraph | None = None,
         media_key: str | None = None,
     ) -> str:
-        return f"$$'{item.title}'$$"
+        return (
+            f"$$'{item.title}'$$"
+            if child_item is None
+            else f"$$'{item.title} (S{child_item.index})'$$"
+        )
 
     def _debug_log_ids(
         self,

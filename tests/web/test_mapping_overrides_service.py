@@ -44,12 +44,11 @@ async def test_save_override_writes_file_and_syncs_db(
     service = MappingOverridesService()
 
     result = await service.save_override(
-        descriptor="anilist:101:movie",
+        descriptor="anilist:101",
         targets=[
             {
                 "provider": "tmdb",
                 "entry_id": "202",
-                "scope": "movie",
                 "ranges": [
                     {
                         "source_range": "1",
@@ -59,11 +58,11 @@ async def test_save_override_writes_file_and_syncs_db(
             }
         ],
     )
-    assert result["descriptor"] == "anilist:101:movie"
-    assert result["layers"]["effective"]["tmdb:202:movie"]["1"] is None
+    assert result["descriptor"] == "anilist:101"
+    assert result["layers"]["effective"]["tmdb:202"]["1"] is None
 
     data = json.loads((tmp_path / "mappings.json").read_text(encoding="utf-8"))
-    assert data["anilist:101:movie"] == {"tmdb:202:movie": {"1": None}}
+    assert data["anilist:101"] == {"tmdb:202": {"1": None}}
     assert scheduler.synced is True
 
 
@@ -75,17 +74,16 @@ async def test_get_mapping_detail_layers_upstream_and_custom(
     service = MappingOverridesService()
 
     async def fake_load_upstream(self):
-        return {"anilist:909:movie": {"tmdb:777:movie": {"1": "1..3"}}}
+        return {"anilist:909": {"tmdb:777": {"1": "1-3"}}}
 
     monkeypatch.setattr(MappingOverridesService, "_load_upstream", fake_load_upstream)
 
     await service.save_override(
-        descriptor="anilist:909:movie",
+        descriptor="anilist:909",
         targets=[
             {
                 "provider": "tmdb",
                 "entry_id": "777",
-                "scope": "movie",
                 "ranges": [
                     {
                         "source_range": "1",
@@ -96,10 +94,10 @@ async def test_get_mapping_detail_layers_upstream_and_custom(
         ],
     )
 
-    detail = await service.get_mapping_detail("anilist:909:movie")
-    assert detail["layers"]["upstream"]["tmdb:777:movie"]["1"] == "1..3"
-    assert detail["layers"]["custom"]["tmdb:777:movie"]["1"] is None
-    assert detail["layers"]["effective"]["tmdb:777:movie"]["1"] is None
+    detail = await service.get_mapping_detail("anilist:909")
+    assert detail["layers"]["upstream"]["tmdb:777"]["1"] == "1-3"
+    assert detail["layers"]["custom"]["tmdb:777"]["1"] is None
+    assert detail["layers"]["effective"]["tmdb:777"]["1"] is None
 
     assert detail["targets"]
     entry = detail["targets"][0]
@@ -107,7 +105,7 @@ async def test_get_mapping_detail_layers_upstream_and_custom(
     assert entry["ranges"] == [
         {
             "source_range": "1",
-            "upstream": "1..3",
+            "upstream": "1-3",
             "custom": None,
             "effective": None,
             "origin": "custom",

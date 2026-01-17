@@ -28,8 +28,8 @@ def _fresh_tables():
 
 def _seed_graph():
     with db() as ctx:
-        a = AnimapEntry(provider="anilist", entry_id="1", entry_scope="movie")
-        b = AnimapEntry(provider="tmdb", entry_id="10", entry_scope="movie")
+        a = AnimapEntry(provider="anilist", entry_id="1", entry_scope=None)
+        b = AnimapEntry(provider="tmdb", entry_id="10", entry_scope=None)
         ctx.session.add_all([a, b])
         ctx.session.flush()
         mapping = AnimapMapping(
@@ -55,7 +55,7 @@ async def test_list_mappings_returns_edges_and_sources() -> None:
         )
         assert total == 2
         descriptors = {item["descriptor"] for item in items}
-        assert "anilist:1:movie" in descriptors
+        assert "anilist:1" in descriptors
         assert any(edge["target_provider"] == "tmdb" for edge in items[0]["edges"])
 
 
@@ -65,8 +65,8 @@ async def test_get_mapping_filters_by_descriptor() -> None:
     service = MappingsService()
     with _fresh_tables():
         _seed_graph()
-        item = await service.get_mapping("anilist:1:movie")
-        assert item["descriptor"] == "anilist:1:movie"
+        item = await service.get_mapping("anilist:1")
+        assert item["descriptor"] == "anilist:1"
         assert item["edges"][0]["target_provider"] == "tmdb"
 
 
@@ -107,18 +107,12 @@ async def test_custom_only_applies_before_pagination() -> None:
     service = MappingsService()
     with _fresh_tables():
         with db() as ctx:
-            upstream_entry = AnimapEntry(
-                provider="aaa", entry_id="1", entry_scope="movie"
-            )
+            upstream_entry = AnimapEntry(provider="aaa", entry_id="1", entry_scope=None)
             upstream_target = AnimapEntry(
-                provider="dest", entry_id="1", entry_scope="movie"
+                provider="dest", entry_id="1", entry_scope=None
             )
-            custom_entry = AnimapEntry(
-                provider="zzz", entry_id="1", entry_scope="movie"
-            )
-            custom_target = AnimapEntry(
-                provider="dest", entry_id="2", entry_scope="movie"
-            )
+            custom_entry = AnimapEntry(provider="zzz", entry_id="1", entry_scope=None)
+            custom_target = AnimapEntry(provider="dest", entry_id="2", entry_scope=None)
             ctx.session.add_all(
                 [upstream_entry, upstream_target, custom_entry, custom_target]
             )
@@ -157,7 +151,7 @@ async def test_custom_only_applies_before_pagination() -> None:
         assert total == 1
         assert len(items) == 1
         assert items[0]["descriptor"] == (
-            f"{custom_entry.provider}:{custom_entry.entry_id}:{custom_entry.entry_scope}"
+            f"{custom_entry.provider}:{custom_entry.entry_id}"
         )
 
 
@@ -171,11 +165,9 @@ async def test_filter_custom_entry_ids_batches() -> None:
             entries: list[AnimapEntry] = []
             for idx in range(total_entries):
                 entry = AnimapEntry(
-                    provider=f"p{idx:04d}", entry_id=str(idx), entry_scope="movie"
+                    provider=f"p{idx:04d}", entry_id=str(idx), entry_scope=None
                 )
-                target = AnimapEntry(
-                    provider="t", entry_id=str(idx), entry_scope="movie"
-                )
+                target = AnimapEntry(provider="t", entry_id=str(idx), entry_scope=None)
                 ctx.session.add_all([entry, target])
                 entries.append(entry)
             ctx.session.flush()

@@ -170,8 +170,8 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
         Any,
         FakeAnimapClient(
             FakeAnimapClient.make_graph(
-                ("anilist", "101", "movie"),
-                ("tmdb", "999", "movie"),
+                ("anilist", "101", None),
+                ("tmdb", "999", None),
             )
         ),
     )
@@ -250,8 +250,8 @@ async def test_process_media_syncs_movie_and_writes_history(
         Any,
         FakeAnimapClient(
             FakeAnimapClient.make_graph(
-                ("anilist", "301", "movie"),
-                ("tmdb", "303", "movie"),
+                ("anilist", "301", None),
+                ("tmdb", "303", None),
             )
         ),
     )

@@ -101,7 +101,7 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
     def _derive_scope(self, *, item: Any, child_item: Any | None) -> str | None:
         return None
 
-    def _debug_log_title(self, item: Any, mapping=None, media_key=None) -> str:
+    def _debug_log_title(self, item: Any, child_item: Any | None = None) -> str:
         return str(item)
 
     def _debug_log_ids(

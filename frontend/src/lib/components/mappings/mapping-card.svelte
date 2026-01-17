@@ -3,7 +3,7 @@
 
     interface Props {
         entryId: string;
-        scope: string;
+        scope?: string | null;
         url?: string | null;
         label?: string;
         tone?: "source" | "target";
@@ -13,7 +13,7 @@
 
     let {
         entryId,
-        scope,
+        scope = null,
         url = null,
         label = "",
         tone = "target",
@@ -54,8 +54,10 @@
                 <ExternalLink class="h-3 w-3" />
             </button>
         {/if}
-        <span class={`rounded px-1 py-0.5 text-[10px] uppercase ${chipClasses}`}
-            >{scope}</span>
+        {#if scope}
+            <span class={`rounded px-1 py-0.5 text-[10px] uppercase ${chipClasses}`}
+                >{scope}</span>
+        {/if}
         {#if label}
             <span class={`rounded px-1 py-0.5 text-[10px] uppercase ${chipClasses}`}
                 >{label}</span>

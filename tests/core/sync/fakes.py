@@ -476,9 +476,9 @@ class FakeAnimapClient:
 
     @staticmethod
     def make_graph(
-        source: tuple[str, str, str],
-        target: tuple[str, str, str],
-        source_range: str = "movie",
+        source: tuple[str, str, str | None],
+        target: tuple[str, str, str | None],
+        source_range: str = "1",
         destination_range: str | None = None,
     ) -> AnimapGraph:
         """Helper to build a simple one-edge graph for tests."""

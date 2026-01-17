@@ -57,15 +57,13 @@ class AnimapGraph(MappingGraph):
 
 @dataclass(frozen=True, slots=True)
 class AnimapDescriptor(MappingDescriptor):
-    """Provider/entry/scope descriptor (e.g., anilist:849:s1)."""
+    """Provider/entry descriptor with optional scope (e.g., anilist:849:s1)."""
 
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None
 
-    _PATTERN = re.compile(
-        r"^(?P<provider>[A-Za-z_][A-Za-z0-9_]*):(?P<entry>[^:]+):(?P<scope>s[0-9]+|movie)$"
-    )
+    _PATTERN = re.compile(r"^(?P<provider>\w+):(?P<entry>\w+)(?::(?P<scope>\w+))?$")
 
     @classmethod
     def parse(cls, raw: str) -> MappingDescriptor:
@@ -80,15 +78,18 @@ class AnimapDescriptor(MappingDescriptor):
         match = cls._PATTERN.match(raw)
         if not match:
             raise ValueError("Invalid mapping descriptor")
+        scope = match.group("scope") or None
         return cls(
             provider=match.group("provider"),
             entry_id=match.group("entry"),
-            scope=match.group("scope"),
+            scope=scope,
         )
 
     def key(self) -> str:
         """Return the canonical descriptor key string."""
-        return f"{self.provider}:{self.entry_id}:{self.scope}"
+        if self.scope:
+            return f"{self.provider}:{self.entry_id}:{self.scope}"
+        return f"{self.provider}:{self.entry_id}"
 
     def __str__(self) -> str:
         """Human-readable representation used in logs."""
@@ -411,7 +412,11 @@ class AnimapClient:
 
         with db() as ctx:
             existing_entries = {
-                f"{entry.provider}:{entry.entry_id}:{entry.entry_scope}": entry
+                AnimapDescriptor(
+                    provider=entry.provider,
+                    entry_id=entry.entry_id,
+                    scope=entry.entry_scope,
+                ).key(): entry
                 for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
             }
 
@@ -455,7 +460,11 @@ class AnimapClient:
 
             # Refresh entry map after inserts
             existing_entries = {
-                f"{entry.provider}:{entry.entry_id}:{entry.entry_scope}": entry
+                AnimapDescriptor(
+                    provider=entry.provider,
+                    entry_id=entry.entry_id,
+                    scope=entry.entry_scope,
+                ).key(): entry
                 for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
             }
 

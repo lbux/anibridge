@@ -29,7 +29,7 @@ __all__ = ["router"]
 class MappingEdgeModel(BaseModel):
     target_provider: str
     target_entry_id: str
-    target_scope: str
+    target_scope: str | None = None
     source_range: str
     destination_range: str | None = None
     sources: list[str] = Field(default_factory=list)
@@ -39,7 +39,7 @@ class MappingItemModel(BaseModel):
     descriptor: str
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None = None
     edges: list[MappingEdgeModel]
     custom: bool = False
     sources: list[str] = Field(default_factory=list)
@@ -67,7 +67,7 @@ class RangeInputModel(BaseModel):
 class TargetInputModel(BaseModel):
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None = None
     ranges: list[RangeInputModel] = Field(default_factory=list)
     deleted: bool = False
 
@@ -99,7 +99,7 @@ class MappingTargetViewModel(BaseModel):
     descriptor: str
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None = None
     origin: str
     deleted: bool = False
     ranges: list[MappingRangeViewModel] = Field(default_factory=list)
@@ -115,7 +115,7 @@ class MappingDetailModel(BaseModel):
     descriptor: str
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None = None
     layers: MappingLayersModel = Field(default_factory=MappingLayersModel)
     targets: list[MappingTargetViewModel] = Field(default_factory=list)
 

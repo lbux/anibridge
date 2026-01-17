@@ -49,7 +49,7 @@ class EdgeView:
 
     target_provider: str
     target_entry_id: str
-    target_scope: str
+    target_scope: str | None
     source_range: str
     destination_range: str | None
     sources: list[str]
@@ -61,7 +61,7 @@ class MappingItem:
 
     provider: str
     entry_id: str
-    scope: str
+    scope: str | None
     edges: list[EdgeView]
     custom: bool
     sources: list[str]
@@ -78,7 +78,11 @@ class MappingItem:
             "provider": self.provider,
             "entry_id": self.entry_id,
             "scope": self.scope,
-            "descriptor": f"{self.provider}:{self.entry_id}:{self.scope}",
+            "descriptor": AnimapDescriptor(
+                provider=self.provider,
+                entry_id=self.entry_id,
+                scope=self.scope,
+            ).key(),
             "edges": [edge.__dict__ for edge in self.edges],
             "custom": self.custom,
             "sources": self.sources,
@@ -1038,12 +1042,17 @@ class MappingsService:
         """
         parsed = AnimapDescriptor.parse(descriptor)
         with db() as ctx:
+            scope_clause = (
+                AnimapEntry.entry_scope.is_(None)
+                if parsed.scope is None
+                else AnimapEntry.entry_scope == parsed.scope
+            )
             entry = (
                 ctx.session.execute(
                     select(AnimapEntry).where(
                         AnimapEntry.provider == parsed.provider,
                         AnimapEntry.entry_id == parsed.entry_id,
-                        AnimapEntry.entry_scope == parsed.scope,
+                        scope_clause,
                     )
                 )
                 .scalars()
