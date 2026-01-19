@@ -13,7 +13,7 @@ from anibridge.library import (
 )
 from anibridge.list import ListEntry, ListMediaType, ListStatus
 
-from src.core.animap import MappingGraph
+from src.core.animap import MappingGraph, descriptor_key
 from src.core.sync.base import BaseSyncClient
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache, glru_cache
@@ -330,19 +330,19 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         self,
         *,
         item: LibraryShow,
-        child_item: LibrarySeason,
+        child_item: LibrarySeason | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
         media_key: str | None,
     ) -> str:
-        if not media_key and mapping is not None:
-            resolved = self._resolve_list_descriptor(
-                mapping, scope=f"s{child_item.index}"
-            )
-            media_key = resolved[1] if resolved else None
-        if not media_key and entry is not None:
-            media_key = entry.media().key
-        return self._format_descriptors(item.mapping_descriptors())
+        resolved = self._resolve_list_descriptor(
+            mapping, scope=f"s{child_item.index}" if child_item else None
+        )
+        formatted = [descriptor_key(resolved)] if resolved else []
+        formatted.extend(
+            descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
+        )
+        return f"$${{{', '.join(formatted)}}}$$"
 
     @glru_cache(maxsize=32, key=lambda self, item: item)
     def __get_wanted_seasons(self, item: LibraryShow) -> dict[int, LibrarySeason]:

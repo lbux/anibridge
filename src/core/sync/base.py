@@ -213,10 +213,17 @@ class BaseSyncClient[
 
     async def process_media(self, item: ParentMediaT) -> None:
         """Process a single library item."""
-        ids_summary = self._format_descriptors(item.mapping_descriptors())
+        ids_summary = self._debug_log_ids(
+            item=item,
+            child_item=None,
+            entry=None,
+            mapping=None,
+            media_key=None,
+        )
+        debug_title = self._debug_log_title(item=item, child_item=None)
         log.debug(
             f"[{self.profile_name}] Processing {item.media_kind.value} "
-            f"$$'{item.title}'$$ {ids_summary}"
+            f"{debug_title} {ids_summary}"
         )
 
         item_identifier = ItemIdentifier.from_item(item)
@@ -227,7 +234,7 @@ class BaseSyncClient[
         else:
             log.debug(
                 f"[{self.profile_name}] Skipping {item.media_kind.value} "
-                f"$$'{item.title}'$$ because it has no eligible items {ids_summary}"
+                f"{debug_title} because it has no eligible items {ids_summary}"
             )
             self.sync_stats.track_item(item_identifier, SyncOutcome.SKIPPED)
             return
@@ -244,6 +251,7 @@ class BaseSyncClient[
             grandchildren = tuple(grandchild_items)
             grandchild_ids = ItemIdentifier.from_items(grandchildren)
 
+            debug_title = self._debug_log_title(item=item, child_item=child_item)
             debug_ids = self._debug_log_ids(
                 item=item,
                 child_item=child_item,
@@ -254,12 +262,13 @@ class BaseSyncClient[
             if entry is None:
                 log.debug(
                     f"[{self.profile_name}] No existing list entry for "
-                    f"{item.media_kind.value}; preparing new entry {debug_ids}"
+                    f"{item.media_kind.value}; preparing new entry "
+                    f"{debug_title} {debug_ids}"
                 )
             else:
                 log.debug(
                     f"[{self.profile_name}] Found list entry for "
-                    f"{item.media_kind.value} {debug_ids}"
+                    f"{item.media_kind.value} {debug_title} {debug_ids}"
                 )
 
             try:
@@ -275,7 +284,7 @@ class BaseSyncClient[
             except Exception:
                 log.error(
                     f"[{self.profile_name}] Failed to process {item.media_kind.value} "
-                    f"{debug_ids}",
+                    f"{debug_title} {debug_ids}",
                     exc_info=True,
                 )
                 self.sync_stats.track_items(grandchild_ids, SyncOutcome.FAILED)
@@ -852,16 +861,6 @@ class BaseSyncClient[
             return False
         return rule.comparator(current_value, new_value)
 
-    def _format_descriptors(self, descriptors: Sequence[MappingDescriptor]) -> str:
-        """Format mapping descriptors for debug logging."""
-        if not descriptors:
-            return "$${}$$"
-        formatted = ", ".join(
-            f"{provider}:{entry}{f':{scope}' if scope else ''}"
-            for provider, entry, scope in descriptors
-        )
-        return f"$${{{formatted}}}$$"
-
     def _format_diff(self, diff: dict[str, tuple[Any, Any]]) -> str:
         """Format a diff dictionary for logging."""
         parts: list[str] = []
@@ -990,7 +989,7 @@ class BaseSyncClient[
         self,
         *,
         item: ParentMediaT,
-        child_item: ChildMediaT,
+        child_item: ChildMediaT | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
         media_key: str | None,

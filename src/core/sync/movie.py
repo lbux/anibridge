@@ -6,7 +6,7 @@ from datetime import datetime
 from anibridge.library import LibraryMovie
 from anibridge.list import ListEntry, ListMediaType, ListStatus
 
-from src.core.animap import MappingGraph
+from src.core.animap import MappingGraph, descriptor_key
 from src.core.sync.base import BaseSyncClient
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache
@@ -180,14 +180,14 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         self,
         *,
         item: LibraryMovie,
-        child_item: LibraryMovie,
+        child_item: LibraryMovie | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
         media_key: str | None,
     ) -> str:
-        if not media_key and mapping is not None:
-            resolved = self._resolve_list_descriptor(mapping, scope=None)
-            media_key = resolved[1] if resolved else None
-        if not media_key and entry is not None:
-            media_key = entry.media().key
-        return self._format_descriptors(item.mapping_descriptors())
+        resolved = self._resolve_list_descriptor(mapping, scope=None)
+        formatted = [descriptor_key(resolved)] if resolved else []
+        formatted.extend(
+            descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
+        )
+        return f"$${{{', '.join(formatted)}}}$$"
