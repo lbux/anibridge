@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import md5
 from itertools import batched
@@ -19,7 +20,33 @@ from src.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from src.models.db.housekeeping import Housekeeping
 from src.utils.mapping_ranges import is_valid_source_range, is_valid_target_range
 
-__all__ = ["AnimapClient", "AnimapDescriptor", "AnimapEdge", "AnimapGraph"]
+__all__ = [
+    "AnimapClient",
+    "AnimapEdge",
+    "AnimapGraph",
+    "descriptor_key",
+    "parse_mapping_descriptor",
+]
+
+
+_DESCRIPTOR_PATTERN = re.compile(
+    r"^(?P<provider>\w+):(?P<entry>\w+)(?::(?P<scope>\w+))?$"
+)
+
+
+def descriptor_key(descriptor: MappingDescriptor) -> str:
+    """Return a stable string key for a descriptor tuple."""
+    provider, entry_id, scope = descriptor
+    return f"{provider}:{entry_id}:{scope}" if scope else f"{provider}:{entry_id}"
+
+
+def parse_mapping_descriptor(raw: str) -> MappingDescriptor:
+    """Parse a descriptor string into its tuple representation."""
+    match = _DESCRIPTOR_PATTERN.match(raw)
+    if not match:
+        raise ValueError("Invalid mapping descriptor")
+    scope = match.group("scope") or None
+    return (match.group("provider"), match.group("entry"), scope)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,62 +66,17 @@ class AnimapGraph(MappingGraph):
     edges: tuple[MappingEdge, ...]
 
     def descriptors(self) -> tuple[MappingDescriptor, ...]:
-        """Return unique descriptors referenced by the edges.
-
-        Returns:
-            tuple[MappingDescriptor, ...]: Ordered unique descriptors.
-        """
+        """Return unique descriptors referenced by the edges."""
         seen: set[str] = set()
         ordered: list[MappingDescriptor] = []
         for edge in self.edges:
             for descriptor in (edge.source, edge.destination):
-                key = descriptor.key()
+                key = descriptor_key(descriptor)
                 if key in seen:
                     continue
                 seen.add(key)
                 ordered.append(descriptor)
         return tuple(ordered)
-
-
-@dataclass(frozen=True, slots=True)
-class AnimapDescriptor(MappingDescriptor):
-    """Provider/entry descriptor with optional scope (e.g., anilist:849:s1)."""
-
-    provider: str
-    entry_id: str
-    scope: str | None
-
-    _PATTERN = re.compile(r"^(?P<provider>\w+):(?P<entry>\w+)(?::(?P<scope>\w+))?$")
-
-    @classmethod
-    def parse(cls, raw: str) -> MappingDescriptor:
-        """Parse a descriptor string into its components.
-
-        Args:
-            raw (str): Raw descriptor string.
-
-        Returns:
-            MappingDescriptor: Parsed descriptor object.
-        """
-        match = cls._PATTERN.match(raw)
-        if not match:
-            raise ValueError("Invalid mapping descriptor")
-        scope = match.group("scope") or None
-        return cls(
-            provider=match.group("provider"),
-            entry_id=match.group("entry"),
-            scope=scope,
-        )
-
-    def key(self) -> str:
-        """Return the canonical descriptor key string."""
-        if self.scope:
-            return f"{self.provider}:{self.entry_id}:{self.scope}"
-        return f"{self.provider}:{self.entry_id}"
-
-    def __str__(self) -> str:
-        """Human-readable representation used in logs."""
-        return self.key()
 
 
 class AnimapClient:
@@ -108,8 +90,10 @@ class AnimapClient:
         self.upstream_url = upstream_url
         self.mappings_client = MappingsClient(data_path, upstream_url)
         self._edge_cache: tuple[AnimapEdge, ...] = tuple()
-        self._adjacency: dict[tuple[str, str], tuple[int, ...]] = {}
-        self._lookup_cache: dict[frozenset[tuple[str, str]], MappingGraph] = {}
+        self._adjacency: dict[tuple[str, str, str | None], tuple[int, ...]] = {}
+        self._lookup_cache: dict[
+            frozenset[tuple[str, str, str | None]], MappingGraph
+        ] = {}
         self._cache_version: str | None = None
 
     async def initialize(self) -> None:
@@ -223,13 +207,13 @@ class AnimapClient:
 
         for raw_source, targets in mappings.items():
             try:
-                source_desc = AnimapDescriptor.parse(raw_source)
+                source_desc = parse_mapping_descriptor(raw_source)
             except ValueError:
                 log.warning(f"Invalid mapping descriptor $$'{raw_source}'$$; skipped")
                 invalid_count += 1
                 continue
 
-            descriptors[source_desc.key()] = source_desc
+            descriptors[descriptor_key(source_desc)] = source_desc
 
             if not isinstance(targets, dict):
                 log.warning(
@@ -241,7 +225,7 @@ class AnimapClient:
 
             for raw_target, ranges in targets.items():
                 try:
-                    target_desc = AnimapDescriptor.parse(raw_target)
+                    target_desc = parse_mapping_descriptor(raw_target)
                 except ValueError:
                     log.warning(
                         f"Invalid target descriptor $$'{raw_target}'$$ under "
@@ -250,7 +234,7 @@ class AnimapClient:
                     invalid_count += 1
                     continue
 
-                descriptors[target_desc.key()] = target_desc
+                descriptors[descriptor_key(target_desc)] = target_desc
 
                 if ranges is None:
                     continue
@@ -289,8 +273,8 @@ class AnimapClient:
                         continue
 
                     key = (
-                        source_desc.key(),
-                        target_desc.key(),
+                        descriptor_key(source_desc),
+                        descriptor_key(target_desc),
                         source_range,
                         destination_range,
                     )
@@ -322,12 +306,11 @@ class AnimapClient:
         self, edges: tuple[AnimapEdge, ...], version: str
     ) -> None:
         """Populate in-memory adjacency for fast lookups."""
-        adjacency: dict[tuple[str, str], list[int]] = {}
+        adjacency: dict[tuple[str, str, str | None], list[int]] = {}
         for idx, edge in enumerate(edges):
             for descriptor in (edge.source, edge.destination):
-                adjacency.setdefault(
-                    (descriptor.provider, descriptor.entry_id), []
-                ).append(idx)
+                provider, entry_id, scope = descriptor
+                adjacency.setdefault((provider, entry_id, scope), []).append(idx)
 
         self._edge_cache = edges
         self._adjacency = {key: tuple(ids) for key, ids in adjacency.items()}
@@ -353,15 +336,15 @@ class AnimapClient:
 
             edges.append(
                 AnimapEdge(
-                    source=AnimapDescriptor(
-                        provider=src_entry.provider,
-                        entry_id=src_entry.entry_id,
-                        scope=src_entry.entry_scope,
+                    source=(
+                        src_entry.provider,
+                        src_entry.entry_id,
+                        src_entry.entry_scope,
                     ),
-                    destination=AnimapDescriptor(
-                        provider=dst_entry.provider,
-                        entry_id=dst_entry.entry_id,
-                        scope=dst_entry.entry_scope,
+                    destination=(
+                        dst_entry.provider,
+                        dst_entry.entry_id,
+                        dst_entry.entry_scope,
                     ),
                     source_range=mapping.source_range,
                     destination_range=mapping.destination_range,
@@ -374,37 +357,40 @@ class AnimapClient:
         if not self._edge_cache:
             self._build_cache_from_db()
 
-    def get_graph_for_ids(self, external_ids: dict[str, str]) -> MappingGraph:
-        """Return all edges touching the supplied external identifiers.
-
-        Args:
-            external_ids (dict[str, str]): Mapping of provider names to entry IDs.
-
-        Returns:
-            MappingGraph: Subgraph containing all relevant edges.
-        """
+    def get_graph_for_descriptors(
+        self, descriptors: Sequence[MappingDescriptor]
+    ) -> MappingGraph:
+        """Return all edges touching any of the supplied mapping descriptors."""
         self._ensure_cache()
 
-        if not external_ids:
+        if not descriptors:
             return AnimapGraph(edges=tuple())
 
-        cache_key = frozenset(external_ids.items())
+        cache_key = frozenset(descriptors)
         if self._cache_version is not None and cache_key in self._lookup_cache:
             return self._lookup_cache[cache_key]
 
         edge_indexes: set[int] = set()
-        for provider, entry_id in external_ids.items():
-            edge_indexes.update(self._adjacency.get((provider, entry_id), ()))
+        for provider, entry_id, scope in cache_key:
+            edge_indexes.update(self._adjacency.get((provider, entry_id, scope), ()))
 
-        if not edge_indexes:
-            graph = AnimapGraph(edges=tuple())
-        else:
-            graph = AnimapGraph(edges=tuple(self._edge_cache[i] for i in edge_indexes))
+        graph = (
+            AnimapGraph(edges=tuple(self._edge_cache[i] for i in edge_indexes))
+            if edge_indexes
+            else AnimapGraph(edges=tuple())
+        )
 
         if self._cache_version is not None:
             self._lookup_cache[cache_key] = graph
 
         return graph
+
+    def get_graph_for_ids(self, external_ids: dict[str, str]) -> MappingGraph:
+        """Return all edges touching the supplied external identifiers."""
+        descriptor_tuples = [
+            (provider, entry_id, None) for provider, entry_id in external_ids.items()
+        ]
+        return self.get_graph_for_descriptors(descriptor_tuples)
 
     async def sync_db(self) -> None:
         """Synchronize the local database with the upstream mappings."""
@@ -427,11 +413,9 @@ class AnimapClient:
 
         with db() as ctx:
             existing_entries = {
-                AnimapDescriptor(
-                    provider=entry.provider,
-                    entry_id=entry.entry_id,
-                    scope=entry.entry_scope,
-                ).key(): entry
+                descriptor_key(
+                    (entry.provider, entry.entry_id, entry.entry_scope)
+                ): entry
                 for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
             }
 
@@ -456,11 +440,12 @@ class AnimapClient:
                 rows: list[dict[str, object]] = []
                 for key in to_insert_entries:
                     d = descriptors[key]
+                    provider, entry_id, scope = d
                     rows.append(
                         {
-                            "provider": d.provider,
-                            "entry_id": d.entry_id,
-                            "entry_scope": d.scope,
+                            "provider": provider,
+                            "entry_id": entry_id,
+                            "entry_scope": scope,
                         }
                     )
                 for chunk in batched(rows, self._SQLITE_SAFE_VARIABLES, strict=False):
@@ -475,11 +460,9 @@ class AnimapClient:
 
             # Refresh entry map after inserts
             existing_entries = {
-                AnimapDescriptor(
-                    provider=entry.provider,
-                    entry_id=entry.entry_id,
-                    scope=entry.entry_scope,
-                ).key(): entry
+                descriptor_key(
+                    (entry.provider, entry.entry_id, entry.entry_scope)
+                ): entry
                 for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
             }
 

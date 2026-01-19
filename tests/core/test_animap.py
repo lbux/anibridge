@@ -5,7 +5,6 @@ import importlib
 import json
 from hashlib import md5
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -14,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import select
 
 from src.config.database import AniBridgeDB
-from src.core.animap import AnimapClient, AnimapEdge, MappingDescriptor
+from src.core.animap import AnimapClient, AnimapEdge
 from src.core.mappings import MappingsClient
 from src.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from src.models.db.base import Base
@@ -136,22 +135,8 @@ def _fetch_edges(ctx) -> list[AnimapEdge]:
         dst = entries[mapping.destination_entry_id]
         edges.append(
             AnimapEdge(
-                source=cast(
-                    MappingDescriptor,
-                    SimpleNamespace(
-                        provider=src.provider,
-                        entry_id=src.entry_id,
-                        scope=src.entry_scope,
-                    ),
-                ),
-                destination=cast(
-                    MappingDescriptor,
-                    SimpleNamespace(
-                        provider=dst.provider,
-                        entry_id=dst.entry_id,
-                        scope=dst.entry_scope,
-                    ),
-                ),
+                source=(src.provider, src.entry_id, src.entry_scope),
+                destination=(dst.provider, dst.entry_id, dst.entry_scope),
                 source_range=mapping.source_range,
                 destination_range=mapping.destination_range,
             )
@@ -202,12 +187,12 @@ def test_sync_db_creates_entries_mappings_and_provenance(
 
     edge_keys = {
         (
-            edge.source.provider,
-            edge.source.entry_id,
-            edge.source.scope,
-            edge.destination.provider,
-            edge.destination.entry_id,
-            edge.destination.scope,
+            edge.source[0],
+            edge.source[1],
+            edge.source[2],
+            edge.destination[0],
+            edge.destination[1],
+            edge.destination[2],
             edge.source_range,
             edge.destination_range,
         )
@@ -226,23 +211,23 @@ def test_sync_db_creates_entries_mappings_and_provenance(
     assert [row.n for row in provenance_rows] == [0, 0]
 
 
-def test_get_graph_for_ids_returns_edges_for_providers(
+def test_get_graph_for_descriptors_returns_edges(
     animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
 ) -> None:
-    """Getting the mapping graph for IDs returns the correct edges."""
+    """Mapping graph lookups honor scoped descriptors."""
     _write_mapping_file(tmp_path, _mapping_data())
     asyncio.run(animap_client.sync_db())
 
-    edges = animap_client.get_graph_for_ids({"anilist": "1"}).edges
+    edges = animap_client.get_graph_for_descriptors([("anilist", "1", None)]).edges
     assert len(edges) == 1
-    assert edges[0].source.provider == "anilist"
-    assert edges[0].destination.provider == "tmdb"
+    assert edges[0].source[0] == "anilist"
+    assert edges[0].destination[0] == "tmdb"
 
-    tvdb_edges = animap_client.get_graph_for_ids({"tvdb": "20"}).edges
+    tvdb_edges = animap_client.get_graph_for_descriptors([("tvdb", "20", "s1")]).edges
     assert {
         (
-            e.source.provider,
-            e.destination.provider,
+            e.source[0],
+            e.destination[0],
             e.source_range,
             e.destination_range,
         )

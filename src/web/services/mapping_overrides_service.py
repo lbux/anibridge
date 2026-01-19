@@ -10,7 +10,7 @@ import yaml
 
 from src import config
 from src.config.settings import get_config
-from src.core.animap import AnimapDescriptor
+from src.core.animap import descriptor_key, parse_mapping_descriptor
 from src.core.mappings import MappingsClient
 from src.exceptions import (
     MappingError,
@@ -205,9 +205,12 @@ class MappingOverridesService:
 
         for target_key in sorted(keys):
             try:
-                parsed = AnimapDescriptor.parse(target_key)
+                parsed = parse_mapping_descriptor(target_key)
             except ValueError:
                 continue
+
+            provider, entry_id, scope = parsed
+            descriptor_str = descriptor_key(parsed)
 
             upstream_raw = upstream.get(target_key)
             upstream_ranges: dict[str, str | None] = upstream_raw or {}
@@ -227,10 +230,10 @@ class MappingOverridesService:
 
             entries.append(
                 {
-                    "descriptor": parsed.key(),
-                    "provider": parsed.provider,
-                    "entry_id": parsed.entry_id,
-                    "scope": parsed.scope,
+                    "descriptor": descriptor_str,
+                    "provider": provider,
+                    "entry_id": entry_id,
+                    "scope": scope,
                     "origin": origin,
                     "deleted": custom_deleted,
                     "ranges": self._build_range_views(
@@ -253,25 +256,27 @@ class MappingOverridesService:
         Returns:
             dict[str, Any]: The mapping detail data structure.
         """
-        parsed = AnimapDescriptor.parse(descriptor)
+        parsed = parse_mapping_descriptor(descriptor)
+        provider, entry_id, scope = parsed
+        descriptor_str = descriptor_key(parsed)
 
         async with self._lock:
             custom_raw, _, _ = self._load_raw()
         upstream_raw = await self._load_upstream()
 
         upstream_targets = self._normalize_targets(
-            (upstream_raw or {}).get(parsed.key(), {})
+            (upstream_raw or {}).get(descriptor_str, {})
         )
         custom_targets = self._normalize_targets(
-            (custom_raw or {}).get(parsed.key(), {})
+            (custom_raw or {}).get(descriptor_str, {})
         )
         effective_targets = self._merge_targets(upstream_targets, custom_targets)
 
         return {
-            "descriptor": parsed.key(),
-            "provider": parsed.provider,
-            "entry_id": parsed.entry_id,
-            "scope": parsed.scope,
+            "descriptor": descriptor_str,
+            "provider": provider,
+            "entry_id": entry_id,
+            "scope": scope,
             "layers": {
                 "upstream": upstream_targets,
                 "custom": custom_targets,
@@ -325,13 +330,14 @@ class MappingOverridesService:
             if not provider or not entry_id:
                 raise MappingError("provider and entry_id are required")
             scope = raw_scope or None
-            target = AnimapDescriptor(provider=provider, entry_id=entry_id, scope=scope)
+            target = (provider, entry_id, scope)
+            target_key = descriptor_key(target)
             if entry.get("deleted") is True:
-                normalized[target.key()] = None
+                normalized[target_key] = None
                 continue
             ranges = self._validate_ranges(entry.get("ranges"))
             if ranges:
-                normalized[target.key()] = ranges
+                normalized[target_key] = ranges
 
         return normalized
 
@@ -358,19 +364,20 @@ class MappingOverridesService:
         if descriptor is None:
             raise MissingDescriptorError("descriptor is required")
 
-        parsed = AnimapDescriptor.parse(descriptor)
+        parsed = parse_mapping_descriptor(descriptor)
+        descriptor_str = descriptor_key(parsed)
         target_map = self._validate_targets(targets)
 
         async with self._lock:
             raw, path, fmt = self._load_raw()
             if target_map:
-                raw[parsed.key()] = target_map
+                raw[descriptor_str] = target_map
             else:
-                raw.pop(parsed.key(), None)
+                raw.pop(descriptor_str, None)
             self._write_raw(raw, path, fmt)
 
         await self._sync_database()
-        return await self.get_mapping_detail(parsed.key())
+        return await self.get_mapping_detail(descriptor_str)
 
 
 _mapping_overrides_service: MappingOverridesService | None = None

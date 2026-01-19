@@ -56,7 +56,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if ep.season_index in wanted_indexes:
                 episodes_by_season[ep.season_index].append(ep)
 
-        mapping_graph = self.animap_client.get_graph_for_ids(item.media().ids())
         entry_cache: dict[str, ListEntry | None] = {}
 
         async def get_entry_cached(key: str) -> ListEntry | None:
@@ -70,19 +69,22 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             entry_cache[key] = entry
             return entry
 
-        def resolve_key(scope: str) -> tuple[str | None, bool]:
+        def resolve_key(
+            mapping_graph: MappingGraph | None, scope: str
+        ) -> tuple[str | None, bool]:
             """Attempt to resolve a media key for the given scope."""
-            if (
-                r := self.list_provider.resolve_mappings(mapping_graph, scope=scope)
-            ) is not None:
-                return str(r.entry_id), True
+            if mapping_graph:
+                resolved = self._resolve_list_descriptor(mapping_graph, scope=scope)
+                if resolved is not None:
+                    return str(resolved[1]), True
             return None, False
 
         async def resolve_season(
             season_index: int, season: LibrarySeason
         ) -> tuple[str | None, ListEntry | None, MappingGraph | None]:
             """Resolve a media key and list entry for the given season."""
-            key, mapped = resolve_key(f"s{season_index}")
+            mapping_graph = self._build_mapping_graph(season, item)
+            key, mapped = resolve_key(mapping_graph, f"s{season_index}")
             if key:
                 entry = await get_entry_cached(key)
                 return key, entry, (mapping_graph if mapped else None)
@@ -301,10 +303,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         mapping: MappingGraph | None,
     ) -> str | None:
         if entry.media().total_units == 1 and len(grandchild_items) == 1:
-            review = await grandchild_items[0].review()
+            review = await grandchild_items[0].review
             if review:
                 return review
-        return await child_item.review() or await item.review()
+        return await child_item.review or await item.review
 
     def _derive_scope(
         self, *, item: LibraryShow, child_item: LibrarySeason | None
@@ -334,20 +336,13 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         media_key: str | None,
     ) -> str:
         if not media_key and mapping is not None:
-            list_media_descriptor = self.list_provider.resolve_mappings(
+            resolved = self._resolve_list_descriptor(
                 mapping, scope=f"s{child_item.index}"
             )
-            media_key = (
-                list_media_descriptor.entry_id if list_media_descriptor else None
-            )
+            media_key = resolved[1] if resolved else None
         if not media_key and entry is not None:
             media_key = entry.media().key
-        ids = {
-            "library_key": child_item.key or "",
-            "list_key": media_key or "",
-            **item.media().ids(),
-        }
-        return self._format_external_ids(ids)
+        return self._format_descriptors(item.mapping_descriptors())
 
     @glru_cache(maxsize=32, key=lambda self, item: item)
     def __get_wanted_seasons(self, item: LibraryShow) -> dict[int, LibrarySeason]:

@@ -66,7 +66,7 @@ def test_dict_str_keys_normalizes_nested_structures(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_provenance_preserves_descriptor_keys(tmp_path: Path) -> None:
+async def test_get_provenance_preservesdescriptor_keys(tmp_path: Path) -> None:
     """Getting provenance preserves the original descriptor keys."""
     data_path = tmp_path / "data"
     data_path.mkdir()

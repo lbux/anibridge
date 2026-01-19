@@ -13,9 +13,15 @@ from anibridge.library import (
     LibraryShow,
     MediaKind,
 )
-from anibridge.list import ListMediaType, ListStatus
+from anibridge.list import (
+    ListMediaType,
+    ListStatus,
+    MappingDescriptor,
+    MappingEdge,
+)
+from anibridge.list.base import MappingResolution
 
-from src.core.animap import AnimapDescriptor, AnimapEdge, AnimapGraph
+from src.core.animap import AnimapEdge, AnimapGraph
 
 
 class FakeLibraryProvider:
@@ -29,6 +35,10 @@ class FakeLibraryProvider:
     def user(self) -> None:
         """Return ``None`` to keep the stub lightweight."""
         return None
+
+    def mapping_descriptors(self, media: Any) -> list[MappingDescriptor]:
+        """Return mapping descriptors declared on the media instance."""
+        return list(media._mapping_descriptors or [])
 
     async def clear_cache(self) -> None:
         """No-op cache clear hook."""
@@ -96,6 +106,7 @@ class FakeLibraryMediaBase:
         history: Sequence[HistoryEntry] | None = None,
         review: str | None = None,
         section: FakeSection | None = None,
+        mapping_descriptors: Sequence[MappingDescriptor] | None = None,
     ) -> None:
         """Store common media attributes shared across fake entities."""
         self.key = key
@@ -105,12 +116,20 @@ class FakeLibraryMediaBase:
         self._on_watchlist = on_watchlist
         self._user_rating = user_rating
         self._view_count = view_count
-        self._ids = dict(ids or {})
+        self._legacy_ids = dict(ids or {})
         self._history = list(history or [])
         self._review = review
         self._section = section or FakeSection(key="section-1")
         self._provider = FakeLibraryProvider()
         self._poster_image: str | None = None
+        if mapping_descriptors:
+            self._mapping_descriptors = tuple(mapping_descriptors)
+        elif ids:
+            self._mapping_descriptors = tuple(
+                (provider, str(entry_id), None) for provider, entry_id in ids.items()
+            )
+        else:
+            self._mapping_descriptors = None
 
     def provider(self) -> FakeLibraryProvider:
         """Return the provider that owns this fake media item."""
@@ -145,17 +164,22 @@ class FakeLibraryMediaBase:
         """Return the watch history entries for this item."""
         return list(self._history)
 
-    def ids(self) -> dict[str, str]:
-        """Return the external IDs associated with this item."""
-        return dict(self._ids)
-
     def media(self) -> FakeLibraryMediaBase:
         """Return a provider-native media object."""
         return self
 
-    async def review(self) -> str | None:
-        """Return the user review for this item."""
-        return self._review
+    @property
+    def review(self):
+        """Return an awaitable user review for this item."""
+
+        async def _review() -> str | None:
+            return self._review
+
+        return _review()
+
+    def mapping_descriptors(self) -> list[MappingDescriptor]:
+        """Return mapping descriptors for this item."""
+        return list(self._mapping_descriptors or [])
 
     def section(self) -> FakeSection:
         """Return the section this item belongs to."""
@@ -310,19 +334,23 @@ class FakeListProvider:
         return list(self.search_results)
 
     def resolve_mappings(
-        self,
-        mapping: AnimapGraph | None,
-        *,
-        scope: str | None = None,
-    ) -> AnimapDescriptor | None:
-        """Optionally resolve a media key from a mapping graph."""
-        if self.resolved_key is not None:
-            return AnimapDescriptor(
-                provider=FakeListProvider.NAMESPACE,
-                entry_id=self.resolved_key,
-                scope=scope or "s1",
+        self, edges: Sequence[MappingEdge]
+    ) -> Sequence[MappingResolution]:
+        """Optionally resolve a media key from mapping edges."""
+        if self.resolved_key is None:
+            return []
+        if not edges:
+            return []
+        return [
+            MappingResolution(
+                edge=edges[0],
+                descriptor=(
+                    FakeListProvider.NAMESPACE,
+                    self.resolved_key,
+                    edges[0].destination[2],
+                ),
             )
-        return None
+        ]
 
 
 class FakeListMedia:
@@ -474,6 +502,10 @@ class FakeAnimapClient:
         """Return the configured mapping graph regardless of inputs."""
         return self.graph
 
+    def get_graph_for_descriptors(self, *_: Any, **__: Any) -> AnimapGraph:
+        """Return the configured mapping graph regardless of descriptors."""
+        return self.graph
+
     @staticmethod
     def make_graph(
         source: tuple[str, str, str | None],
@@ -483,8 +515,8 @@ class FakeAnimapClient:
     ) -> AnimapGraph:
         """Helper to build a simple one-edge graph for tests."""
         edge = AnimapEdge(
-            source=AnimapDescriptor(*source),
-            destination=AnimapDescriptor(*target),
+            source=source,
+            destination=target,
             source_range=source_range,
             destination_range=destination_range,
         )

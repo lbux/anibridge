@@ -7,7 +7,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from anibridge.library import LibraryEntry, LibraryProvider
-from anibridge.list import ListEntry, ListProvider, ListStatus, MappingGraph
+from anibridge.list import (
+    ListEntry,
+    ListProvider,
+    ListStatus,
+    MappingDescriptor,
+    MappingGraph,
+)
+from anibridge.list.base import MappingResolution
 from rapidfuzz import fuzz
 from sqlalchemy import tuple_
 
@@ -174,9 +181,41 @@ class BaseSyncClient[
         self._pin_cache[cache_key] = fields
         return fields
 
+    def _build_mapping_graph(self, *media_items: LibraryEntry) -> MappingGraph | None:
+        """Resolve a mapping graph for the supplied media items."""
+        descriptors: list[MappingDescriptor] = []
+        seen: set[tuple[str, str, str | None]] = set()
+        for media in media_items:
+            for descriptor in media.mapping_descriptors():
+                key = (descriptor[0], descriptor[1], descriptor[2])
+                if key in seen:
+                    continue
+                seen.add(key)
+                descriptors.append(descriptor)
+        if not descriptors:
+            return None
+        return self.animap_client.get_graph_for_descriptors(descriptors)
+
+    def _resolve_list_descriptor(
+        self, mapping: MappingGraph | None, *, scope: str | None
+    ) -> MappingDescriptor | None:
+        """Pick a resolved list descriptor matching an optional scope."""
+        if mapping is None:
+            return None
+        resolutions: Sequence[MappingResolution] = self.list_provider.resolve_mappings(
+            mapping.edges
+        )
+        if not resolutions:
+            return None
+        for resolution in resolutions:
+            provider, entry_id, res_scope = resolution.descriptor
+            if res_scope == scope or (scope is None and res_scope is None):
+                return (provider, entry_id, res_scope)
+        return resolutions[0].descriptor
+
     async def process_media(self, item: ParentMediaT) -> None:
         """Process a single library item."""
-        ids_summary = self._format_external_ids(item.media().ids())
+        ids_summary = self._format_descriptors(item.mapping_descriptors())
         log.debug(
             f"[{self.profile_name}] Processing {item.media_kind.value} "
             f"$$'{item.title}'$$ {ids_summary}"
@@ -329,13 +368,9 @@ class BaseSyncClient[
         )
 
         scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = (
-            self.list_provider.resolve_mappings(mapping, scope=scope)
-            if mapping
-            else None
-        )
+        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
         resolved_list_key = (
-            resolved_list_descriptor.entry_id if resolved_list_descriptor else None
+            resolved_list_descriptor[1] if resolved_list_descriptor else None
         )
 
         debug_title = self._debug_log_title(item=item, child_item=child_item)
@@ -650,13 +685,9 @@ class BaseSyncClient[
                 else None
             )
         scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = (
-            self.list_provider.resolve_mappings(mapping, scope=scope)
-            if mapping
-            else None
-        )
+        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
         list_media_key = (
-            resolved_list_descriptor.entry_id if resolved_list_descriptor else None
+            resolved_list_descriptor[1] if resolved_list_descriptor else None
         )
 
         library_target: LibraryEntry = child_item if child_item is not None else item
@@ -677,12 +708,13 @@ class BaseSyncClient[
             async def get_mapping_entry_id() -> int | None:
                 if resolved_list_descriptor is None:
                     return None
+                provider, entry_id, entry_scope = resolved_list_descriptor
                 entry = (
                     ctx.session.query(AnimapEntry)
                     .filter(
-                        AnimapEntry.provider == resolved_list_descriptor.provider,
-                        AnimapEntry.entry_id == resolved_list_descriptor.entry_id,
-                        AnimapEntry.entry_scope == resolved_list_descriptor.scope,
+                        AnimapEntry.provider == provider,
+                        AnimapEntry.entry_id == entry_id,
+                        AnimapEntry.entry_scope == entry_scope,
                     )
                     .first()
                 )
@@ -822,11 +854,14 @@ class BaseSyncClient[
             return False
         return rule.comparator(current_value, new_value)
 
-    def _format_external_ids(self, ids: dict[str, str]) -> str:
-        """Format external identifiers for debug logging."""
-        if not ids:
+    def _format_descriptors(self, descriptors: Sequence[MappingDescriptor]) -> str:
+        """Format mapping descriptors for debug logging."""
+        if not descriptors:
             return "$${}$$"
-        formatted = ", ".join(f"{key}: {value}" for key, value in ids.items() if value)
+        formatted = ", ".join(
+            f"{provider}:{entry}{f':{scope}' if scope else ''}"
+            for provider, entry, scope in descriptors
+        )
         return f"$${{{formatted}}}$$"
 
     def _format_diff(self, diff: dict[str, tuple[Any, Any]]) -> str:
@@ -978,15 +1013,11 @@ class BaseSyncClient[
         if entry is not None:
             return entry
         scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = (
-            self.list_provider.resolve_mappings(mapping, scope=scope)
-            if mapping
-            else None
-        )
+        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
         if resolved_list_descriptor is None:
             raise ValueError(
                 f"Unable to determine list media key for {item.media_kind.value} "
                 f"{self._debug_log_title(item=item, child_item=child_item)}"
             )
 
-        return await self.list_provider.build_entry(resolved_list_descriptor.entry_id)
+        return await self.list_provider.build_entry(resolved_list_descriptor[1])

@@ -29,15 +29,9 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         ]
     ]:
         """Map a library movie to its corresponding list entry."""
-        mapping_graph = self.animap_client.get_graph_for_ids(item.media().ids())
-        list_media_descriptor = (
-            self.list_provider.resolve_mappings(mapping_graph, scope=None)
-            if mapping_graph
-            else None
-        )
-        list_media_key = (
-            list_media_descriptor.entry_id if list_media_descriptor else None
-        )
+        mapping_graph = self._build_mapping_graph(item)
+        list_media_descriptor = self._resolve_list_descriptor(mapping_graph, scope=None)
+        list_media_key = list_media_descriptor[1] if list_media_descriptor else None
 
         if list_media_key is not None:
             entry = await self.list_provider.get_entry(str(list_media_key))
@@ -168,7 +162,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         entry: ListEntry,
         mapping: MappingGraph | None,
     ) -> str | None:
-        return await item.review()
+        return await item.review
 
     def _derive_scope(
         self, *, item: LibraryMovie, child_item: LibraryMovie | None
@@ -192,17 +186,8 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         media_key: str | None,
     ) -> str:
         if not media_key and mapping is not None:
-            list_media_descriptor = self.list_provider.resolve_mappings(
-                mapping, scope=None
-            )
-            media_key = (
-                list_media_descriptor.entry_id if list_media_descriptor else None
-            )
+            resolved = self._resolve_list_descriptor(mapping, scope=None)
+            media_key = resolved[1] if resolved else None
         if not media_key and entry is not None:
             media_key = entry.media().key
-        ids = {
-            "library_key": child_item.key or "",
-            "list_key": media_key or "",
-            **item.media().ids(),
-        }
-        return self._format_external_ids(ids)
+        return self._format_descriptors(item.mapping_descriptors())

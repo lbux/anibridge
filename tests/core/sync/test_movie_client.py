@@ -176,7 +176,7 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
         ),
     )
 
-    movie = make_movie(view_count=1)
+    movie = make_movie(view_count=1, ids={"anilist": "101"})
     library_movie = cast(LibraryMovieProtocol, movie)
     results = [result async for result in movie_client.map_media(library_movie)]
 
@@ -257,7 +257,12 @@ async def test_process_media_syncs_movie_and_writes_history(
     )
 
     history = [make_history_entry("movie-1", ts=datetime(2025, 1, 1, tzinfo=UTC))]
-    movie = make_movie(view_count=1, user_rating=90, history=history)
+    movie = make_movie(
+        view_count=1,
+        user_rating=90,
+        history=history,
+        ids={"anilist": "301"},
+    )
 
     await movie_client.process_media(cast(LibraryMovieProtocol, movie))
 

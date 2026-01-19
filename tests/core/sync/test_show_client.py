@@ -17,7 +17,7 @@ from anibridge.library import (
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
 
-from src.core.animap import AnimapDescriptor, AnimapEdge, AnimapGraph
+from src.core.animap import AnimapEdge, AnimapGraph
 from src.core.sync.show import ShowSyncClient
 from src.models.db.sync_history import SyncHistory
 from tests.core.sync.fakes import (
@@ -94,15 +94,15 @@ def build_show(
 
 
 def make_graph(
-    source: tuple[str, str, str],
-    target: tuple[str, str, str],
+    source: tuple[str, str, str | None],
+    target: tuple[str, str, str | None],
     source_range: str = "s1",
     destination_range: str | None = None,
 ) -> AnimapGraph:
     """Helper to build a one-edge mapping graph for show tests."""
     edge = AnimapEdge(
-        source=AnimapDescriptor(*source),
-        destination=AnimapDescriptor(*target),
+        source=source,
+        destination=target,
         source_range=source_range,
         destination_range=destination_range,
     )
@@ -115,7 +115,10 @@ async def test_process_media_syncs_show_and_writes_history(
 ) -> None:
     """Processing a show syncs its episodes and writes history entries."""
     provider = cast(FakeListProvider, show_client.list_provider)
-    show, _, episodes = build_show(view_counts=[2, 2])
+    show, _, episodes = build_show(
+        view_counts=[2, 2],
+        season_kwargs={"mapping_descriptors": [("anilist", "400", "s1")]},
+    )
     entry = FakeListEntry(
         provider=provider,
         key="400",
@@ -147,7 +150,10 @@ async def test_process_media_syncs_show_and_writes_history(
 async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) -> None:
     """Mapping graphs resolve to list entries when provider supports it."""
     provider = cast(FakeListProvider, show_client.list_provider)
-    show, season, episodes = build_show(view_counts=[1, 1])
+    show, season, episodes = build_show(
+        view_counts=[1, 1],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
     entry = FakeListEntry(
         provider=provider,
         key="401",

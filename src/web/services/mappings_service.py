@@ -12,7 +12,7 @@ from sqlalchemy.sql import func, or_, select
 
 from src.config.database import db
 from src.config.settings import get_config
-from src.core.animap import AnimapDescriptor
+from src.core.animap import descriptor_key, parse_mapping_descriptor
 from src.exceptions import (
     AniListFilterError,
     AniListSearchError,
@@ -78,11 +78,7 @@ class MappingItem:
             "provider": self.provider,
             "entry_id": self.entry_id,
             "scope": self.scope,
-            "descriptor": AnimapDescriptor(
-                provider=self.provider,
-                entry_id=self.entry_id,
-                scope=self.scope,
-            ).key(),
+            "descriptor": descriptor_key((self.provider, self.entry_id, self.scope)),
             "edges": [edge.__dict__ for edge in self.edges],
             "custom": self.custom,
             "sources": self.sources,
@@ -1040,18 +1036,19 @@ class MappingsService:
         Returns:
             dict[str, Any]: The mapping item.
         """
-        parsed = AnimapDescriptor.parse(descriptor)
+        parsed = parse_mapping_descriptor(descriptor)
+        provider, entry_id, scope = parsed
         with db() as ctx:
             scope_clause = (
                 AnimapEntry.entry_scope.is_(None)
-                if parsed.scope is None
-                else AnimapEntry.entry_scope == parsed.scope
+                if scope is None
+                else AnimapEntry.entry_scope == scope
             )
             entry = (
                 ctx.session.execute(
                     select(AnimapEntry).where(
-                        AnimapEntry.provider == parsed.provider,
-                        AnimapEntry.entry_id == parsed.entry_id,
+                        AnimapEntry.provider == provider,
+                        AnimapEntry.entry_id == entry_id,
                         scope_clause,
                     )
                 )
