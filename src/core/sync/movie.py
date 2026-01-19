@@ -30,7 +30,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
     ]:
         """Map a library movie to its corresponding list entry."""
         mapping_graph = self._build_mapping_graph(item)
-        list_media_descriptor = self._resolve_list_descriptor(mapping_graph, scope=None)
+        list_media_descriptor = self._resolve_list_descriptor(mapping_graph)
         list_media_key = list_media_descriptor[1] if list_media_descriptor else None
 
         if list_media_key is not None:
@@ -185,7 +185,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         mapping: MappingGraph | None,
         media_key: str | None,
     ) -> str:
-        resolved = self._resolve_list_descriptor(mapping, scope=None)
+        resolved = self._resolve_list_descriptor(mapping)
         formatted = [descriptor_key(resolved)] if resolved else []
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()

@@ -69,12 +69,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             entry_cache[key] = entry
             return entry
 
-        def resolve_key(
-            mapping_graph: MappingGraph | None, scope: str
-        ) -> tuple[str | None, bool]:
-            """Attempt to resolve a media key for the given scope."""
+        def resolve_key(mapping_graph: MappingGraph | None) -> tuple[str | None, bool]:
+            """Attempt to resolve a media key for the given mapping graph."""
             if mapping_graph:
-                resolved = self._resolve_list_descriptor(mapping_graph, scope=scope)
+                resolved = self._resolve_list_descriptor(mapping_graph)
                 if resolved is not None:
                     return str(resolved[1]), True
             return None, False
@@ -84,7 +82,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         ) -> tuple[str | None, ListEntry | None, MappingGraph | None]:
             """Resolve a media key and list entry for the given season."""
             mapping_graph = self._build_mapping_graph(season, item)
-            key, mapped = resolve_key(mapping_graph, f"s{season_index}")
+            key, mapped = resolve_key(mapping_graph)
             if key:
                 entry = await get_entry_cached(key)
                 return key, entry, (mapping_graph if mapped else None)
@@ -335,9 +333,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         mapping: MappingGraph | None,
         media_key: str | None,
     ) -> str:
-        resolved = self._resolve_list_descriptor(
-            mapping, scope=f"s{child_item.index}" if child_item else None
-        )
+        resolved = self._resolve_list_descriptor(mapping)
         formatted = [descriptor_key(resolved)] if resolved else []
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()

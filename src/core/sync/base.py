@@ -195,9 +195,9 @@ class BaseSyncClient[
         return self.animap_client.get_graph_for_descriptors(descriptors)
 
     def _resolve_list_descriptor(
-        self, mapping: MappingGraph | None, *, scope: str | None
+        self, mapping: MappingGraph | None
     ) -> MappingDescriptor | None:
-        """Pick a resolved list descriptor matching an optional scope."""
+        """Pick the first resolved list descriptor from the list provider."""
         if mapping is None:
             return None
         resolutions: Sequence[MappingResolution] = self.list_provider.resolve_mappings(
@@ -205,10 +205,6 @@ class BaseSyncClient[
         )
         if not resolutions:
             return None
-        for resolution in resolutions:
-            provider, entry_id, res_scope = resolution.descriptor
-            if res_scope == scope or (scope is None and res_scope is None):
-                return (provider, entry_id, res_scope)
         return resolutions[0].descriptor
 
     async def process_media(self, item: ParentMediaT) -> None:
@@ -374,8 +370,9 @@ class BaseSyncClient[
             mapping=mapping,
         )
 
-        scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
+        resolved_list_descriptor: tuple[str, str, str | None] | None = (
+            self._resolve_list_descriptor(mapping)
+        )
         resolved_list_key = (
             resolved_list_descriptor[1] if resolved_list_descriptor else None
         )
@@ -691,8 +688,7 @@ class BaseSyncClient[
                 if before_snapshot
                 else None
             )
-        scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
+        resolved_list_descriptor = self._resolve_list_descriptor(mapping)
         list_media_key = (
             resolved_list_descriptor[1] if resolved_list_descriptor else None
         )
@@ -1009,8 +1005,7 @@ class BaseSyncClient[
         """Materialize a list entry for synchronization, constructing when missing."""
         if entry is not None:
             return entry
-        scope = self._derive_scope(item=item, child_item=child_item)
-        resolved_list_descriptor = self._resolve_list_descriptor(mapping, scope=scope)
+        resolved_list_descriptor = self._resolve_list_descriptor(mapping)
         if resolved_list_descriptor is None:
             raise ValueError(
                 f"Unable to determine list media key for {item.media_kind.value} "
