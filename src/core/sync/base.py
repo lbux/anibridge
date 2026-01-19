@@ -146,10 +146,8 @@ class BaseSyncClient[
             SyncField.FINISHED_AT: self._calculate_finished_at,
         }
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Clear any LRU/TTL caches defined on the client."""
-        self.library_provider.clear_cache()
-        self.list_provider.clear_cache()
         self._pin_cache.clear()
         for v in dir(self):
             attr = getattr(self, v)

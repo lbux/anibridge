@@ -61,9 +61,6 @@ class BridgeClient:
         await self.library_provider.initialize()
         await self.list_provider.initialize()
 
-        await self.library_provider.clear_cache()
-        await self.list_provider.clear_cache()
-
         await self._backup_list()
 
         library_user = self.library_provider.user()
@@ -82,11 +79,6 @@ class BridgeClient:
         log.debug(f"[{self.profile_name}] Closing bridge client")
         await self.list_provider.close()
         await self.library_provider.close()
-
-    async def refresh_list_provider(self) -> None:
-        """Reinitialize the list provider, refreshing any remote state."""
-        await self.list_provider.initialize()
-        await self.list_provider.clear_cache()
 
     async def __aenter__(self) -> BridgeClient:
         """Enter async context manager."""
@@ -212,8 +204,8 @@ class BridgeClient:
             profile_name=self.profile_name,
         )
 
-        movie_sync.clear_cache()
-        show_sync.clear_cache()
+        await movie_sync.clear_cache()
+        await show_sync.clear_cache()
 
         sections = list(await self.library_provider.get_sections())
 

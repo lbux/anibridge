@@ -487,7 +487,8 @@ class SchedulerClient:
 
                     log.info("Reinitializing all list providers")
                     for bridge_client in self.bridge_clients.values():
-                        await bridge_client.refresh_list_provider()
+                        await bridge_client.list_provider.clear_cache()
+                        await bridge_client._backup_list()
                 except Exception as e:
                     log.error(f"Daily database sync failed: {e}", exc_info=True)
 
