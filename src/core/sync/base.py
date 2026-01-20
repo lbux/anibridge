@@ -30,6 +30,7 @@ from src.core.sync.stats import (
 from src.models.db.animap import AnimapEntry
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
+from src.utils.terminal import ARROW
 from src.utils.types import Comparable
 
 if TYPE_CHECKING:
@@ -859,12 +860,11 @@ class BaseSyncClient[
 
     def _format_diff(self, diff: dict[str, tuple[Any, Any]]) -> str:
         """Format a diff dictionary for logging."""
-        parts: list[str] = []
-        for field, (before, after) in diff.items():
-            parts.append(
-                f"{field}: {self._format_value(before)} -> {self._format_value(after)}"
-            )
-        return ", ".join(parts)
+        parts = [
+            f"{field}: {self._format_value(before)} {ARROW} {self._format_value(after)}"
+            for field, (before, after) in sorted(diff.items(), key=lambda item: item[0])
+        ]
+        return " | ".join(parts)
 
     @staticmethod
     def _format_value(value: Any) -> str:

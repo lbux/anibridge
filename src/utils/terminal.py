@@ -7,7 +7,9 @@ from functools import lru_cache
 
 import colorama
 
-__all__ = ["supports_color", "supports_utf8"]
+__all__ = ["ARROW", "supports_color", "supports_utf8"]
+
+ARROW = ARROW = "→" if sys.stdout.encoding == "utf-8" else "->"
 
 
 @lru_cache(maxsize=1)
