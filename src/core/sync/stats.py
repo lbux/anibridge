@@ -5,12 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from anibridge.library import (
-    LibraryEntry,
-    LibraryEpisode,
-    LibrarySeason,
-    MediaKind,
-)
+from anibridge.library import LibraryEntry, LibraryEpisode, LibrarySeason, MediaKind
 from anibridge.list import ListEntry, ListStatus
 from pydantic import BaseModel
 
@@ -55,12 +50,14 @@ class ItemIdentifier(BaseModel):
             "repr": repr(item),
         }
 
-        if isinstance(item, LibraryEpisode):
+        if item.media_kind == MediaKind.EPISODE:
+            item = cast(LibraryEpisode, item)
             show = cast(LibraryEpisode, item).show()
             kwargs["parent_title"] = show.title if show else None
             kwargs["season_index"] = item.season_index
             kwargs["episode_index"] = item.index
-        elif isinstance(item, LibrarySeason):
+        elif item.media_kind == MediaKind.SEASON:
+            item = cast(LibrarySeason, item)
             show = cast(LibrarySeason, item).show()
             kwargs["parent_title"] = show.title if show else None
             kwargs["season_index"] = item.index
@@ -270,8 +267,6 @@ class SyncStats(BaseModel):
             self.get_grandchild_items_by_outcome(
                 SyncOutcome.SYNCED,
                 SyncOutcome.SKIPPED,
-                SyncOutcome.FAILED,
-                SyncOutcome.NOT_FOUND,
                 SyncOutcome.DELETED,
             )
         )

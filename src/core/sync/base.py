@@ -302,6 +302,8 @@ class BaseSyncClient[
                 list_media_key=None,
                 outcome=SyncOutcome.NOT_FOUND,
             )
+            if trackable:
+                self.sync_stats.track_items(trackable, SyncOutcome.NOT_FOUND)
             self.sync_stats.track_item(item_identifier, SyncOutcome.NOT_FOUND)
 
     @abstractmethod

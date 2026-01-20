@@ -259,13 +259,15 @@ class BridgeClient:
                 f"in {duration.total_seconds():.2f} seconds"
             )
 
-            unprocessed_items = sync_stats.get_grandchild_items_by_outcome(
-                SyncOutcome.PENDING
+            uncovered_items = sync_stats.get_grandchild_items_by_outcome(
+                SyncOutcome.NOT_FOUND,
+                SyncOutcome.FAILED,
+                SyncOutcome.PENDING,
             )
-            if unprocessed_items:
+            if uncovered_items:
                 log.debug(
-                    f"[{self.profile_name}] Unprocessed items: "
-                    f"{', '.join([repr(item) for item in unprocessed_items])}"
+                    f"[{self.profile_name}] Uncovered items: "
+                    f"{', '.join([repr(item) for item in uncovered_items])}"
                 )
 
         except Exception as exc:
