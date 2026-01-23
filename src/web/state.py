@@ -11,10 +11,12 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from src.core.anilist import AniListClient
+from src.exceptions import ProfileNotFoundError, SchedulerNotInitializedError
 
-__all__ = ["AppState", "get_app_state"]
+__all__ = ["AppState", "get_app_state", "get_bridge"]
 
 if TYPE_CHECKING:
+    from src.core.bridge import BridgeClient
     from src.core.sched import SchedulerClient
 
 
@@ -83,3 +85,14 @@ def get_app_state() -> AppState:
         AppState: The application state instance.
     """
     return AppState()
+
+
+def get_bridge(profile: str) -> BridgeClient:
+    """Return the bridge client for a specific profile."""
+    scheduler = get_app_state().scheduler
+    if not scheduler:
+        raise SchedulerNotInitializedError("Scheduler not available")
+    bridge = scheduler.bridge_clients.get(profile)
+    if not bridge:
+        raise ProfileNotFoundError(f"Unknown profile: {profile}")
+    return bridge

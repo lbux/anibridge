@@ -17,19 +17,15 @@ from src.core.sync.stats import EntrySnapshot
 from src.exceptions import (
     HistoryItemNotFoundError,
     HistoryPermissionError,
-    ProfileNotFoundError,
     SchedulerNotInitializedError,
 )
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.models.schemas.provider import ProviderMediaMetadata
-from src.web.state import get_app_state
+from src.web.state import get_app_state, get_bridge
 
 if TYPE_CHECKING:
-    from anibridge.library import LibraryProvider, LibrarySection
-    from anibridge.list import ListProvider
-
-    from src.core.bridge import BridgeClient
+    from anibridge.library import LibrarySection
 
 __all__ = ["HistoryService", "get_history_service"]
 
@@ -122,7 +118,7 @@ class HistoryService:
                 if not keys:
                     continue
                 metadata = await self._fetch_list_metadata_batch(
-                    profile, namespace, tuple(sorted(keys))
+                    profile, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
                     list_metadata_map[(namespace, key)] = payload
@@ -133,7 +129,7 @@ class HistoryService:
                 if not keys:
                     continue
                 metadata = await self._fetch_library_metadata_batch(
-                    profile, namespace, section_key, tuple(sorted(keys))
+                    profile, section_key, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
                     library_metadata_map[(namespace, key)] = payload
@@ -179,36 +175,23 @@ class HistoryService:
 
         return dto_items
 
-    def _get_bridge(self, profile: str) -> BridgeClient:
-        """Return the bridge client for a specific profile."""
-        scheduler = get_app_state().scheduler
-        if not scheduler:
-            raise SchedulerNotInitializedError("Scheduler not available")
-        bridge = scheduler.bridge_clients.get(profile)
-        if not bridge:
-            raise ProfileNotFoundError(f"Unknown profile: {profile}")
-        return bridge
-
     @alru_cache(ttl=300)
     async def _fetch_list_metadata_batch(
-        self, profile: str, namespace: str, keys_tuple: tuple[str, ...]
+        self, profile: str, media_keys: tuple[str, ...]
     ) -> dict[str, ProviderMediaMetadata]:
         """Fetch list provider metadata for a batch of media keys."""
-        if not keys_tuple:
+        if not media_keys:
             return {}
-        bridge = self._get_bridge(profile)
-        provider: ListProvider = bridge.list_provider
-        if namespace != provider.NAMESPACE:
-            return {}
+        bridge = get_bridge(profile)
 
-        entries = await provider.get_entries_batch(list(keys_tuple))
+        entries = await bridge.list_provider.get_entries_batch(list(media_keys))
         metadata: dict[str, ProviderMediaMetadata] = {}
         for entry in entries:
             if entry is None:
                 continue
             media = entry.media()
             metadata[media.key] = ProviderMediaMetadata(
-                namespace=namespace,
+                namespace=bridge.list_provider.NAMESPACE,
                 key=media.key,
                 title=media.title,
                 poster_url=media.poster_image,
@@ -221,19 +204,14 @@ class HistoryService:
     async def _fetch_library_metadata_batch(
         self,
         profile: str,
-        namespace: str,
         section_key: str | None,
         media_keys: tuple[str, ...],
     ) -> dict[str, ProviderMediaMetadata]:
         if not media_keys:
             return {}
+        bridge = get_bridge(profile)
 
-        bridge = self._get_bridge(profile)
-        provider: LibraryProvider = bridge.library_provider
-        if namespace != provider.NAMESPACE:
-            return {}
-
-        sections = await provider.get_sections()
+        sections = await bridge.library_provider.get_sections()
         target_sections: list[LibrarySection]
         if section_key is None:
             target_sections = list(sections)
@@ -249,14 +227,16 @@ class HistoryService:
         for section in target_sections:
             if not remaining:
                 break
-            items = await provider.list_items(section, keys=list(remaining))
+            items = await bridge.library_provider.list_items(
+                section, keys=list(remaining)
+            )
             for item in items:
                 key = str(item.key)
                 if key not in remaining:
                     continue
                 remaining.discard(key)
                 metadata[key] = ProviderMediaMetadata(
-                    namespace=namespace,
+                    namespace=bridge.library_provider.NAMESPACE,
                     key=key,
                     title=item.title,
                     poster_url=item.media().poster_image,
@@ -303,7 +283,13 @@ class HistoryService:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
         """
-        base_filters = [SyncHistory.profile_name == profile]
+        bridge = get_bridge(profile)
+
+        base_filters = [
+            SyncHistory.profile_name == profile,
+            SyncHistory.library_namespace == bridge.library_provider.NAMESPACE,
+            SyncHistory.list_namespace == bridge.list_provider.NAMESPACE,
+        ]
         if outcome:
             base_filters.append(SyncHistory.outcome == outcome)
 
@@ -382,7 +368,7 @@ class HistoryService:
             HistoryItemNotFoundError: If the specified item does not exist.
         """
         log.info(f"Undoing history item id={item_id} for profile {profile}")
-        bridge = self._get_bridge(profile)
+        bridge = get_bridge(profile)
         list_provider = bridge.list_provider
 
         with db() as ctx:
@@ -501,7 +487,7 @@ class HistoryService:
         if not row:
             raise HistoryItemNotFoundError("Not found")
 
-        bridge = self._get_bridge(profile)
+        bridge = get_bridge(profile)
 
         if row.library_namespace != bridge.library_provider.NAMESPACE:
             raise HistoryPermissionError(

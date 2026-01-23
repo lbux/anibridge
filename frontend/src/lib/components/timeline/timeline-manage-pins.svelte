@@ -98,7 +98,7 @@
         try {
             if (!fields.length) {
                 const res = await apiFetch(
-                    `/api/pins/${profile}/${identifier.namespace}/${identifier.mediaKey}`,
+                    `/api/pins/${profile}/${identifier.mediaKey}`,
                     { method: "DELETE" },
                     { successMessage: "Pins cleared" },
                 );
@@ -108,7 +108,7 @@
                 return;
             }
             const res = await apiFetch(
-                `/api/pins/${profile}/${identifier.namespace}/${identifier.mediaKey}?with_media=true`,
+                `/api/pins/${profile}/${identifier.mediaKey}?with_media=true`,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },

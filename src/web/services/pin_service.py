@@ -11,6 +11,7 @@ from src.config.database import db
 from src.config.settings import SyncField
 from src.models.db.pin import Pin
 from src.models.schemas.provider import ProviderMediaMetadata
+from src.web.state import get_bridge
 
 __all__ = [
     "PinEntry",
@@ -91,26 +92,31 @@ class PinService:
             for value in self.allowed_fields
         ]
 
-    def list_pins(self, profile: str) -> list[PinEntry]:
+    def _list_pins(self, profile: str) -> list[PinEntry]:
         """Return all pins for a profile ordered by most recent."""
+        bridge = get_bridge(profile)
         with db() as ctx:
             rows = (
                 ctx.session.query(Pin)
-                .filter(Pin.profile_name == profile)
+                .filter(
+                    Pin.profile_name == profile,
+                    Pin.list_namespace == bridge.list_provider.NAMESPACE,
+                )
                 .order_by(Pin.updated_at.desc())
                 .all()
             )
 
         return [self._serialize(row) for row in rows]
 
-    def get_pin(self, profile: str, namespace: str, media_key: str) -> PinEntry | None:
+    def _get_pin(self, profile: str, media_key: str) -> PinEntry | None:
         """Return a single pin entry if it exists."""
+        bridge = get_bridge(profile)
         with db() as ctx:
             pin = (
                 ctx.session.query(Pin)
                 .filter(
                     Pin.profile_name == profile,
-                    Pin.list_namespace == namespace,
+                    Pin.list_namespace == bridge.list_provider.NAMESPACE,
                     Pin.list_media_key == media_key,
                 )
                 .first()
@@ -118,20 +124,21 @@ class PinService:
 
         return self._serialize(pin) if pin else None
 
-    def upsert_pin(
-        self, profile: str, namespace: str, media_key: str, fields: Iterable[str]
+    def _upsert_pin(
+        self, profile: str, media_key: str, fields: Iterable[str]
     ) -> PinEntry:
         """Create or update a pin configuration."""
         sanitized = self._sanitize_fields(fields)
         if not sanitized:
             raise ValueError("At least one field must be provided")
+        bridge = get_bridge(profile)
 
         with db() as ctx:
             pin = (
                 ctx.session.query(Pin)
                 .filter(
                     Pin.profile_name == profile,
-                    Pin.list_namespace == namespace,
+                    Pin.list_namespace == bridge.list_provider.NAMESPACE,
                     Pin.list_media_key == media_key,
                 )
                 .first()
@@ -141,7 +148,7 @@ class PinService:
             if not pin:
                 pin = Pin(
                     profile_name=profile,
-                    list_namespace=namespace,
+                    list_namespace=bridge.list_provider.NAMESPACE,
                     list_media_key=media_key,
                     fields=sanitized,
                     created_at=now,
@@ -157,14 +164,98 @@ class PinService:
 
         return self._serialize(pin)
 
-    def delete_pin(self, profile: str, namespace: str, media_key: str) -> None:
+    async def _fetch_list_metadata(
+        self, profile: str, media_keys: list[str]
+    ) -> dict[str, ProviderMediaMetadata]:
+        if not media_keys:
+            return {}
+        bridge = get_bridge(profile)
+        entries = await bridge.list_provider.get_entries_batch(media_keys)
+        metadata: dict[str, ProviderMediaMetadata] = {}
+        for entry in entries:
+            if entry is None:
+                continue
+            media = entry.media()
+            metadata[media.key] = ProviderMediaMetadata(
+                namespace=bridge.list_provider.NAMESPACE,
+                key=media.key,
+                title=media.title,
+                poster_url=media.poster_image,
+                external_url=media.external_url,
+                labels=(list(media.labels) if media.labels else None),
+            )
+        return metadata
+
+    async def list_pins(self, profile: str, with_media: bool = False) -> list[PinEntry]:
+        """Return all pins for a profile ordered by most recent.
+
+        Args:
+            profile (str): Profile name.
+            with_media (bool): When True, include provider metadata.
+        """
+        pins = self._list_pins(profile)
+        if with_media and pins:
+            metadata = await self._fetch_list_metadata(
+                profile, [pin.list_media_key for pin in pins]
+            )
+            return [
+                pin.model_copy(update={"media": metadata.get(pin.list_media_key)})
+                for pin in pins
+            ]
+        return pins
+
+    async def get_pin(
+        self, profile: str, media_key: str, with_media: bool = False
+    ) -> PinEntry | None:
+        """Return a single pin entry if it exists.
+
+        Args:
+            profile (str): Profile name.
+            media_key (str): Media key.
+            with_media (bool): When True, include provider metadata.
+        """
+        entry = self._get_pin(profile, media_key)
+        if not entry:
+            return None
+        if with_media:
+            metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
+            return entry.model_copy(
+                update={"media": metadata.get(entry.list_media_key)}
+            )
+        return entry
+
+    async def upsert_pin(
+        self,
+        profile: str,
+        media_key: str,
+        fields: Iterable[str],
+        with_media: bool = False,
+    ) -> PinEntry:
+        """Create or update a pin configuration.
+
+        Args:
+            profile (str): Profile name.
+            media_key (str): Media key.
+            fields (Iterable[str]): Pin field list.
+            with_media (bool): When True, include provider metadata.
+        """
+        entry = self._upsert_pin(profile, media_key, fields)
+        if with_media:
+            metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
+            return entry.model_copy(
+                update={"media": metadata.get(entry.list_media_key)}
+            )
+        return entry
+
+    def delete_pin(self, profile: str, media_key: str) -> None:
         """Remove a pin configuration if it exists."""
+        bridge = get_bridge(profile)
         with db() as ctx:
             pin = (
                 ctx.session.query(Pin)
                 .filter(
                     Pin.profile_name == profile,
-                    Pin.list_namespace == namespace,
+                    Pin.list_namespace == bridge.list_provider.NAMESPACE,
                     Pin.list_media_key == media_key,
                 )
                 .first()

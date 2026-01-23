@@ -18,8 +18,8 @@
     import TimelineDiffViewer from "$lib/components/timeline/timeline-diff-viewer.svelte";
     import TimelineManagePins from "$lib/components/timeline/timeline-manage-pins.svelte";
     import type { ItemDiffUi, OutcomeMeta } from "$lib/components/timeline/types";
-    import { titleCase } from "$lib/components/timeline/utils";
     import type { HistoryItem } from "$lib/types/api";
+    import { titleCase } from "$lib/utils/text";
 
     export interface PinsPanelContext {
         item: HistoryItem;

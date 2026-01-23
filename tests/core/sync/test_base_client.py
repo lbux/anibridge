@@ -261,6 +261,7 @@ def test_get_pinned_fields_caches_results(stub_client: StubSyncClient, sync_db) 
 
     fields = stub_client._get_pinned_fields("anilist", "100")
     assert fields == ["status", "progress"]
+    assert stub_client._get_pinned_fields("anilist", "100") == ["status", "progress"]
 
     # Delete the row to prove cached values are reused.
     with sync_db as ctx:

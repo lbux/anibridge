@@ -17,7 +17,7 @@ from src.exceptions import (
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.web.services.history_service import HistoryService, get_history_service
-from src.web.state import get_app_state
+from src.web.state import get_app_state, get_bridge
 
 
 @dataclass
@@ -223,26 +223,24 @@ async def test_history_service_delete_item_removes_row(history_env):
         assert ctx.session.query(SyncHistory).count() == 0
 
 
-def test_history_service_get_bridge_requires_scheduler():
-    """_get_bridge raises when the scheduler is missing."""
-    service = HistoryService()
+def test_history_serviceget_bridge_requires_scheduler():
+    """get_bridge raises when the scheduler is missing."""
     state = get_app_state()
     original = state.scheduler
     state.scheduler = None
     try:
         with pytest.raises(SchedulerNotInitializedError):
-            service._get_bridge("profile")
+            get_bridge("profile")
     finally:
         state.scheduler = original
 
 
-def test_history_service_get_bridge_requires_known_profile(history_env):
-    """_get_bridge raises when the profile is not configured."""
-    service = HistoryService()
+def test_history_serviceget_bridge_requires_known_profile(history_env):
+    """get_bridge raises when the profile is not configured."""
     history_env.scheduler.bridge_clients = {}
     try:
         with pytest.raises(ProfileNotFoundError):
-            service._get_bridge("missing")
+            get_bridge("missing")
     finally:
         history_env.scheduler.bridge_clients = {"profile": history_env.bridge}
 
@@ -305,16 +303,14 @@ async def test_history_service_undo_item_deletes_entry_and_fails(history_env):
 
 @pytest.mark.asyncio
 async def test_history_service_fetch_helpers_handle_mismatches(history_env):
-    """Metadata helpers should early exit when namespaces or sections mismatch."""
+    """Metadata helpers should return list metadata and filter library sections."""
     service = HistoryService()
 
-    list_result = await service._fetch_list_metadata_batch(
-        "profile", "other", ("lst1",)
-    )
-    assert list_result == {}
+    list_result = await service._fetch_list_metadata_batch("profile", ("lst1",))
+    assert list_result["lst1"].title == "List lst1"
 
     library_result = await service._fetch_library_metadata_batch(
-        "profile", "_dummy-library", "missing", ("lib1",)
+        "profile", "missing", ("lib1",)
     )
     assert library_result == {}
 

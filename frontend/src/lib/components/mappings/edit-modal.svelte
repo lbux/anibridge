@@ -165,7 +165,11 @@
         return buildDescriptor(provider, entryId, scope);
     }
 
-    function setDescriptorFields(provider: string, entryId: string, scope: string | null) {
+    function setDescriptorFields(
+        provider: string,
+        entryId: string,
+        scope: string | null,
+    ) {
         descriptor = { provider, entryId, scope: scope ?? "" };
     }
 
@@ -181,7 +185,7 @@
                 key: entry.descriptor,
                 provider: isCustomEntry ? entry.provider : "",
                 entry_id: isCustomEntry ? entry.entry_id : "",
-                scope: isCustomEntry ? entry.scope ?? "" : "",
+                scope: isCustomEntry ? (entry.scope ?? "") : "",
                 provider_placeholder: entry.provider,
                 entry_id_placeholder: entry.entry_id,
                 scope_placeholder: entry.scope ?? "",
@@ -349,8 +353,7 @@
                 entry.provider_placeholder.trim() || entry.provider.trim();
             const originalEntryId =
                 entry.entry_id_placeholder.trim() || entry.entry_id.trim();
-            const originalScope =
-                entry.scope_placeholder.trim() || entry.scope.trim();
+            const originalScope = entry.scope_placeholder.trim() || entry.scope.trim();
             const originalDescriptor =
                 entry.original_descriptor ||
                 (originalProvider && originalEntryId
@@ -370,7 +373,7 @@
                 payloadTargets.push({
                     provider: originalProvider || provider,
                     entry_id: originalEntryId || entryId,
-                    scope: (originalScope || scope) || null,
+                    scope: originalScope || scope || null,
                     ranges: [],
                     deleted: true,
                 });

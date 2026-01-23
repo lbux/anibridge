@@ -1,6 +1,7 @@
 """Unit tests for the pin management service."""
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +9,27 @@ from src.config.database import db
 from src.config.settings import SyncField
 from src.models.db.pin import Pin
 from src.web.services.pin_service import PinService, UpdatePinPayload
+from src.web.state import get_app_state
+
+
+class DummyListProvider:
+    """Minimal list provider stub for pin service tests."""
+
+    NAMESPACE = "anilist"
+
+    async def get_entries_batch(self, keys):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _pin_scheduler():
+    """Attach a scheduler with a list provider for pin service tests."""
+    state = get_app_state()
+    original = state.scheduler
+    bridge = SimpleNamespace(list_provider=DummyListProvider())
+    state.scheduler = SimpleNamespace(bridge_clients={"default": bridge})
+    yield
+    state.scheduler = original
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +81,8 @@ def test_update_pin_payload_normalizes_and_validates():
         UpdatePinPayload(fields=["missing"]).normalized()
 
 
-def test_pin_service_lists_and_serializes_entries():
+@pytest.mark.asyncio
+async def test_pin_service_lists_and_serializes_entries():
     """Return entries ordered by most recent update and serialize fields."""
     service = PinService()
     _insert_pin(list_media_key="1", fields=[SyncField.STATUS.value])
@@ -69,38 +92,37 @@ def test_pin_service_lists_and_serializes_entries():
         updated_at=datetime.now(UTC),
     )
 
-    pins = service.list_pins("default")
+    pins = await service.list_pins("default")
     assert [pin.list_media_key for pin in pins] == ["2", "1"]
     assert pins[0].fields == [SyncField.USER_RATING.value]
 
-    fetched = service.get_pin("default", newer.list_namespace, newer.list_media_key)
+    fetched = await service.get_pin("default", newer.list_media_key)
     assert fetched is not None
     assert fetched.fields == newer.fields
 
 
-def test_pin_service_upsert_and_delete_roundtrip():
+@pytest.mark.asyncio
+async def test_pin_service_upsert_and_delete_roundtrip():
     """Upsert pins, refresh timestamps, and delete entries cleanly."""
     service = PinService()
 
-    created = service.upsert_pin(
+    created = await service.upsert_pin(
         "default",
-        "anilist",
         "abc",
         [SyncField.PROGRESS.value, SyncField.STATUS.value],
     )
     assert sorted(created.fields) == [SyncField.PROGRESS.value, SyncField.STATUS.value]
 
-    updated = service.upsert_pin(
+    updated = await service.upsert_pin(
         "default",
-        "anilist",
         "abc",
         [SyncField.REPEATS.value],
     )
     assert updated.fields == [SyncField.REPEATS.value]
     assert updated.updated_at >= created.updated_at
 
-    service.delete_pin("default", "anilist", "abc")
-    assert service.get_pin("default", "anilist", "abc") is None
+    service.delete_pin("default", "abc")
+    assert await service.get_pin("default", "abc") is None
 
     with pytest.raises(ValueError):
-        service.upsert_pin("default", "anilist", "xyz", [])
+        await service.upsert_pin("default", "xyz", [])

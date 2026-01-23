@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
 
-    import { LoaderCircle, Pin, RefreshCcw, Search, X } from "@lucide/svelte";
+    import { LoaderCircle, Pin, RefreshCcw, X } from "@lucide/svelte";
 
     import PinFieldsEditor from "$lib/components/timeline/pin-fields-editor.svelte";
     import TimelineItem, {
@@ -13,8 +13,6 @@
         PinFieldOption,
         PinListResponse,
         PinResponse,
-        PinSearchResponse,
-        PinSearchResult,
         ProviderMediaMetadata,
     } from "$lib/types/api";
     import { apiFetch } from "$lib/utils/api";
@@ -38,12 +36,6 @@
     let pinned: PinResponse[] = $state([]);
     let pinnedLoading = $state(false);
     let pinnedError: string | null = $state(null);
-
-    // Search state
-    let q = $state("");
-    let searchLoading = $state(false);
-    let searchError: string | null = $state(null);
-    let results: PinSearchResult[] = $state([]);
 
     // Per-row editor state
     type RowKey = string;
@@ -86,13 +78,6 @@
         color: "bg-fuchsia-700/60",
         icon: Pin,
         order: 0,
-    };
-
-    const SEARCH_META: OutcomeMeta = {
-        label: "Search",
-        color: "bg-sky-700/60",
-        icon: Search,
-        order: 1,
     };
 
     interface PinsPanelData {
@@ -197,37 +182,6 @@
         }
     }
 
-    async function search() {
-        const query = q.trim();
-        if (!query) {
-            results = [];
-            searchError = null;
-            return;
-        }
-        searchLoading = true;
-        searchError = null;
-        try {
-            const u = new URLSearchParams({ q: query, limit: "10" });
-            const r = await apiFetch(`/api/pins/${profile}/search?${u}`);
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            const d = (await r.json()) as PinSearchResponse;
-            results = d.results || [];
-            for (const res of results) {
-                const key = makeRowKey(res.media.namespace, res.media.key);
-                const base = res.pin?.fields || [];
-                if (key) {
-                    ensureRowId(key);
-                }
-                setRow(key, base, true);
-            }
-        } catch (e) {
-            console.error(e);
-            searchError = (e as Error)?.message || "Search failed";
-        } finally {
-            searchLoading = false;
-        }
-    }
-
     async function save(
         rowKey: RowKey,
         namespace: string,
@@ -240,10 +194,9 @@
         rowError[rowKey] = null;
         try {
             if (!fields.length) {
-                const r = await apiFetch(
-                    `/api/pins/${profile}/${namespace}/${mediaKey}`,
-                    { method: "DELETE" },
-                );
+                const r = await apiFetch(`/api/pins/${profile}/${mediaKey}`, {
+                    method: "DELETE",
+                });
                 if (!r.ok) throw new Error("HTTP " + r.status);
                 setRow(rowKey, [], true);
                 pinned = pinned.filter(
@@ -253,16 +206,11 @@
                             p.list_media_key === mediaKey
                         ),
                 );
-                results = results.map((res) =>
-                    res.media.namespace === namespace && res.media.key === mediaKey
-                        ? { ...res, pin: null }
-                        : res,
-                );
                 toast("Pins cleared", "success");
                 return;
             }
             const r = await apiFetch(
-                `/api/pins/${profile}/${namespace}/${mediaKey}?with_media=true`,
+                `/api/pins/${profile}/${mediaKey}?with_media=true`,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -288,12 +236,6 @@
 
             if (idx >= 0) pinned[idx] = merged;
             else pinned = [merged, ...pinned];
-
-            results = results.map((res) =>
-                res.media.namespace === namespace && res.media.key === mediaKey
-                    ? { ...res, pin: merged }
-                    : res,
-            );
         } catch (e) {
             console.error(e);
             rowError[rowKey] = (e as Error)?.message || "Failed to save";
@@ -316,7 +258,6 @@
         clearPinOptionsCache();
         void ensureOptions(true);
         void loadPinned();
-        if (q.trim()) void search();
     }
 
     function toggleRow(key: RowKey) {
@@ -412,43 +353,6 @@
         aria-label="Global pins manager"
         class="mt-2 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 shadow-md shadow-black/30">
         <div class="px-3 pt-2 pb-3 text-[11px]">
-            <!-- Search bar -->
-            <div class="mb-3 flex items-center gap-2">
-                <div class="relative flex-1">
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                    <input
-                        class="h-8 w-full rounded-md border border-slate-700 bg-slate-900 pr-8 pl-8 text-[12px] text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:outline-none"
-                        placeholder="Search list titles"
-                        bind:value={q}
-                        onkeydown={(e) => (e.key === "Enter" ? search() : undefined)} />
-                    {#if q}
-                        <button
-                            class="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                            title="Clear"
-                            onclick={() => (
-                                (q = ""),
-                                (results = []),
-                                (searchError = null)
-                            )}>
-                            <X class="inline h-3.5 w-3.5" />
-                        </button>
-                    {/if}
-                </div>
-                <button
-                    class="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 text-slate-200 hover:border-slate-600 disabled:opacity-60"
-                    onclick={search}
-                    disabled={searchLoading || !!optionsError}
-                    title={optionsError ? "Load options first" : "Search"}>
-                    {#if searchLoading}
-                        <LoaderCircle class="inline h-3.5 w-3.5 animate-spin" />
-                    {:else}
-                        <Search class="inline h-3.5 w-3.5" />
-                    {/if}
-                    Search
-                </button>
-            </div>
-
             {#if optionsError}
                 <div
                     class="mb-3 rounded-md border border-amber-600/60 bg-amber-900/20 px-3 py-2 text-amber-100">
@@ -533,79 +437,6 @@
                 </div>
             </div>
 
-            <!-- Search results -->
-            <div
-                class="overflow-hidden rounded-md border border-slate-800 bg-slate-950/70">
-                <div
-                    class="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-                    <div class="flex items-center gap-2 text-[10px]">
-                        <Search class="h-3.5 w-3.5" />
-                        <span
-                            class="font-semibold tracking-wide text-slate-100 uppercase"
-                            >Search results</span>
-                        <span class="text-[11px] font-normal text-slate-400 normal-case"
-                            >{results.length}</span>
-                    </div>
-                    <div class="text-[11px] text-slate-400">
-                        {#if searchLoading}
-                            <span class="inline-flex items-center gap-1 text-sky-300"
-                                ><LoaderCircle
-                                    class="inline h-3.5 w-3.5 animate-spin" /> Loading…</span>
-                        {/if}
-                    </div>
-                </div>
-                <div class="divide-y divide-slate-800">
-                    {#if searchError}
-                        <div class="px-3 py-2 text-red-200">{searchError}</div>
-                    {:else if !searchLoading && q && !results.length}
-                        <div class="px-3 py-2 text-slate-400">No results.</div>
-                    {/if}
-                    {#each results as r (r.media.namespace + ":" + r.media.key)}
-                        {@const rowKey = makeRowKey(r.media.namespace, r.media.key)}
-                        {@const base = r.pin?.fields || []}
-                        {@const sel = rowKey ? (selections[rowKey] ?? base) : base}
-                        {@const meta = r.pin ? PINNED_META : SEARCH_META}
-                        {#if rowKey}
-                            {@const identifiers = parseRowKey(rowKey)}
-                            {@const historyItem = toHistoryItem(
-                                rowKey,
-                                r.pin ?? null,
-                                r.media ?? null,
-                                r.pin ? "pinned" : "search",
-                            )}
-                            {@const panelData = panelDataFor(
-                                rowKey,
-                                base,
-                                sel,
-                                identifiers.namespace,
-                                identifiers.mediaKey,
-                                r.media ?? null,
-                            )}
-                            <div class="px-3 py-2">
-                                <TimelineItem
-                                    {profile}
-                                    item={historyItem}
-                                    {meta}
-                                    displayTitle={timelineDisplayTitle}
-                                    coverImage={timelineCoverImage}
-                                    hasPins={true}
-                                    togglePins={() => toggleRow(rowKey)}
-                                    openPins={expanded[rowKey] || false}
-                                    pinButtonLoading={saving[rowKey] || false}
-                                    pinButtonDisabled={!!optionsError}
-                                    pinCount={sel.length}
-                                    pinsPanel={PinEditorPanel}
-                                    pinsPanelData={panelData} />
-                            </div>
-                        {:else}
-                            <div class="px-3 py-2 text-[11px] text-amber-200">
-                                Missing provider identifiers for search result.
-                            </div>
-                        {/if}
-                    {/each}
-                </div>
-            </div>
-
             <div
                 class="mt-2 flex items-center justify-between gap-2 border-t border-slate-800 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-400">
                 <div class="flex items-center gap-3">
@@ -613,10 +444,6 @@
                     {#if optionsLoading}
                         <span class="inline-flex items-center gap-1 text-sky-300"
                             ><LoaderCircle class="inline h-3.5 w-3.5 animate-spin" /> options…</span>
-                    {/if}
-                    {#if searchLoading}
-                        <span class="ml-2 inline-flex items-center gap-1 text-sky-300"
-                            ><LoaderCircle class="inline h-3.5 w-3.5 animate-spin" /> search…</span>
                     {/if}
                 </div>
                 <div class="ml-auto">
