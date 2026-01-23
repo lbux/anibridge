@@ -307,7 +307,7 @@ class FakeListProvider:
         self.updated_entries: list[tuple[str, FakeListEntry]] = []
         self.batch_updates: list[list[FakeListEntry]] = []
         self.deleted_keys: list[str] = []
-        self.resolved_key: str | None = None
+        self.resolved_keys: list[str] = []
 
     async def get_entry(self, key: str) -> FakeListEntry | None:
         """Return the entry for the given key, or None if not found."""
@@ -337,7 +337,7 @@ class FakeListProvider:
         self, edges: Sequence[MappingEdge]
     ) -> Sequence[MappingResolution]:
         """Optionally resolve a media key from mapping edges."""
-        if self.resolved_key is None:
+        if not self.resolved_keys:
             return []
         if not edges:
             return []
@@ -346,10 +346,11 @@ class FakeListProvider:
                 edge=edges[0],
                 descriptor=(
                     FakeListProvider.NAMESPACE,
-                    self.resolved_key,
+                    resolved_key,
                     edges[0].destination[2],
                 ),
             )
+            for resolved_key in self.resolved_keys
         ]
 
 
@@ -498,11 +499,7 @@ class FakeAnimapClient:
         """Initialize the fake Animap client with an optional graph."""
         self.graph = graph or AnimapGraph(edges=tuple())
 
-    def get_graph_for_ids(self, *_: Any, **__: Any) -> AnimapGraph:
-        """Return the configured mapping graph regardless of inputs."""
-        return self.graph
-
-    def get_graph_for_descriptors(self, *_: Any, **__: Any) -> AnimapGraph:
+    def get_descriptor_graph(self, *_: Any, **__: Any) -> AnimapGraph:
         """Return the configured mapping graph regardless of descriptors."""
         return self.graph
 

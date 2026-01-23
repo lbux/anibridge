@@ -15,8 +15,7 @@ from anibridge.list import (
 )
 
 from src.config.settings import SyncField
-from src.core.animap import MappingGraph
-from src.core.sync.base import BaseSyncClient, diff_snapshots
+from src.core.sync.base import BaseSyncClient, SyncTarget, diff_snapshots
 from src.core.sync.stats import EntrySnapshot, ItemIdentifier
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
@@ -40,9 +39,7 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
             tuple[
                 Any,
                 Sequence[Any],
-                MappingGraph | None,
-                ListEntryProtocol | None,
-                str | None,
+                SyncTarget,
             ]
         ] = []
         self._trackable_items: list[ItemIdentifier] = []
@@ -63,14 +60,12 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
         tuple[
             Any,
             Sequence[Any],
-            MappingGraph | None,
-            ListEntryProtocol | None,
-            str | None,
+            SyncTarget,
         ]
     ]:
         """Yield any queued mapping results for testing purposes."""
         if False:
-            yield item, (), None, None, None
+            yield item, (), SyncTarget(None, None, None, None)
         for result in self._map_results:
             yield result
 
@@ -112,6 +107,7 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
         child_item: Any,
         entry: ListEntryProtocol | None,
         mapping=None,
+        list_descriptor=None,
         media_key=None,
     ) -> str:
         return f"library_key: {getattr(child_item, 'key', 'unknown')}"
@@ -293,6 +289,8 @@ async def test_sync_media_updates_entry_and_history(
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
         mapping=None,
+        list_descriptor=None,
+        list_media_key=entry.media().key,
     )
 
     assert result is SyncOutcome.SYNCED
@@ -328,6 +326,8 @@ async def test_sync_media_skips_when_entry_up_to_date(
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
         mapping=None,
+        list_descriptor=None,
+        list_media_key=entry.media().key,
     )
 
     assert result is SyncOutcome.SKIPPED
@@ -358,6 +358,8 @@ async def test_sync_media_deletes_when_destructive(
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
         mapping=None,
+        list_descriptor=None,
+        list_media_key=entry.media().key,
     )
 
     assert result is SyncOutcome.DELETED
@@ -389,6 +391,8 @@ async def test_sync_media_batches_when_enabled(
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
         mapping=None,
+        list_descriptor=None,
+        list_media_key=entry.media().key,
     )
 
     assert result is SyncOutcome.SYNCED
@@ -416,6 +420,8 @@ async def test_batch_sync_flushes_history(stub_client: StubSyncClient, sync_db) 
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
         mapping=None,
+        list_descriptor=None,
+        list_media_key=entry.media().key,
     )
 
     await stub_client.batch_sync()
@@ -466,7 +472,7 @@ def test_flush_failure_history_cleanup_batched_removal(
         )
         ctx.session.commit()
 
-    stub_client._cleanup_failure_history(item=movie)
+    stub_client._cleanup_failure_history(item=movie, list_media_key="entry")
     stub_client.flush_failure_history_cleanup()
 
     with sync_db as ctx:

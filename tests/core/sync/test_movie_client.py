@@ -165,13 +165,13 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
         media_type=ListMediaType.MOVIE,
     )
     provider.entries["101"] = entry
-    provider.resolved_key = "101"
+    provider.resolved_keys = ["101"]
     movie_client.animap_client = cast(
         Any,
         FakeAnimapClient(
             FakeAnimapClient.make_graph(
                 ("anilist", "101", None),
-                ("tmdb", "999", None),
+                ("_fake-list", "101", None),
             )
         ),
     )
@@ -181,10 +181,10 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
     results = [result async for result in movie_client.map_media(library_movie)]
 
     assert len(results) == 1
-    _, _, mapping, mapped_entry, media_key = results[0]
-    assert mapping is not None
-    assert mapped_entry is entry
-    assert media_key == "101"
+    _, _, target = results[0]
+    assert target.mapping is not None
+    assert target.entry is entry
+    assert target.list_media_key == "101"
 
 
 @pytest.mark.asyncio
@@ -215,9 +215,9 @@ async def test_map_media_uses_search_when_no_mapping(
     results = [result async for result in movie_client.map_media(library_movie)]
 
     assert len(results) == 1
-    _, _, mapping, mapped_entry, _ = results[0]
-    assert mapping is None
-    assert mapped_entry is provider.search_results[0]
+    _, _, target = results[0]
+    assert target.mapping is None
+    assert target.entry is provider.search_results[0]
 
 
 @pytest.mark.asyncio
@@ -229,6 +229,46 @@ async def test_search_media_returns_none_when_disabled(
     movie = make_movie()
     library_movie = cast(LibraryMovieProtocol, movie)
     assert await movie_client.search_media(library_movie, library_movie) is None
+
+
+@pytest.mark.asyncio
+async def test_map_media_returns_multiple_targets(
+    movie_client: MovieSyncClient,
+) -> None:
+    """Mapping graphs can resolve multiple list targets for a movie."""
+    provider = cast(FakeListProvider, movie_client.list_provider)
+    entry_a = FakeListEntry(
+        provider=provider,
+        key="901",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry_b = FakeListEntry(
+        provider=provider,
+        key="902",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    provider.entries["901"] = entry_a
+    provider.entries["902"] = entry_b
+    provider.resolved_keys = ["901", "902"]
+    movie_client.animap_client = cast(
+        Any,
+        FakeAnimapClient(
+            FakeAnimapClient.make_graph(
+                ("anilist", "901", None),
+                ("_fake-list", "901", None),
+            )
+        ),
+    )
+
+    movie = make_movie(view_count=1, ids={"anilist": "901"})
+    library_movie = cast(LibraryMovieProtocol, movie)
+    results = [result async for result in movie_client.map_media(library_movie)]
+
+    assert len(results) == 2
+    targets = {result[2].list_media_key for result in results}
+    assert targets == {"901", "902"}
 
 
 @pytest.mark.asyncio
@@ -245,13 +285,13 @@ async def test_process_media_syncs_movie_and_writes_history(
         total_units=1,
     )
     provider.entries["301"] = entry
-    provider.resolved_key = "301"
+    provider.resolved_keys = ["301"]
     movie_client.animap_client = cast(
         Any,
         FakeAnimapClient(
             FakeAnimapClient.make_graph(
                 ("anilist", "301", None),
-                ("tmdb", "303", None),
+                ("_fake-list", "301", None),
             )
         ),
     )

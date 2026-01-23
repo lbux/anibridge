@@ -92,7 +92,7 @@ class AnimapClient:
         self._edge_cache: tuple[AnimapEdge, ...] = tuple()
         self._adjacency: dict[tuple[str, str, str | None], tuple[int, ...]] = {}
         self._lookup_cache: dict[
-            frozenset[tuple[str, str, str | None]], MappingGraph
+            tuple[frozenset[tuple[str, str, str | None]], bool, bool], MappingGraph
         ] = {}
         self._cache_version: str | None = None
 
@@ -357,40 +357,55 @@ class AnimapClient:
         if not self._edge_cache:
             self._build_cache_from_db()
 
-    def get_graph_for_descriptors(
-        self, descriptors: Sequence[MappingDescriptor]
+    def get_descriptor_graph(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+        from_source: bool = True,
+        from_target: bool = True,
     ) -> MappingGraph:
-        """Return all edges touching any of the supplied mapping descriptors."""
+        """Retrieve the mapping graph for the given descriptors.
+
+        Args:
+            descriptors (Sequence[MappingDescriptor]): Mapping descriptors to look up.
+            from_source (bool): Include edges where the descriptors are the source.
+            from_target (bool): Include edges where the descriptors are the target.
+
+        Returns:
+            MappingGraph: The subset of the mapping graph relevant to the descriptors.
+        """
         self._ensure_cache()
 
         if not descriptors:
             return AnimapGraph(edges=tuple())
 
-        cache_key = frozenset(descriptors)
+        if not from_source and not from_target:
+            return AnimapGraph(edges=tuple())
+
+        descriptor_set = frozenset(descriptors)
+        cache_key = (descriptor_set, from_source, from_target)
         if self._cache_version is not None and cache_key in self._lookup_cache:
             return self._lookup_cache[cache_key]
 
         edge_indexes: set[int] = set()
-        for provider, entry_id, scope in cache_key:
+        for provider, entry_id, scope in descriptor_set:
             edge_indexes.update(self._adjacency.get((provider, entry_id, scope), ()))
 
-        graph = (
-            AnimapGraph(edges=tuple(self._edge_cache[i] for i in edge_indexes))
-            if edge_indexes
-            else AnimapGraph(edges=tuple())
-        )
+        if not edge_indexes:
+            graph = AnimapGraph(edges=tuple())
+        else:
+            edges: list[AnimapEdge] = []
+            for idx in edge_indexes:
+                edge = self._edge_cache[idx]
+                matches_source = from_source and edge.source in descriptor_set
+                matches_target = from_target and edge.destination in descriptor_set
+                if matches_source or matches_target:
+                    edges.append(edge)
+            graph = AnimapGraph(edges=tuple(edges))
 
         if self._cache_version is not None:
             self._lookup_cache[cache_key] = graph
 
         return graph
-
-    def get_graph_for_ids(self, external_ids: dict[str, str]) -> MappingGraph:
-        """Return all edges touching the supplied external identifiers."""
-        descriptor_tuples = [
-            (provider, entry_id, None) for provider, entry_id in external_ids.items()
-        ]
-        return self.get_graph_for_descriptors(descriptor_tuples)
 
     async def sync_db(self) -> None:
         """Synchronize the local database with the upstream mappings."""

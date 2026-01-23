@@ -127,13 +127,13 @@ async def test_process_media_syncs_show_and_writes_history(
         total_units=len(episodes),
     )
     provider.entries["400"] = entry
-    provider.resolved_key = "400"
+    provider.resolved_keys = ["400"]
     show_client.animap_client = cast(
         Any,
         FakeAnimapClient(
             make_graph(
                 ("anilist", "400", "s1"),
-                ("tmdb", "900", "s1"),
+                ("_fake-list", "400", "s1"),
             )
         ),
     )
@@ -162,13 +162,13 @@ async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) ->
         total_units=len(episodes),
     )
     provider.entries["401"] = entry
-    provider.resolved_key = "401"
+    provider.resolved_keys = ["401"]
     show_client.animap_client = cast(
         Any,
         FakeAnimapClient(
             make_graph(
                 ("tmdb", "10", "s1"),
-                ("anilist", "401", "s1"),
+                ("_fake-list", "401", "s1"),
                 source_range="s1",
             )
         ),
@@ -180,12 +180,12 @@ async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) ->
     ]
 
     assert len(results) == 1
-    mapped_season, mapped_eps, mapping, mapped_entry, media_key = results[0]
+    mapped_season, mapped_eps, target = results[0]
     assert mapped_season is season
     assert list(mapped_eps) == episodes
-    assert mapping is not None
-    assert mapped_entry is entry
-    assert media_key == "401"
+    assert target.mapping is not None
+    assert target.entry is entry
+    assert target.list_media_key == "401"
 
 
 @pytest.mark.asyncio

@@ -11,10 +11,10 @@ from anibridge.library import (
     LibrarySeason,
     LibraryShow,
 )
-from anibridge.list import ListEntry, ListMediaType, ListStatus
+from anibridge.list import ListEntry, ListMediaType, ListStatus, MappingDescriptor
 
 from src.core.animap import MappingGraph, descriptor_key
-from src.core.sync.base import BaseSyncClient
+from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache, glru_cache
 
@@ -28,6 +28,7 @@ class _SeasonGroup:
     episodes: list[LibraryEpisode]
     entry: ListEntry | None
     mapping: MappingGraph | None
+    list_descriptor: MappingDescriptor | None
     media_key: str
 
 
@@ -40,9 +41,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         tuple[
             LibrarySeason,
             Sequence[LibraryEpisode],
-            MappingGraph | None,
-            ListEntry | None,
-            str | None,
+            SyncTarget,
         ]
     ]:
         """Yield mapping candidates for the provided show item."""
@@ -69,31 +68,36 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             entry_cache[key] = entry
             return entry
 
-        def resolve_key(mapping_graph: MappingGraph | None) -> tuple[str | None, bool]:
-            """Attempt to resolve a media key for the given mapping graph."""
-            if mapping_graph:
-                resolved = self._resolve_list_descriptor(mapping_graph)
-                if resolved is not None:
-                    return str(resolved[1]), True
-            return None, False
-
         async def resolve_season(
             season_index: int, season: LibrarySeason
-        ) -> tuple[str | None, ListEntry | None, MappingGraph | None]:
-            """Resolve a media key and list entry for the given season."""
+        ) -> list[
+            tuple[str, ListEntry | None, MappingGraph | None, MappingDescriptor | None]
+        ]:
+            """Resolve list targets for the given season."""
             mapping_graph = self._build_mapping_graph(season, item)
-            key, mapped = resolve_key(mapping_graph)
-            if key:
-                entry = await get_entry_cached(key)
-                return key, entry, (mapping_graph if mapped else None)
+            descriptors = self._resolve_list_descriptors(mapping_graph)
+            if descriptors:
+                targets: list[
+                    tuple[
+                        str,
+                        ListEntry | None,
+                        MappingGraph | None,
+                        MappingDescriptor | None,
+                    ]
+                ] = []
+                for descriptor in descriptors:
+                    key = str(descriptor[1])
+                    entry = await get_entry_cached(key)
+                    targets.append((key, entry, mapping_graph, descriptor))
+                return targets
 
             entry = await self.search_media(item, season)
             if not entry:
-                return None, None, None
+                return []
 
             key = str(entry.media().key)
             entry_cache[key] = entry
-            return key, entry, None
+            return [(key, entry, None, None)]
 
         groups: dict[str, _SeasonGroup] = {}
 
@@ -103,36 +107,42 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if not season_episodes:
                 continue
 
-            key, entry, mapping = await resolve_season(season_index, season)
-            if not key:
+            targets = await resolve_season(season_index, season)
+            if not targets:
                 continue
 
-            media_key = entry.media().key if entry else key
-            if (group := groups.get(key)) is None:
-                groups[key] = _SeasonGroup(
-                    child_item=season,
-                    first_index=season_index,
-                    episodes=list(season_episodes),
-                    entry=entry,
-                    mapping=mapping,
-                    media_key=media_key,
-                )
-                continue
+            for key, entry, mapping, list_descriptor in targets:
+                media_key = entry.media().key if entry else key
+                if (group := groups.get(key)) is None:
+                    groups[key] = _SeasonGroup(
+                        child_item=season,
+                        first_index=season_index,
+                        episodes=list(season_episodes),
+                        entry=entry,
+                        mapping=mapping,
+                        list_descriptor=list_descriptor,
+                        media_key=media_key,
+                    )
+                    continue
 
-            if season_index < group.first_index:
-                group.child_item, group.first_index = season, season_index
-            group.episodes.extend(season_episodes)
-            group.entry = entry or group.entry
-            group.mapping = group.mapping or mapping
+                if season_index < group.first_index:
+                    group.child_item, group.first_index = season, season_index
+                group.episodes.extend(season_episodes)
+                group.entry = entry or group.entry
+                group.mapping = group.mapping or mapping
+                group.list_descriptor = list_descriptor or group.list_descriptor
 
         for group in sorted(groups.values(), key=lambda g: g.first_index):
             eps = sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
             yield (
                 group.child_item,
                 tuple(eps),
-                group.mapping,
-                group.entry,
-                group.media_key,
+                SyncTarget(
+                    list_descriptor=group.list_descriptor,
+                    list_media_key=group.media_key,
+                    entry=group.entry,
+                    mapping=group.mapping,
+                ),
             )
 
     async def search_media(
@@ -315,8 +325,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         self,
         item: LibraryShow,
         child_item: LibrarySeason | None = None,
-        mapping: MappingGraph | None = None,
-        media_key: str | None = None,
     ) -> str:
         return (
             f"$$'{item.title}'$$"
@@ -331,10 +339,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
-        resolved = self._resolve_list_descriptor(mapping)
-        formatted = [descriptor_key(resolved)] if resolved else []
+        formatted = [descriptor_key(list_descriptor)] if list_descriptor else []
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
         )

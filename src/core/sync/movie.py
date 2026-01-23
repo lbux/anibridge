@@ -4,10 +4,10 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 
 from anibridge.library import LibraryMovie
-from anibridge.list import ListEntry, ListMediaType, ListStatus
+from anibridge.list import ListEntry, ListMediaType, ListStatus, MappingDescriptor
 
 from src.core.animap import MappingGraph, descriptor_key
-from src.core.sync.base import BaseSyncClient
+from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache
 
@@ -23,24 +23,41 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         tuple[
             LibraryMovie,
             Sequence[LibraryMovie],
-            MappingGraph | None,
-            ListEntry | None,
-            str | None,
+            SyncTarget,
         ]
     ]:
         """Map a library movie to its corresponding list entry."""
         mapping_graph = self._build_mapping_graph(item)
-        list_media_descriptor = self._resolve_list_descriptor(mapping_graph)
-        list_media_key = list_media_descriptor[1] if list_media_descriptor else None
+        descriptors = self._resolve_list_descriptors(mapping_graph)
 
-        if list_media_key is not None:
-            entry = await self.list_provider.get_entry(str(list_media_key))
-            yield item, (item,), mapping_graph, entry, str(list_media_key)
+        if descriptors:
+            for descriptor in descriptors:
+                list_media_key = str(descriptor[1])
+                entry = await self.list_provider.get_entry(list_media_key)
+                yield (
+                    item,
+                    (item,),
+                    SyncTarget(
+                        list_descriptor=descriptor,
+                        list_media_key=list_media_key,
+                        entry=entry,
+                        mapping=mapping_graph,
+                    ),
+                )
             return
 
         entry = await self.search_media(item, item)
         if entry is not None:
-            yield item, (item,), None, entry, entry.media().key
+            yield (
+                item,
+                (item,),
+                SyncTarget(
+                    list_descriptor=None,
+                    list_media_key=entry.media().key,
+                    entry=entry,
+                    mapping=None,
+                ),
+            )
 
     async def search_media(
         self, item: LibraryMovie, child_item: LibraryMovie
@@ -183,10 +200,10 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
-        resolved = self._resolve_list_descriptor(mapping)
-        formatted = [descriptor_key(resolved)] if resolved else []
+        formatted = [descriptor_key(list_descriptor)] if list_descriptor else []
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
         )

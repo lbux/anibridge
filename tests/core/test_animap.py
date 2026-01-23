@@ -211,28 +211,35 @@ def test_sync_db_creates_entries_mappings_and_provenance(
     assert [row.n for row in provenance_rows] == [0, 0]
 
 
-def test_get_graph_for_descriptors_returns_edges(
+def test_get_descriptor_graph_filters_by_source_and_target(
     animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
 ) -> None:
-    """Mapping graph lookups honor scoped descriptors."""
+    """Descriptor graph filtering respects source/target flags."""
     _write_mapping_file(tmp_path, _mapping_data())
     asyncio.run(animap_client.sync_db())
 
-    edges = animap_client.get_graph_for_descriptors([("anilist", "1", None)]).edges
-    assert len(edges) == 1
-    assert edges[0].source[0] == "anilist"
-    assert edges[0].destination[0] == "tmdb"
+    source_only = animap_client.get_descriptor_graph(
+        [("tvdb", "20", "s1")],
+        from_source=True,
+        from_target=False,
+    ).edges
+    assert source_only == tuple()
 
-    tvdb_edges = animap_client.get_graph_for_descriptors([("tvdb", "20", "s1")]).edges
-    assert {
-        (
-            e.source[0],
-            e.destination[0],
-            e.source_range,
-            e.destination_range,
-        )
-        for e in tvdb_edges
-    } == {("anilist", "tvdb", "1-12", "1-12")}
+    target_only = animap_client.get_descriptor_graph(
+        [("tvdb", "20", "s1")],
+        from_source=False,
+        from_target=True,
+    ).edges
+    assert len(target_only) == 1
+    assert target_only[0].destination[0] == "tvdb"
+
+    anilist_source = animap_client.get_descriptor_graph(
+        [("anilist", "1", None)],
+        from_source=True,
+        from_target=False,
+    ).edges
+    assert len(anilist_source) == 1
+    assert anilist_source[0].source[0] == "anilist"
 
 
 def test_sync_db_refreshes_provenance_when_hash_matches(

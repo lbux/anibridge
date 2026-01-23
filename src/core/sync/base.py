@@ -64,6 +64,16 @@ class FieldRule:
     comparator: Callable[[Comparable | None, Comparable | None], bool]
 
 
+@dataclass(frozen=True, slots=True)
+class SyncTarget:
+    """Resolved list target for a library media item."""
+
+    list_descriptor: MappingDescriptor | None
+    list_media_key: str | None
+    entry: ListEntry | None
+    mapping: MappingGraph | None
+
+
 class BaseSyncClient[
     ParentMediaT: LibraryEntry,
     ChildMediaT: LibraryEntry,
@@ -132,7 +142,7 @@ class BaseSyncClient[
         self.sync_stats: SyncStats = SyncStats()
         self._pin_cache: dict[tuple[str, str], list[str]] = {}
         self._pending_updates: list[BatchUpdate[ParentMediaT, ChildMediaT]] = []
-        self._failure_history_cleanup_queue: set[tuple[str, str]] = set()
+        self._failure_history_cleanup_queue: set[tuple[str, str, str | None]] = set()
 
         self._field_calculators: dict[
             SyncField,
@@ -186,27 +196,43 @@ class BaseSyncClient[
         seen: set[tuple[str, str, str | None]] = set()
         for media in media_items:
             for descriptor in media.mapping_descriptors():
-                key = (descriptor[0], descriptor[1], descriptor[2])
-                if key in seen:
+                if descriptor in seen:
                     continue
-                seen.add(key)
+                seen.add(descriptor)
                 descriptors.append(descriptor)
         if not descriptors:
             return None
-        return self.animap_client.get_graph_for_descriptors(descriptors)
 
-    def _resolve_list_descriptor(
+        return self.animap_client.get_descriptor_graph(
+            descriptors, from_source=True, from_target=False
+        )
+
+    def _resolve_list_descriptors(
         self, mapping: MappingGraph | None
-    ) -> MappingDescriptor | None:
-        """Pick the first resolved list descriptor from the list provider."""
+    ) -> tuple[MappingDescriptor, ...]:
+        """Return all resolved list descriptors from the mapping graph."""
         if mapping is None:
-            return None
+            return tuple()
+        namespace = self.list_provider.NAMESPACE
+        edges = tuple(
+            edge for edge in mapping.edges if edge.destination[0] == namespace
+        )
+        if not edges:
+            return tuple()
         resolutions: Sequence[MappingResolution] = self.list_provider.resolve_mappings(
-            mapping.edges
+            edges
         )
         if not resolutions:
-            return None
-        return resolutions[0].descriptor
+            return tuple()
+        seen: set[tuple[str, str, str | None]] = set()
+        ordered: list[MappingDescriptor] = []
+        for resolution in resolutions:
+            descriptor = resolution.descriptor
+            if descriptor in seen:
+                continue
+            seen.add(descriptor)
+            ordered.append(descriptor)
+        return tuple(ordered)
 
     async def process_media(self, item: ParentMediaT) -> None:
         """Process a single library item."""
@@ -215,6 +241,7 @@ class BaseSyncClient[
             child_item=None,
             entry=None,
             mapping=None,
+            list_descriptor=None,
             media_key=None,
         )
         debug_title = self._debug_log_title(item=item, child_item=None)
@@ -240,13 +267,16 @@ class BaseSyncClient[
         async for (
             child_item,
             grandchild_items,
-            mapping_graph,
-            entry,
-            list_media_key,
+            target,
         ) in self.map_media(item):
             found_match = True
             grandchildren = tuple(grandchild_items)
             grandchild_ids = ItemIdentifier.from_items(grandchildren)
+
+            mapping_graph = target.mapping
+            entry = target.entry
+            list_media_key = target.list_media_key
+            list_descriptor = target.list_descriptor
 
             debug_title = self._debug_log_title(item=item, child_item=child_item)
             debug_ids = self._debug_log_ids(
@@ -254,6 +284,7 @@ class BaseSyncClient[
                 child_item=child_item,
                 entry=entry,
                 mapping=mapping_graph,
+                list_descriptor=list_descriptor,
                 media_key=list_media_key,
             )
             if entry is None:
@@ -275,6 +306,8 @@ class BaseSyncClient[
                     grandchild_items=grandchildren,
                     entry=entry,
                     mapping=mapping_graph,
+                    list_descriptor=list_descriptor,
+                    list_media_key=list_media_key,
                 )
                 self.sync_stats.track_items(grandchild_ids, outcome)
                 self.sync_stats.track_item(item_identifier, outcome)
@@ -299,6 +332,7 @@ class BaseSyncClient[
                 grandchild_items=None,
                 snapshots=(None, None),
                 mapping=None,
+                list_descriptor=None,
                 list_media_key=None,
                 outcome=SyncOutcome.NOT_FOUND,
             )
@@ -320,9 +354,7 @@ class BaseSyncClient[
         tuple[
             ChildMediaT,
             Sequence[GrandchildMediaT],
-            MappingGraph | None,
-            ListEntry | None,
-            str | None,
+            SyncTarget,
         ]
     ]:
         """Yield potential list entries matching the supplied library item."""
@@ -363,6 +395,8 @@ class BaseSyncClient[
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry | None,
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
+        list_media_key: str | None,
     ) -> SyncOutcome:
         """Synchronize a mapped media item with the list provider."""
         entry = await self._ensure_entry(
@@ -371,14 +405,12 @@ class BaseSyncClient[
             grandchild_items=grandchild_items,
             entry=entry,
             mapping=mapping,
+            list_descriptor=list_descriptor,
         )
 
-        resolved_list_descriptor: tuple[str, str, str | None] | None = (
-            self._resolve_list_descriptor(mapping)
-        )
-        resolved_list_key = (
-            resolved_list_descriptor[1] if resolved_list_descriptor else None
-        )
+        resolved_list_key = list_media_key
+        if resolved_list_key is None and list_descriptor is not None:
+            resolved_list_key = list_descriptor[1]
 
         debug_title = self._debug_log_title(item=item, child_item=child_item)
         debug_ids = self._debug_log_ids(
@@ -386,16 +418,16 @@ class BaseSyncClient[
             child_item=child_item,
             entry=entry,
             mapping=mapping,
+            list_descriptor=list_descriptor,
             media_key=resolved_list_key,
         )
 
         before_snapshot = EntrySnapshot.from_entry(entry)
 
-        list_media_key = resolved_list_key
-        if list_media_key is None:
-            list_media_key = before_snapshot.media_key
+        if resolved_list_key is None:
+            resolved_list_key = before_snapshot.media_key
         pinned_fields = self._get_pinned_fields(
-            self.list_provider.NAMESPACE, list_media_key
+            self.list_provider.NAMESPACE, resolved_list_key
         )
         skip_fields = set(self.excluded_sync_fields) | set(pinned_fields)
 
@@ -436,7 +468,8 @@ class BaseSyncClient[
                     grandchild_items=grandchild_items,
                     snapshots=(before_snapshot, None),
                     mapping=mapping,
-                    list_media_key=list_media_key,
+                    list_descriptor=list_descriptor,
+                    list_media_key=resolved_list_key,
                     outcome=SyncOutcome.DELETED,
                 )
                 return SyncOutcome.DELETED
@@ -497,7 +530,11 @@ class BaseSyncClient[
                 f"[{self.profile_name}] Skipping {item.media_kind.value} "
                 f"because it is already up to date {debug_title} {debug_ids}"
             )
-            self._cleanup_failure_history(item=item, child_item=child_item)
+            self._cleanup_failure_history(
+                item=item,
+                child_item=child_item,
+                list_media_key=resolved_list_key,
+            )
             return SyncOutcome.SKIPPED
 
         plan = BatchUpdate(
@@ -508,7 +545,8 @@ class BaseSyncClient[
             before=before_snapshot,
             after=after_snapshot,
             entry=entry,
-            list_media_key=list_media_key,
+            list_descriptor=list_descriptor,
+            list_media_key=resolved_list_key,
         )
 
         diff_str = self._format_diff(diff)
@@ -568,6 +606,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 mapping=plan.mapping,
+                list_descriptor=plan.list_descriptor,
                 list_media_key=plan.list_media_key,
                 outcome=SyncOutcome.SYNCED,
             )
@@ -584,6 +623,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 mapping=plan.mapping,
+                list_descriptor=plan.list_descriptor,
                 list_media_key=plan.list_media_key,
                 outcome=SyncOutcome.FAILED,
                 error_message=str(exc),
@@ -624,6 +664,7 @@ class BaseSyncClient[
                     child_item=update.child,
                     entry=update.entry,
                     mapping=update.mapping,
+                    list_descriptor=update.list_descriptor,
                     media_key=update.after.media_key,
                 )
                 log.success(
@@ -645,6 +686,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     mapping=update.mapping,
+                    list_descriptor=update.list_descriptor,
                     list_media_key=update.list_media_key,
                     outcome=SyncOutcome.SYNCED,
                 )
@@ -657,6 +699,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     mapping=update.mapping,
+                    list_descriptor=update.list_descriptor,
                     list_media_key=update.list_media_key,
                     outcome=SyncOutcome.FAILED,
                     error_message=str(exc),
@@ -673,6 +716,7 @@ class BaseSyncClient[
         grandchild_items: Sequence[LibraryEntry] | None,
         snapshots: tuple[EntrySnapshot | None, EntrySnapshot | None],
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
         list_media_key: str | None,
         outcome: SyncOutcome,
         error_message: str | None = None,
@@ -682,19 +726,15 @@ class BaseSyncClient[
         before_state = before_snapshot.serialize() if before_snapshot else None
         after_state = after_snapshot.serialize() if after_snapshot else None
 
-        resolved_media_key = list_media_key
-        if resolved_media_key is None:
-            resolved_media_key = (
+        resolved_list_media_key = list_media_key
+        if resolved_list_media_key is None:
+            resolved_list_media_key = (
                 after_snapshot.media_key
                 if after_snapshot
                 else before_snapshot.media_key
                 if before_snapshot
                 else None
             )
-        resolved_list_descriptor = self._resolve_list_descriptor(mapping)
-        list_media_key = (
-            resolved_list_descriptor[1] if resolved_list_descriptor else None
-        )
 
         library_target: LibraryEntry = child_item if child_item is not None else item
         library_namespace = self.library_provider.NAMESPACE
@@ -706,15 +746,19 @@ class BaseSyncClient[
         with db() as ctx:
             if outcome == SyncOutcome.SYNCED:
                 # Remove any previous NOT_FOUND/FAILED records on successful sync
-                self._cleanup_failure_history(item=item, child_item=child_item)
+                self._cleanup_failure_history(
+                    item=item,
+                    child_item=child_item,
+                    list_media_key=resolved_list_media_key,
+                )
 
             if outcome == SyncOutcome.SKIPPED:
                 return
 
             async def get_mapping_entry_id() -> int | None:
-                if resolved_list_descriptor is None:
+                if list_descriptor is None:
                     return None
-                provider, entry_id, entry_scope = resolved_list_descriptor
+                provider, entry_id, entry_scope = list_descriptor
                 entry = (
                     ctx.session.query(AnimapEntry)
                     .filter(
@@ -737,13 +781,13 @@ class BaseSyncClient[
                     SyncHistory.library_media_key == library_media_key,
                     SyncHistory.outcome == outcome,
                 ]
-                if list_media_key is None:
+                if resolved_list_media_key is None:
                     filters.append(SyncHistory.list_media_key.is_(None))
                 else:
                     filters.extend(
                         [
                             SyncHistory.list_namespace == list_namespace,
-                            SyncHistory.list_media_key == list_media_key,
+                            SyncHistory.list_media_key == resolved_list_media_key,
                         ]
                     )
                 existing = ctx.session.query(SyncHistory).filter(*filters).first()
@@ -766,7 +810,7 @@ class BaseSyncClient[
                 library_section_key=library_section_key,
                 library_media_key=library_media_key,
                 list_namespace=list_namespace,
-                list_media_key=list_media_key,
+                list_media_key=resolved_list_media_key,
                 animap_entry_id=mapping_entry_id,
                 media_kind=media_kind,
                 outcome=outcome,
@@ -794,17 +838,42 @@ class BaseSyncClient[
                 FAILURE_HISTORY_CLEANUP_BATCH_SIZE,
             ):
                 chunk = target_pairs[start : start + FAILURE_HISTORY_CLEANUP_BATCH_SIZE]
-                ctx.session.query(SyncHistory).filter(
-                    SyncHistory.profile_name == profile_name,
-                    SyncHistory.library_namespace == library_namespace,
-                    tuple_(
-                        SyncHistory.library_section_key,
-                        SyncHistory.library_media_key,
-                    ).in_(chunk),
-                    SyncHistory.outcome.in_(
-                        [SyncOutcome.NOT_FOUND, SyncOutcome.FAILED]
-                    ),
-                ).delete(synchronize_session=False)
+                with_list_key = [
+                    (section_key, media_key, list_media_key)
+                    for section_key, media_key, list_media_key in chunk
+                    if list_media_key is not None
+                ]
+                without_list_key = [
+                    (section_key, media_key)
+                    for section_key, media_key, list_media_key in chunk
+                    if list_media_key is None
+                ]
+                if with_list_key:
+                    ctx.session.query(SyncHistory).filter(
+                        SyncHistory.profile_name == profile_name,
+                        SyncHistory.library_namespace == library_namespace,
+                        tuple_(
+                            SyncHistory.library_section_key,
+                            SyncHistory.library_media_key,
+                            SyncHistory.list_media_key,
+                        ).in_(with_list_key),
+                        SyncHistory.outcome.in_(
+                            [SyncOutcome.NOT_FOUND, SyncOutcome.FAILED]
+                        ),
+                    ).delete(synchronize_session=False)
+                if without_list_key:
+                    ctx.session.query(SyncHistory).filter(
+                        SyncHistory.profile_name == profile_name,
+                        SyncHistory.library_namespace == library_namespace,
+                        tuple_(
+                            SyncHistory.library_section_key,
+                            SyncHistory.library_media_key,
+                        ).in_(without_list_key),
+                        SyncHistory.list_media_key.is_(None),
+                        SyncHistory.outcome.in_(
+                            [SyncOutcome.NOT_FOUND, SyncOutcome.FAILED]
+                        ),
+                    ).delete(synchronize_session=False)
             ctx.session.commit()
 
         self._failure_history_cleanup_queue -= targets
@@ -817,6 +886,7 @@ class BaseSyncClient[
         self,
         item: ParentMediaT,
         child_item: ChildMediaT | None = None,
+        list_media_key: str | None = None,
     ) -> None:
         """Delete NOT_FOUND/FAILED history rows."""
         library_target: LibraryEntry = child_item if child_item is not None else item
@@ -826,8 +896,12 @@ class BaseSyncClient[
         if not library_media_key:
             return
 
-        cleanup_key = (library_section_key, library_media_key)
+        cleanup_key = (library_section_key, library_media_key, list_media_key)
         self._failure_history_cleanup_queue.add(cleanup_key)
+        if list_media_key is not None:
+            self._failure_history_cleanup_queue.add(
+                (library_section_key, library_media_key, None)
+            )
         if len(self._failure_history_cleanup_queue) >= (
             FAILURE_HISTORY_CLEANUP_BATCH_SIZE
         ):
@@ -990,6 +1064,7 @@ class BaseSyncClient[
         child_item: ChildMediaT | None,
         entry: ListEntry | None,
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
         """Return a debug-friendly identifier representation."""
@@ -1003,15 +1078,15 @@ class BaseSyncClient[
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry | None,
         mapping: MappingGraph | None,
+        list_descriptor: MappingDescriptor | None,
     ) -> ListEntry:
         """Materialize a list entry for synchronization, constructing when missing."""
         if entry is not None:
             return entry
-        resolved_list_descriptor = self._resolve_list_descriptor(mapping)
-        if resolved_list_descriptor is None:
+        if list_descriptor is None:
             raise ValueError(
                 f"Unable to determine list media key for {item.media_kind.value} "
                 f"{self._debug_log_title(item=item, child_item=child_item)}"
             )
 
-        return await self.list_provider.build_entry(resolved_list_descriptor[1])
+        return await self.list_provider.build_entry(list_descriptor[1])
