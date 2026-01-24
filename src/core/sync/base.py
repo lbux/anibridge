@@ -679,9 +679,10 @@ class BaseSyncClient[
             return
 
         try:
-            await self.list_provider.update_entries_batch(
+            updated = await self.list_provider.update_entries_batch(
                 [update.entry for update in self._pending_updates]
             )
+            updated_list_keys = {entry.media().key for entry in updated if entry}
             for update in self._pending_updates:
                 await self._create_sync_history(
                     item=update.item,
@@ -689,7 +690,9 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
-                    outcome=SyncOutcome.SYNCED,
+                    outcome=SyncOutcome.SYNCED
+                    if update.after.media_key in updated_list_keys
+                    else SyncOutcome.FAILED,
                 )
         except Exception as exc:
             log.error("Batch sync failed", exc_info=True)

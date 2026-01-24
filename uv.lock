@@ -178,7 +178,7 @@ dev = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b2"
+version = "0.2.0b3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -187,9 +187,9 @@ dependencies = [
     { name = "limiter" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/f4/37080dbcbc4b165072e033393ac1dc8087d404fee6f1c4343ea8101ee27d/anibridge_anilist_provider-0.2.0b2.tar.gz", hash = "sha256:b93dcdfdfdb9e8161c069b885dec40d7d71bea135a85ff26728a3a63533ad0a6", size = 13434, upload-time = "2026-01-24T03:27:23.237Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/f4/c7d4de248eef3585d47654b0e474375602979ff1d930cb9392ed999676e2/anibridge_anilist_provider-0.2.0b3.tar.gz", hash = "sha256:d3492cfca68000477fc619d2ebfb4da561671bba945b4b4fdd679797dd55e220", size = 13800, upload-time = "2026-01-24T20:00:16.174Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/98/0b43594cabef2bc7fa6050bf7c9e328e831261ae3c8dacc7f8071660b9e4/anibridge_anilist_provider-0.2.0b2-py3-none-any.whl", hash = "sha256:dd5dafda4a189df59db23a9f2e65a7087465435bdc2d387b93738efb59833b94", size = 15390, upload-time = "2026-01-24T03:27:22.35Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/0d/475bf7a37efb1fa5624208a1f1ea1f6c44184983784531fc5cc0eb8bfc29/anibridge_anilist_provider-0.2.0b3-py3-none-any.whl", hash = "sha256:e146e15c6e064778d44387d19c9425b22d63a22083a29d6caa1d2533a7f040ad", size = 15746, upload-time = "2026-01-24T20:00:17.191Z" },
 ]
 
 [[package]]
@@ -1185,15 +1185,15 @@ wheels = [
 
 [[package]]
 name = "rich"
-version = "14.2.0"
+version = "14.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/d2/8920e102050a0de7bfabeb4c4614a49248cf8d5d7a8d01885fbb24dc767a/rich-14.2.0.tar.gz", hash = "sha256:73ff50c7c0c1c77c8243079283f4edb376f0f6442433aecb8ce7e6d0b92d1fe4", size = 219990, upload-time = "2025-10-09T14:16:53.064Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/9c/137848452e130e71f3ca9a9876751ddcac99e4b1f248ed297996c8c2d728/rich-14.3.0.tar.gz", hash = "sha256:b75e54d3abbcc49137e83e4db54dc86c5e47687eebc95aa0305363231a36e699", size = 230113, upload-time = "2026-01-24T12:25:46.336Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/7a/b0178788f8dc6cafce37a212c99565fa1fe7872c70c6c9c1e1a372d9d88f/rich-14.2.0-py3-none-any.whl", hash = "sha256:76bc51fe2e57d2b1be1f96c524b890b816e334ab4c1e45888799bfaab0021edd", size = 243393, upload-time = "2025-10-09T14:16:51.245Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/e0/83cbdcb81b5cbbbe355648dd402b410437806544f48ee218a2354798f012/rich-14.3.0-py3-none-any.whl", hash = "sha256:0b8c1e368c1125b9e993c2d2f1342802525f4853fc6dac2e8e9e88bac0f45bce", size = 309950, upload-time = "2026-01-24T12:25:44.679Z" },
 ]
 
 [[package]]
