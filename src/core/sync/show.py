@@ -55,19 +55,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if ep.season_index in wanted_indexes:
                 episodes_by_season[ep.season_index].append(ep)
 
-        entry_cache: dict[str, ListEntry | None] = {}
-
-        async def get_entry_cached(key: str) -> ListEntry | None:
-            """Retrieve a list entry from cache or provider."""
-            if (cached := entry_cache.get(key, ...)) is not ...:
-                return cached
-            try:
-                entry = await self.list_provider.get_entry(key)
-            except Exception:
-                entry = None
-            entry_cache[key] = entry
-            return entry
-
         async def resolve_season(
             season_index: int, season: LibrarySeason
         ) -> list[
@@ -87,7 +74,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 ] = []
                 for descriptor in descriptors:
                     key = str(descriptor[1])
-                    entry = await get_entry_cached(key)
+                    entry = await self.list_provider.get_entry(key)
                     targets.append((key, entry, mapping_graph, descriptor))
                 return targets
 
@@ -96,7 +83,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 return []
 
             key = str(entry.media().key)
-            entry_cache[key] = entry
             return [(key, entry, None, None)]
 
         groups: dict[str, _SeasonGroup] = {}
@@ -166,12 +152,13 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         candidates = filtered or tv_results
         return self._best_search_result(item.title, candidates)
 
-    @gattl_cache(ttl=15, key=lambda self, item: item)
-    async def _get_all_trackable_items(self, item: LibraryShow) -> list[ItemIdentifier]:
+    async def _get_all_trackable_items(
+        self, item: LibraryShow
+    ) -> Sequence[ItemIdentifier]:
         episodes = self.__get_wanted_episodes(item)
         if not episodes:
             return []
-        return list(ItemIdentifier.from_items(episodes))
+        return ItemIdentifier.from_items(episodes)
 
     async def _calculate_status(
         self,
@@ -315,11 +302,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if review:
                 return review
         return await child_item.review or await item.review
-
-    def _derive_scope(
-        self, *, item: LibraryShow, child_item: LibrarySeason | None
-    ) -> str | None:
-        return f"s{child_item.index}" if child_item is not None else None
 
     def _debug_log_title(
         self,

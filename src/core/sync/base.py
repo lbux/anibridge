@@ -343,7 +343,7 @@ class BaseSyncClient[
     @abstractmethod
     async def _get_all_trackable_items(
         self, item: ParentMediaT
-    ) -> list[ItemIdentifier]:
+    ) -> Sequence[ItemIdentifier]:
         """Return all identifiers that should be tracked for the given item."""
         ...
 
@@ -906,16 +906,6 @@ class BaseSyncClient[
             FAILURE_HISTORY_CLEANUP_BATCH_SIZE
         ):
             self.flush_failure_history_cleanup()
-
-    @abstractmethod
-    def _derive_scope(
-        self,
-        *,
-        item: ParentMediaT,
-        child_item: ChildMediaT | None,
-    ) -> str | None:
-        """Derive the mapping scope for the given item."""
-        ...
 
     def _should_apply_field(
         self,

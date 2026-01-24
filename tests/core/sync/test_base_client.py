@@ -94,9 +94,6 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
     async def _calculate_review(self, **kwargs):
         return self._review_override
 
-    def _derive_scope(self, *, item: Any, child_item: Any | None) -> str | None:
-        return None
-
     def _debug_log_title(self, item: Any, child_item: Any | None = None) -> str:
         return str(item)
 

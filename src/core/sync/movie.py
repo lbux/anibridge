@@ -76,7 +76,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
 
     async def _get_all_trackable_items(
         self, item: LibraryMovie
-    ) -> list[ItemIdentifier]:
+    ) -> Sequence[ItemIdentifier]:
         return [ItemIdentifier.from_item(item)]
 
     @gattl_cache(ttl=15, key=lambda self, item: item)
@@ -180,11 +180,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         mapping: MappingGraph | None,
     ) -> str | None:
         return await item.review
-
-    def _derive_scope(
-        self, *, item: LibraryMovie, child_item: LibraryMovie | None
-    ) -> str | None:
-        return None
 
     def _debug_log_title(
         self,

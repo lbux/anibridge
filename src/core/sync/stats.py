@@ -125,14 +125,14 @@ class SyncStats(BaseModel):
         for item_id in item_ids:
             self.untrack_item(item_id)
 
-    def register_pending_items(self, item_ids: list[ItemIdentifier]) -> None:
+    def register_pending_items(self, item_ids: Sequence[ItemIdentifier]) -> None:
         """Register items as pending processing.
 
         This should be called at the start of processing to ensure all items
         that should be processed are tracked.
 
         Args:
-            item_ids (list[ItemIdentifier]): List of item identifiers to register
+            item_ids (Sequence[ItemIdentifier]): List of item identifiers to register
         """
         for item_id in item_ids:
             if item_id not in self._item_outcomes:
