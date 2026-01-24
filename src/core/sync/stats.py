@@ -6,10 +6,9 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from anibridge.library import LibraryEntry, MediaKind
-from anibridge.list import ListEntry, ListStatus, MappingDescriptor
+from anibridge.list import ListEntry, ListStatus
 from pydantic import BaseModel
 
-from src.core.animap import MappingGraph
 from src.models.db.sync_history import SyncOutcome
 
 __all__ = [
@@ -363,8 +362,6 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     item: ParentMediaT
     child: ChildMediaT
     grandchildren: Sequence[LibraryEntry]
-    mapping: MappingGraph | None
-    list_descriptor: MappingDescriptor | None
     before: EntrySnapshot | None
     after: EntrySnapshot
     entry: ListEntry

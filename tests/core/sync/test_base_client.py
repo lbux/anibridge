@@ -64,8 +64,6 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
         ]
     ]:
         """Yield any queued mapping results for testing purposes."""
-        if False:
-            yield item, (), SyncTarget(None, None, None, None)
         for result in self._map_results:
             yield result
 
@@ -103,8 +101,6 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
         item: Any,
         child_item: Any,
         entry: ListEntryProtocol | None,
-        mapping=None,
-        list_descriptor=None,
         media_key=None,
     ) -> str:
         return f"library_key: {getattr(child_item, 'key', 'unknown')}"
@@ -285,8 +281,6 @@ async def test_sync_media_updates_entry_and_history(
         child_item=movie,
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
-        list_descriptor=None,
         list_media_key=entry.media().key,
     )
 
@@ -322,8 +316,6 @@ async def test_sync_media_skips_when_entry_up_to_date(
         child_item=movie,
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
-        list_descriptor=None,
         list_media_key=entry.media().key,
     )
 
@@ -354,8 +346,6 @@ async def test_sync_media_deletes_when_destructive(
         child_item=movie,
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
-        list_descriptor=None,
         list_media_key=entry.media().key,
     )
 
@@ -387,8 +377,6 @@ async def test_sync_media_batches_when_enabled(
         child_item=movie,
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
-        list_descriptor=None,
         list_media_key=entry.media().key,
     )
 
@@ -416,8 +404,6 @@ async def test_batch_sync_flushes_history(stub_client: StubSyncClient, sync_db) 
         child_item=movie,
         grandchild_items=(movie,),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
-        list_descriptor=None,
         list_media_key=entry.media().key,
     )
 

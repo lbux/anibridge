@@ -17,7 +17,6 @@ from anibridge.library import (
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
 
-from src.core.animap import AnimapEdge, AnimapGraph
 from src.core.sync.show import ShowSyncClient
 from src.models.db.sync_history import SyncHistory
 from tests.core.sync.fakes import (
@@ -93,22 +92,6 @@ def build_show(
     return show, season, episodes
 
 
-def make_graph(
-    source: tuple[str, str, str | None],
-    target: tuple[str, str, str | None],
-    source_range: str = "s1",
-    destination_range: str | None = None,
-) -> AnimapGraph:
-    """Helper to build a one-edge mapping graph for show tests."""
-    edge = AnimapEdge(
-        source=source,
-        destination=target,
-        source_range=source_range,
-        destination_range=destination_range,
-    )
-    return AnimapGraph(edges=(edge,))
-
-
 @pytest.mark.asyncio
 async def test_process_media_syncs_show_and_writes_history(
     show_client: ShowSyncClient, sync_db: AniBridgeDB
@@ -127,16 +110,7 @@ async def test_process_media_syncs_show_and_writes_history(
         total_units=len(episodes),
     )
     provider.entries["400"] = entry
-    provider.resolved_keys = ["400"]
-    show_client.animap_client = cast(
-        Any,
-        FakeAnimapClient(
-            make_graph(
-                ("anilist", "400", "s1"),
-                ("_fake-list", "400", "s1"),
-            )
-        ),
-    )
+    provider.derived_keys = ["400"]
 
     await show_client.process_media(cast(LibraryShowProtocol, show))
 
@@ -162,17 +136,7 @@ async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) ->
         total_units=len(episodes),
     )
     provider.entries["401"] = entry
-    provider.resolved_keys = ["401"]
-    show_client.animap_client = cast(
-        Any,
-        FakeAnimapClient(
-            make_graph(
-                ("tmdb", "10", "s1"),
-                ("_fake-list", "401", "s1"),
-                source_range="s1",
-            )
-        ),
-    )
+    provider.derived_keys = ["401"]
 
     results = [
         result
@@ -183,7 +147,6 @@ async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) ->
     mapped_season, mapped_eps, target = results[0]
     assert mapped_season is season
     assert list(mapped_eps) == episodes
-    assert target.mapping is not None
     assert target.entry is entry
     assert target.list_media_key == "401"
 
@@ -241,7 +204,6 @@ async def test_calculate_status_variants(show_client: ShowSyncClient) -> None:
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
     )
     assert status == ListStatus.REPEATING
 
@@ -251,7 +213,6 @@ async def test_calculate_status_variants(show_client: ShowSyncClient) -> None:
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
     )
     assert status == ListStatus.CURRENT
 
@@ -266,7 +227,6 @@ async def test_calculate_status_variants(show_client: ShowSyncClient) -> None:
         child_item=cast(LibrarySeasonProtocol, planning_season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(planning_eps)),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
     )
     assert status == ListStatus.PLANNING
 
@@ -293,7 +253,6 @@ async def test_calculate_review_prefers_episode_for_singletons(
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        mapping=None,
     )
 
     assert review == episode_review

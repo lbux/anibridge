@@ -13,15 +13,7 @@ from anibridge.library import (
     LibraryShow,
     MediaKind,
 )
-from anibridge.list import (
-    ListMediaType,
-    ListStatus,
-    MappingDescriptor,
-    MappingEdge,
-)
-from anibridge.list.base import MappingResolution
-
-from src.core.animap import AnimapEdge, AnimapGraph
+from anibridge.list import ListMediaType, ListStatus, MappingDescriptor
 
 
 class FakeLibraryProvider:
@@ -307,11 +299,17 @@ class FakeListProvider:
         self.updated_entries: list[tuple[str, FakeListEntry]] = []
         self.batch_updates: list[list[FakeListEntry]] = []
         self.deleted_keys: list[str] = []
-        self.resolved_keys: list[str] = []
+        self.derived_keys: list[str] = []
 
     async def get_entry(self, key: str) -> FakeListEntry | None:
         """Return the entry for the given key, or None if not found."""
         return self.entries.get(key)
+
+    async def derive_keys(self, descriptors: Sequence[MappingDescriptor]) -> set[str]:
+        """Resolve provider keys from mapping descriptors."""
+        if not descriptors or not self.derived_keys:
+            return set()
+        return set(self.derived_keys)
 
     async def update_entry(self, key: str, entry: FakeListEntry) -> FakeListEntry:
         """Record the updated entry and return it."""
@@ -332,26 +330,6 @@ class FakeListProvider:
     async def search(self, query: str) -> Sequence[FakeListEntry]:
         """Return the pre-seeded search results."""
         return list(self.search_results)
-
-    def resolve_mappings(
-        self, edges: Sequence[MappingEdge]
-    ) -> Sequence[MappingResolution]:
-        """Optionally resolve a media key from mapping edges."""
-        if not self.resolved_keys:
-            return []
-        if not edges:
-            return []
-        return [
-            MappingResolution(
-                edge=edges[0],
-                descriptor=(
-                    FakeListProvider.NAMESPACE,
-                    resolved_key,
-                    edges[0].destination[2],
-                ),
-            )
-            for resolved_key in self.resolved_keys
-        ]
 
 
 class FakeListMedia:
@@ -493,31 +471,16 @@ class FakeListEntry:
 
 
 class FakeAnimapClient:
-    """Stub that returns a pre-seeded mapping graph for sync tests."""
+    """Stub that resolves mapping descriptors to a configured set."""
 
-    def __init__(self, graph: AnimapGraph | None = None) -> None:
-        """Initialize the fake Animap client with an optional graph."""
-        self.graph = graph or AnimapGraph(edges=tuple())
+    def __init__(self, resolved: Sequence[MappingDescriptor] | None = None) -> None:
+        self._resolved = tuple(resolved or [])
 
-    def get_descriptor_graph(self, *_: Any, **__: Any) -> AnimapGraph:
-        """Return the configured mapping graph regardless of descriptors."""
-        return self.graph
-
-    @staticmethod
-    def make_graph(
-        source: tuple[str, str, str | None],
-        target: tuple[str, str, str | None],
-        source_range: str = "1",
-        destination_range: str | None = None,
-    ) -> AnimapGraph:
-        """Helper to build a simple one-edge graph for tests."""
-        edge = AnimapEdge(
-            source=source,
-            destination=target,
-            source_range=source_range,
-            destination_range=destination_range,
-        )
-        return AnimapGraph(edges=(edge,))
+    def resolve_target_descriptors(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+    ) -> tuple[MappingDescriptor, ...]:
+        return self._resolved
 
 
 def make_history_entry(key: str, *, ts: datetime) -> HistoryEntry:

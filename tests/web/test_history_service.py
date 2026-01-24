@@ -306,11 +306,13 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
     """Metadata helpers should return list metadata and filter library sections."""
     service = HistoryService()
 
-    list_result = await service._fetch_list_metadata_batch("profile", ("lst1",))
+    list_result = await service._fetch_list_metadata_batch(
+        "profile", "alist", ("lst1",)
+    )
     assert list_result["lst1"].title == "List lst1"
 
     library_result = await service._fetch_library_metadata_batch(
-        "profile", "missing", ("lib1",)
+        "profile", "_dummy-library", "missing", ("lib1",)
     )
     assert library_result == {}
 

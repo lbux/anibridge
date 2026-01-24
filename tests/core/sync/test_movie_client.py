@@ -10,7 +10,6 @@ from anibridge.library import LibraryProvider
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListProvider, ListStatus
 
-from src.core.animap import AnimapClient
 from src.core.sync.movie import MovieSyncClient
 from src.models.db.sync_history import SyncHistory
 from tests.core.sync.fakes import (
@@ -32,7 +31,7 @@ def movie_client() -> MovieSyncClient:
     return MovieSyncClient(
         library_provider=cast(LibraryProvider, FakeLibraryProvider()),
         list_provider=cast(ListProvider, FakeListProvider()),
-        animap_client=cast(AnimapClient, FakeAnimapClient()),
+        animap_client=cast(Any, FakeAnimapClient()),
         excluded_sync_fields=[],
         full_scan=False,
         destructive_sync=False,
@@ -59,7 +58,6 @@ def _call_args(
         "child_item": library_movie,
         "grandchild_items": cast(Sequence[LibraryMovieProtocol], (library_movie,)),
         "entry": cast(ListEntryProtocol, entry),
-        "mapping": None,
     }
 
 
@@ -165,16 +163,7 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
         media_type=ListMediaType.MOVIE,
     )
     provider.entries["101"] = entry
-    provider.resolved_keys = ["101"]
-    movie_client.animap_client = cast(
-        Any,
-        FakeAnimapClient(
-            FakeAnimapClient.make_graph(
-                ("anilist", "101", None),
-                ("_fake-list", "101", None),
-            )
-        ),
-    )
+    provider.derived_keys = ["101"]
 
     movie = make_movie(view_count=1, ids={"anilist": "101"})
     library_movie = cast(LibraryMovieProtocol, movie)
@@ -182,7 +171,6 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
 
     assert len(results) == 1
     _, _, target = results[0]
-    assert target.mapping is not None
     assert target.entry is entry
     assert target.list_media_key == "101"
 
@@ -207,7 +195,6 @@ async def test_map_media_uses_search_when_no_mapping(
             media_type=ListMediaType.TV,
         ),
     ]
-    movie_client.animap_client = cast(Any, FakeAnimapClient())
     movie_client.search_fallback_threshold = 0
 
     movie = make_movie()
@@ -216,7 +203,6 @@ async def test_map_media_uses_search_when_no_mapping(
 
     assert len(results) == 1
     _, _, target = results[0]
-    assert target.mapping is None
     assert target.entry is provider.search_results[0]
 
 
@@ -251,16 +237,7 @@ async def test_map_media_returns_multiple_targets(
     )
     provider.entries["901"] = entry_a
     provider.entries["902"] = entry_b
-    provider.resolved_keys = ["901", "902"]
-    movie_client.animap_client = cast(
-        Any,
-        FakeAnimapClient(
-            FakeAnimapClient.make_graph(
-                ("anilist", "901", None),
-                ("_fake-list", "901", None),
-            )
-        ),
-    )
+    provider.derived_keys = ["901", "902"]
 
     movie = make_movie(view_count=1, ids={"anilist": "901"})
     library_movie = cast(LibraryMovieProtocol, movie)
@@ -285,16 +262,7 @@ async def test_process_media_syncs_movie_and_writes_history(
         total_units=1,
     )
     provider.entries["301"] = entry
-    provider.resolved_keys = ["301"]
-    movie_client.animap_client = cast(
-        Any,
-        FakeAnimapClient(
-            FakeAnimapClient.make_graph(
-                ("anilist", "301", None),
-                ("_fake-list", "301", None),
-            )
-        ),
-    )
+    provider.derived_keys = ["301"]
 
     history = [make_history_entry("movie-1", ts=datetime(2025, 1, 1, tzinfo=UTC))]
     movie = make_movie(

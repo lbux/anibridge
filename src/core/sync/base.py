@@ -4,23 +4,17 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from anibridge.library import LibraryEntry, LibraryProvider
-from anibridge.list import (
-    ListEntry,
-    ListProvider,
-    ListStatus,
-    MappingDescriptor,
-    MappingGraph,
-)
-from anibridge.list.base import MappingResolution
+from anibridge.list import ListEntry, ListProvider, ListStatus
 from rapidfuzz import fuzz
 from sqlalchemy import tuple_
 
 from src import log
 from src.config.database import db
 from src.config.settings import SyncField
+from src.core.animap import AnimapClient
 from src.core.sync.stats import (
     BatchUpdate,
     EntrySnapshot,
@@ -32,9 +26,6 @@ from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.utils.terminal import ARROW
 from src.utils.types import Comparable
-
-if TYPE_CHECKING:
-    from src.core.animap import AnimapClient
 
 __all__ = ["BaseSyncClient"]
 
@@ -68,10 +59,8 @@ class FieldRule:
 class SyncTarget:
     """Resolved list target for a library media item."""
 
-    list_descriptor: MappingDescriptor | None
-    list_media_key: str | None
-    entry: ListEntry | None
-    mapping: MappingGraph | None
+    list_media_key: str
+    entry: ListEntry
 
 
 class BaseSyncClient[
@@ -190,9 +179,9 @@ class BaseSyncClient[
         self._pin_cache[cache_key] = fields
         return fields
 
-    def _build_mapping_graph(self, *media_items: LibraryEntry) -> MappingGraph | None:
-        """Resolve a mapping graph for the supplied media items."""
-        descriptors: list[MappingDescriptor] = []
+    async def _derive_list_keys(self, *media_items: LibraryEntry) -> tuple[str, ...]:
+        """Derive list provider keys for the supplied media items."""
+        descriptors: list[tuple[str, str, str | None]] = []
         seen: set[tuple[str, str, str | None]] = set()
         for media in media_items:
             for descriptor in media.mapping_descriptors():
@@ -201,38 +190,15 @@ class BaseSyncClient[
                 seen.add(descriptor)
                 descriptors.append(descriptor)
         if not descriptors:
-            return None
+            return tuple()
 
-        return self.animap_client.get_descriptor_graph(
-            descriptors, from_source=True, from_target=False
-        )
+        resolved = self.animap_client.resolve_target_descriptors(descriptors)
+        candidates = resolved or tuple(descriptors)
 
-    def _resolve_list_descriptors(
-        self, mapping: MappingGraph | None
-    ) -> tuple[MappingDescriptor, ...]:
-        """Return all resolved list descriptors from the mapping graph."""
-        if mapping is None:
+        keys = await self.list_provider.derive_keys(candidates)
+        if not keys:
             return tuple()
-        namespace = self.list_provider.NAMESPACE
-        edges = tuple(
-            edge for edge in mapping.edges if edge.destination[0] == namespace
-        )
-        if not edges:
-            return tuple()
-        resolutions: Sequence[MappingResolution] = self.list_provider.resolve_mappings(
-            edges
-        )
-        if not resolutions:
-            return tuple()
-        seen: set[tuple[str, str, str | None]] = set()
-        ordered: list[MappingDescriptor] = []
-        for resolution in resolutions:
-            descriptor = resolution.descriptor
-            if descriptor in seen:
-                continue
-            seen.add(descriptor)
-            ordered.append(descriptor)
-        return tuple(ordered)
+        return tuple(sorted(keys))
 
     async def process_media(self, item: ParentMediaT) -> None:
         """Process a single library item."""
@@ -240,8 +206,6 @@ class BaseSyncClient[
             item=item,
             child_item=None,
             entry=None,
-            mapping=None,
-            list_descriptor=None,
             media_key=None,
         )
         debug_title = self._debug_log_title(item=item, child_item=None)
@@ -273,18 +237,14 @@ class BaseSyncClient[
             grandchildren = tuple(grandchild_items)
             grandchild_ids = ItemIdentifier.from_items(grandchildren)
 
-            mapping_graph = target.mapping
             entry = target.entry
             list_media_key = target.list_media_key
-            list_descriptor = target.list_descriptor
 
             debug_title = self._debug_log_title(item=item, child_item=child_item)
             debug_ids = self._debug_log_ids(
                 item=item,
                 child_item=child_item,
                 entry=entry,
-                mapping=mapping_graph,
-                list_descriptor=list_descriptor,
                 media_key=list_media_key,
             )
             if entry is None:
@@ -305,8 +265,6 @@ class BaseSyncClient[
                     child_item=child_item,
                     grandchild_items=grandchildren,
                     entry=entry,
-                    mapping=mapping_graph,
-                    list_descriptor=list_descriptor,
                     list_media_key=list_media_key,
                 )
                 self.sync_stats.track_items(grandchild_ids, outcome)
@@ -331,8 +289,6 @@ class BaseSyncClient[
                 child_item=None,
                 grandchild_items=None,
                 snapshots=(None, None),
-                mapping=None,
-                list_descriptor=None,
                 list_media_key=None,
                 outcome=SyncOutcome.NOT_FOUND,
             )
@@ -393,32 +349,17 @@ class BaseSyncClient[
         item: ParentMediaT,
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
-        entry: ListEntry | None,
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
+        entry: ListEntry,
         list_media_key: str | None,
     ) -> SyncOutcome:
         """Synchronize a mapped media item with the list provider."""
-        entry = await self._ensure_entry(
-            item=item,
-            child_item=child_item,
-            grandchild_items=grandchild_items,
-            entry=entry,
-            mapping=mapping,
-            list_descriptor=list_descriptor,
-        )
-
-        resolved_list_key = list_media_key
-        if resolved_list_key is None and list_descriptor is not None:
-            resolved_list_key = list_descriptor[1]
+        resolved_list_key = list_media_key or entry.media().key
 
         debug_title = self._debug_log_title(item=item, child_item=child_item)
         debug_ids = self._debug_log_ids(
             item=item,
             child_item=child_item,
             entry=entry,
-            mapping=mapping,
-            list_descriptor=list_descriptor,
             media_key=resolved_list_key,
         )
 
@@ -436,7 +377,6 @@ class BaseSyncClient[
             "child_item": child_item,
             "grandchild_items": grandchild_items,
             "entry": entry,
-            "mapping": mapping,
         }
 
         status_value: ListStatus | None = await self._field_calculators[
@@ -467,8 +407,6 @@ class BaseSyncClient[
                     child_item=child_item,
                     grandchild_items=grandchild_items,
                     snapshots=(before_snapshot, None),
-                    mapping=mapping,
-                    list_descriptor=list_descriptor,
                     list_media_key=resolved_list_key,
                     outcome=SyncOutcome.DELETED,
                 )
@@ -541,11 +479,9 @@ class BaseSyncClient[
             item=item,
             child=child_item,
             grandchildren=grandchild_items,
-            mapping=mapping,
             before=before_snapshot,
             after=after_snapshot,
             entry=entry,
-            list_descriptor=list_descriptor,
             list_media_key=resolved_list_key,
         )
 
@@ -605,8 +541,6 @@ class BaseSyncClient[
                 child_item=plan.child,
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
-                mapping=plan.mapping,
-                list_descriptor=plan.list_descriptor,
                 list_media_key=plan.list_media_key,
                 outcome=SyncOutcome.SYNCED,
             )
@@ -622,8 +556,6 @@ class BaseSyncClient[
                 child_item=plan.child,
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
-                mapping=plan.mapping,
-                list_descriptor=plan.list_descriptor,
                 list_media_key=plan.list_media_key,
                 outcome=SyncOutcome.FAILED,
                 error_message=str(exc),
@@ -663,8 +595,6 @@ class BaseSyncClient[
                     item=update.item,
                     child_item=update.child,
                     entry=update.entry,
-                    mapping=update.mapping,
-                    list_descriptor=update.list_descriptor,
                     media_key=update.after.media_key,
                 )
                 log.success(
@@ -685,8 +615,6 @@ class BaseSyncClient[
                     child_item=update.child,
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
-                    mapping=update.mapping,
-                    list_descriptor=update.list_descriptor,
                     list_media_key=update.list_media_key,
                     outcome=SyncOutcome.SYNCED,
                 )
@@ -698,8 +626,6 @@ class BaseSyncClient[
                     child_item=update.child,
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
-                    mapping=update.mapping,
-                    list_descriptor=update.list_descriptor,
                     list_media_key=update.list_media_key,
                     outcome=SyncOutcome.FAILED,
                     error_message=str(exc),
@@ -715,8 +641,6 @@ class BaseSyncClient[
         child_item: ChildMediaT | None,
         grandchild_items: Sequence[LibraryEntry] | None,
         snapshots: tuple[EntrySnapshot | None, EntrySnapshot | None],
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
         list_media_key: str | None,
         outcome: SyncOutcome,
         error_message: str | None = None,
@@ -756,15 +680,14 @@ class BaseSyncClient[
                 return
 
             async def get_mapping_entry_id() -> int | None:
-                if list_descriptor is None:
+                if resolved_list_media_key is None:
                     return None
-                provider, entry_id, entry_scope = list_descriptor
                 entry = (
                     ctx.session.query(AnimapEntry)
                     .filter(
-                        AnimapEntry.provider == provider,
-                        AnimapEntry.entry_id == entry_id,
-                        AnimapEntry.entry_scope == entry_scope,
+                        AnimapEntry.provider == list_namespace,
+                        AnimapEntry.entry_id == resolved_list_media_key,
+                        AnimapEntry.entry_scope.is_(None),
                     )
                     .first()
                 )
@@ -953,7 +876,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> ListStatus | None:
         """Calculate the desired status for the list entry."""
         ...
@@ -966,7 +888,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         """Calculate the desired score for the list entry."""
         ...
@@ -979,7 +900,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         """Calculate the desired progress for the list entry."""
         ...
@@ -992,7 +912,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         """Calculate the desired repeat count for the list entry."""
         ...
@@ -1005,7 +924,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         """Calculate the desired start date for the list entry."""
         ...
@@ -1018,7 +936,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         """Calculate the desired completion date for the list entry."""
         ...
@@ -1031,7 +948,6 @@ class BaseSyncClient[
         child_item: ChildMediaT,
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> str | None:
         """Calculate the desired review/notes for the list entry."""
         ...
@@ -1053,30 +969,7 @@ class BaseSyncClient[
         item: ParentMediaT,
         child_item: ChildMediaT | None,
         entry: ListEntry | None,
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
         """Return a debug-friendly identifier representation."""
         ...
-
-    async def _ensure_entry(
-        self,
-        *,
-        item: ParentMediaT,
-        child_item: ChildMediaT,
-        grandchild_items: Sequence[GrandchildMediaT],
-        entry: ListEntry | None,
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
-    ) -> ListEntry:
-        """Materialize a list entry for synchronization, constructing when missing."""
-        if entry is not None:
-            return entry
-        if list_descriptor is None:
-            raise ValueError(
-                f"Unable to determine list media key for {item.media_kind.value} "
-                f"{self._debug_log_title(item=item, child_item=child_item)}"
-            )
-
-        return await self.list_provider.build_entry(list_descriptor[1])

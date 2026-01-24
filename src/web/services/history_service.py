@@ -118,7 +118,7 @@ class HistoryService:
                 if not keys:
                     continue
                 metadata = await self._fetch_list_metadata_batch(
-                    profile, tuple(sorted(keys))
+                    profile, namespace, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
                     list_metadata_map[(namespace, key)] = payload
@@ -129,7 +129,7 @@ class HistoryService:
                 if not keys:
                     continue
                 metadata = await self._fetch_library_metadata_batch(
-                    profile, section_key, tuple(sorted(keys))
+                    profile, namespace, section_key, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
                     library_metadata_map[(namespace, key)] = payload
@@ -177,12 +177,17 @@ class HistoryService:
 
     @alru_cache(ttl=300)
     async def _fetch_list_metadata_batch(
-        self, profile: str, media_keys: tuple[str, ...]
+        self,
+        profile: str,
+        namespace: str,
+        media_keys: tuple[str, ...],
     ) -> dict[str, ProviderMediaMetadata]:
         """Fetch list provider metadata for a batch of media keys."""
         if not media_keys:
             return {}
         bridge = get_bridge(profile)
+        if namespace != bridge.list_provider.NAMESPACE:
+            return {}
 
         entries = await bridge.list_provider.get_entries_batch(list(media_keys))
         metadata: dict[str, ProviderMediaMetadata] = {}
@@ -204,12 +209,15 @@ class HistoryService:
     async def _fetch_library_metadata_batch(
         self,
         profile: str,
+        namespace: str,
         section_key: str | None,
         media_keys: tuple[str, ...],
     ) -> dict[str, ProviderMediaMetadata]:
         if not media_keys:
             return {}
         bridge = get_bridge(profile)
+        if namespace != bridge.library_provider.NAMESPACE:
+            return {}
 
         sections = await bridge.library_provider.get_sections()
         target_sections: list[LibrarySection]
@@ -263,6 +271,8 @@ class HistoryService:
         page: int = Query(1, ge=1),
         per_page: int = Query(20, ge=1, le=250),
         outcome: str | None = None,
+        library_namespace: str | None = None,
+        list_namespace: str | None = None,
         include_library_media: bool = True,
         include_list_media: bool = True,
     ) -> HistoryPage:
@@ -273,6 +283,8 @@ class HistoryService:
             page (int): The page number to retrieve.
             per_page (int): The number of entries per page.
             outcome (str | None): Optional filter for the sync outcome.
+            library_namespace (str | None): Optional filter for library provider.
+            list_namespace (str | None): Optional filter for list provider.
             include_library_media (bool): Include library provider metadata when True.
             include_list_media (bool): Include list provider metadata when True.
 
@@ -283,15 +295,15 @@ class HistoryService:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
         """
-        bridge = get_bridge(profile)
-
         base_filters = [
             SyncHistory.profile_name == profile,
-            SyncHistory.library_namespace == bridge.library_provider.NAMESPACE,
-            SyncHistory.list_namespace == bridge.list_provider.NAMESPACE,
         ]
         if outcome:
             base_filters.append(SyncHistory.outcome == outcome)
+        if library_namespace:
+            base_filters.append(SyncHistory.library_namespace == library_namespace)
+        if list_namespace:
+            base_filters.append(SyncHistory.list_namespace == list_namespace)
 
         with db() as ctx:
             # Get cached stats
@@ -437,7 +449,11 @@ class HistoryService:
                     f"{before_snapshot.media_key}"
                 )
             else:
-                entry = await list_provider.build_entry(before_snapshot.media_key)
+                entry = await list_provider.get_entry(before_snapshot.media_key)
+                if entry is None:
+                    raise HistoryItemNotFoundError(
+                        "List entry no longer exists on the provider"
+                    )
                 entry.status = before_snapshot.status
                 entry.progress = before_snapshot.progress
                 entry.repeats = before_snapshot.repeats

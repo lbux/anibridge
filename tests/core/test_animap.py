@@ -1,4 +1,4 @@
-"""Tests for the Animap client (descriptor graph)."""
+"""Tests for the Animap client mapping sync."""
 
 import asyncio
 import importlib
@@ -209,37 +209,6 @@ def test_sync_db_creates_entries_mappings_and_provenance(
         expected_source,
     ]
     assert [row.n for row in provenance_rows] == [0, 0]
-
-
-def test_get_descriptor_graph_filters_by_source_and_target(
-    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
-) -> None:
-    """Descriptor graph filtering respects source/target flags."""
-    _write_mapping_file(tmp_path, _mapping_data())
-    asyncio.run(animap_client.sync_db())
-
-    source_only = animap_client.get_descriptor_graph(
-        [("tvdb", "20", "s1")],
-        from_source=True,
-        from_target=False,
-    ).edges
-    assert source_only == tuple()
-
-    target_only = animap_client.get_descriptor_graph(
-        [("tvdb", "20", "s1")],
-        from_source=False,
-        from_target=True,
-    ).edges
-    assert len(target_only) == 1
-    assert target_only[0].destination[0] == "tvdb"
-
-    anilist_source = animap_client.get_descriptor_graph(
-        [("anilist", "1", None)],
-        from_source=True,
-        from_target=False,
-    ).edges
-    assert len(anilist_source) == 1
-    assert anilist_source[0].source[0] == "anilist"
 
 
 def test_sync_db_refreshes_provenance_when_hash_matches(

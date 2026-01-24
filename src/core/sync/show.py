@@ -11,9 +11,9 @@ from anibridge.library import (
     LibrarySeason,
     LibraryShow,
 )
-from anibridge.list import ListEntry, ListMediaType, ListStatus, MappingDescriptor
+from anibridge.list import ListEntry, ListMediaType, ListStatus
 
-from src.core.animap import MappingGraph, descriptor_key
+from src.core.animap import descriptor_key
 from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache, glru_cache
@@ -26,9 +26,7 @@ class _SeasonGroup:
     child_item: LibrarySeason
     first_index: int
     episodes: list[LibraryEpisode]
-    entry: ListEntry | None
-    mapping: MappingGraph | None
-    list_descriptor: MappingDescriptor | None
+    entry: ListEntry
     media_key: str
 
 
@@ -57,33 +55,25 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
 
         async def resolve_season(
             season_index: int, season: LibrarySeason
-        ) -> list[
-            tuple[str, ListEntry | None, MappingGraph | None, MappingDescriptor | None]
-        ]:
+        ) -> list[tuple[str, ListEntry]]:
             """Resolve list targets for the given season."""
-            mapping_graph = self._build_mapping_graph(season, item)
-            descriptors = self._resolve_list_descriptors(mapping_graph)
-            if descriptors:
-                targets: list[
-                    tuple[
-                        str,
-                        ListEntry | None,
-                        MappingGraph | None,
-                        MappingDescriptor | None,
-                    ]
-                ] = []
-                for descriptor in descriptors:
-                    key = str(descriptor[1])
+            keys = await self._derive_list_keys(season, item)
+            if keys:
+                targets: list[tuple[str, ListEntry]] = []
+                for key in keys:
                     entry = await self.list_provider.get_entry(key)
-                    targets.append((key, entry, mapping_graph, descriptor))
-                return targets
+                    if entry is None:
+                        continue
+                    targets.append((entry.media().key, entry))
+                if targets:
+                    return targets
 
             entry = await self.search_media(item, season)
             if not entry:
                 return []
 
             key = str(entry.media().key)
-            return [(key, entry, None, None)]
+            return [(key, entry)]
 
         groups: dict[str, _SeasonGroup] = {}
 
@@ -97,16 +87,14 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if not targets:
                 continue
 
-            for key, entry, mapping, list_descriptor in targets:
-                media_key = entry.media().key if entry else key
+            for key, entry in targets:
+                media_key = entry.media().key
                 if (group := groups.get(key)) is None:
                     groups[key] = _SeasonGroup(
                         child_item=season,
                         first_index=season_index,
                         episodes=list(season_episodes),
                         entry=entry,
-                        mapping=mapping,
-                        list_descriptor=list_descriptor,
                         media_key=media_key,
                     )
                     continue
@@ -114,9 +102,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 if season_index < group.first_index:
                     group.child_item, group.first_index = season, season_index
                 group.episodes.extend(season_episodes)
-                group.entry = entry or group.entry
-                group.mapping = group.mapping or mapping
-                group.list_descriptor = list_descriptor or group.list_descriptor
+                group.entry = entry
 
         for group in sorted(groups.values(), key=lambda g: g.first_index):
             eps = sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
@@ -124,10 +110,8 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 group.child_item,
                 tuple(eps),
                 SyncTarget(
-                    list_descriptor=group.list_descriptor,
                     list_media_key=group.media_key,
                     entry=group.entry,
-                    mapping=group.mapping,
                 ),
             )
 
@@ -167,7 +151,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> ListStatus | None:
         watched_count = len(
             [episode for episode in grandchild_items if episode.view_count]
@@ -218,7 +201,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         scores = [
             episode.user_rating for episode in grandchild_items if episode.user_rating
@@ -238,7 +220,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         watched = len([episode for episode in grandchild_items if episode.view_count])
         total_units = entry.media().total_units or len(grandchild_items)
@@ -253,7 +234,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         view_counts = [
             episode.view_count for episode in grandchild_items if episode.view_count
@@ -267,7 +247,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         history = await self._filter_history_by_episodes(item, grandchild_items)
         if not history:
@@ -281,7 +260,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         history = await self._filter_history_by_episodes(item, grandchild_items)
         if not history:
@@ -295,7 +273,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> str | None:
         if entry.media().total_units == 1 and len(grandchild_items) == 1:
             review = await grandchild_items[0].review
@@ -320,11 +297,13 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         item: LibraryShow,
         child_item: LibrarySeason | None,
         entry: ListEntry | None,
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
-        formatted = [descriptor_key(list_descriptor)] if list_descriptor else []
+        formatted: list[str] = []
+        if media_key:
+            formatted.append(
+                descriptor_key((self.list_provider.NAMESPACE, str(media_key), None))
+            )
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
         )

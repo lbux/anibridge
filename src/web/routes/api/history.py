@@ -48,6 +48,12 @@ async def get_history(
     page: int = 1,
     per_page: int = 25,
     outcome: str | None = Query(None, description="Filter by outcome"),
+    library_namespace: str | None = Query(
+        None, description="Filter by library provider namespace"
+    ),
+    list_namespace: str | None = Query(
+        None, description="Filter by list provider namespace"
+    ),
 ) -> GetHistoryResponse:
     """Get paginated timeline for profile.
 
@@ -56,6 +62,8 @@ async def get_history(
         page (int): The page number.
         per_page (int): The number of items per page.
         outcome (str | None): Filter by outcome.
+        library_namespace (str | None): Filter by library provider namespace.
+        list_namespace (str | None): Filter by list provider namespace.
 
     Returns:
         GetHistoryResponse: The paginated history response.
@@ -65,7 +73,12 @@ async def get_history(
         ProfileNotFoundError: If the profile is unknown.
     """
     hp: HistoryPage = await get_history_service().get_page(
-        profile=profile, page=page, per_page=per_page, outcome=outcome
+        profile=profile,
+        page=page,
+        per_page=per_page,
+        outcome=outcome,
+        library_namespace=library_namespace,
+        list_namespace=list_namespace,
     )
     return GetHistoryResponse(**hp.model_dump())
 

@@ -41,7 +41,7 @@ class BridgeClient:
             profile_name (str): The name of the profile.
             profile_config (AniBridgeProfileConfig): The profile-specific configuration.
             global_config (AniBridgeConfig): The global application configuration.
-            shared_animap_client (AnimapClient): The shared Animap client instance.
+            shared_animap_client (AnimapClient): Shared Animap client instance.
         """
         self.profile_name = profile_name
         self.profile_config = profile_config

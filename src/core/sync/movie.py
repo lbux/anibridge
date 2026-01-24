@@ -4,9 +4,9 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 
 from anibridge.library import LibraryMovie
-from anibridge.list import ListEntry, ListMediaType, ListStatus, MappingDescriptor
+from anibridge.list import ListEntry, ListMediaType, ListStatus
 
-from src.core.animap import MappingGraph, descriptor_key
+from src.core.animap import descriptor_key
 from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache
@@ -27,24 +27,25 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         ]
     ]:
         """Map a library movie to its corresponding list entry."""
-        mapping_graph = self._build_mapping_graph(item)
-        descriptors = self._resolve_list_descriptors(mapping_graph)
-
-        if descriptors:
-            for descriptor in descriptors:
-                list_media_key = str(descriptor[1])
-                entry = await self.list_provider.get_entry(list_media_key)
+        keys = await self._derive_list_keys(item)
+        if keys:
+            yielded = False
+            for key in keys:
+                entry = await self.list_provider.get_entry(key)
+                if entry is None:
+                    continue
+                yielded = True
+                list_media_key = entry.media().key
                 yield (
                     item,
                     (item,),
                     SyncTarget(
-                        list_descriptor=descriptor,
                         list_media_key=list_media_key,
                         entry=entry,
-                        mapping=mapping_graph,
                     ),
                 )
-            return
+            if yielded:
+                return
 
         entry = await self.search_media(item, item)
         if entry is not None:
@@ -52,10 +53,8 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
                 item,
                 (item,),
                 SyncTarget(
-                    list_descriptor=None,
                     list_media_key=entry.media().key,
                     entry=entry,
-                    mapping=None,
                 ),
             )
 
@@ -90,7 +89,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> ListStatus | None:
         has_views = item.view_count > 0
         history = await self._get_history(item)
@@ -115,7 +113,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         return item.user_rating
 
@@ -126,7 +123,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         total_units = entry.media().total_units or len(grandchild_items) or 1
         return total_units if item.view_count > 0 else None
@@ -138,7 +134,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> int | None:
         return item.view_count - 1 if item.view_count > 0 else None
 
@@ -149,7 +144,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         history = await self._get_history(item)
         if not history:
@@ -163,7 +157,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> datetime | None:
         history = await self._get_history(item)
         if not history:
@@ -177,7 +170,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         child_item: LibraryMovie,
         grandchild_items: Sequence[LibraryMovie],
         entry: ListEntry,
-        mapping: MappingGraph | None,
     ) -> str | None:
         return await item.review
 
@@ -194,11 +186,13 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         item: LibraryMovie,
         child_item: LibraryMovie | None,
         entry: ListEntry | None,
-        mapping: MappingGraph | None,
-        list_descriptor: MappingDescriptor | None,
         media_key: str | None,
     ) -> str:
-        formatted = [descriptor_key(list_descriptor)] if list_descriptor else []
+        formatted: list[str] = []
+        if media_key:
+            formatted.append(
+                descriptor_key((self.list_provider.NAMESPACE, str(media_key), None))
+            )
         formatted.extend(
             descriptor_key(descriptor) for descriptor in item.mapping_descriptors()
         )
