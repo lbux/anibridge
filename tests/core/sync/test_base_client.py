@@ -54,6 +54,9 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
     async def _get_all_trackable_items(self, item: Any) -> list[ItemIdentifier]:
         return list(self._trackable_items)
 
+    async def _collect_prefetch_keys(self, item: Any) -> Sequence[str]:
+        return []
+
     async def map_media(
         self, item: Any
     ) -> AsyncIterator[
