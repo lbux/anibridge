@@ -3,14 +3,13 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
-from anibridge.library import LibraryEntry, LibraryEpisode, LibrarySeason, MediaKind
+from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import ListEntry, ListStatus, MappingDescriptor
 from pydantic import BaseModel
 
 from src.core.animap import MappingGraph
-from src.exceptions import UnsupportedMediaTypeError
 from src.models.db.sync_history import SyncOutcome
 
 __all__ = [
@@ -22,51 +21,26 @@ __all__ = [
 ]
 
 
-class ItemIdentifier(BaseModel):
+@dataclass(slots=True)
+class ItemIdentifier:
     """Immutable identifier for media items in sync operations.
 
     Provides a stable, hashable way to identify media items across
     the sync process without relying on fragile string representations.
     """
 
-    rating_key: str
-    title: str
-    item_type: str  # 'movie', 'show', 'season', 'episode'
-    parent_title: str | None = None
-    season_index: int | None = None
-    episode_index: int | None = None
-    repr: str | None = None  # Cached string representation
+    key: str
+    media_kind: MediaKind
+    repr: str
 
     @classmethod
     def from_item(cls, item: LibraryEntry) -> ItemIdentifier:
         """Create an identifier from a library media entity."""
         kwargs: dict[str, Any] = {
-            "rating_key": item.key,
-            "title": item.title,
-            "item_type": item.media_kind.value,
-            "parent_title": None,
-            "season_index": None,
-            "episode_index": None,
-            "repr": repr(item),
+            "key": item.key,
+            "media_kind": item.media_kind,
+            "repr": f"{item!r}",
         }
-
-        if item.media_kind == MediaKind.EPISODE:
-            item = cast(LibraryEpisode, item)
-            show = cast(LibraryEpisode, item).show()
-            kwargs["parent_title"] = show.title if show else None
-            kwargs["season_index"] = item.season_index
-            kwargs["episode_index"] = item.index
-        elif item.media_kind == MediaKind.SEASON:
-            item = cast(LibrarySeason, item)
-            show = cast(LibrarySeason, item).show()
-            kwargs["parent_title"] = show.title if show else None
-            kwargs["season_index"] = item.index
-        elif item.media_kind in (MediaKind.MOVIE, MediaKind.SHOW):
-            # No additional metadata required for top-level movie/show types
-            pass
-        else:
-            raise UnsupportedMediaTypeError(f"Unsupported media type: {type(item)}")
-
         return cls(**kwargs)
 
     @classmethod
@@ -87,7 +61,7 @@ class ItemIdentifier(BaseModel):
         Returns:
             int: Hash value of the instance
         """
-        return hash((self.rating_key, self.item_type))
+        return hash(self.key)
 
     def __repr__(self) -> str:
         """Generate a string representation of the ItemIdentifier instance.
@@ -177,12 +151,13 @@ class SyncStats(BaseModel):
             return [
                 item_id
                 for item_id in self._item_outcomes
-                if item_id.item_type in ("show", "movie")
+                if item_id.media_kind in (MediaKind.SHOW, MediaKind.MOVIE)
             ]
         return [
             item_id
             for item_id, item_outcome in self._item_outcomes.items()
-            if item_outcome in outcomes and item_id.item_type in ("show", "movie")
+            if item_outcome in outcomes
+            and item_id.media_kind in (MediaKind.SHOW, MediaKind.MOVIE)
         ]
 
     def get_grandchild_items_by_outcome(
@@ -200,12 +175,13 @@ class SyncStats(BaseModel):
             return [
                 item_id
                 for item_id in self._item_outcomes
-                if item_id.item_type in ("episode", "movie")
+                if item_id.media_kind in (MediaKind.EPISODE, MediaKind.MOVIE)
             ]
         return [
             item_id
             for item_id, item_outcome in self._item_outcomes.items()
-            if item_outcome in outcome and item_id.item_type in ("episode", "movie")
+            if item_outcome in outcome
+            and item_id.media_kind in (MediaKind.EPISODE, MediaKind.MOVIE)
         ]
 
     @property
