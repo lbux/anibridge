@@ -2,11 +2,13 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from anibridge.library import (
-    LibraryEntry,
+    LibraryMovie,
     LibraryProvider,
     LibrarySection,
+    LibraryShow,
     MediaKind,
 )
 from anibridge.list import ListProvider
@@ -19,6 +21,7 @@ from src.core.animap import AnimapClient
 from src.core.providers import build_library_provider, build_list_provider
 from src.core.sync import BaseSyncClient, MovieSyncClient, ShowSyncClient
 from src.core.sync.stats import SyncProgress, SyncStats
+from src.exceptions import MediaTypeError
 from src.models.db.housekeeping import Housekeeping
 from src.models.db.sync_history import SyncOutcome
 
@@ -345,9 +348,6 @@ class BridgeClient:
                 }
             )
 
-        if self.profile_config.batch_requests and items:
-            await self._prefetch_list_entries(items)
-
         sync_client: BaseSyncClient
         if section.media_kind == MediaKind.MOVIE:
             sync_client = movie_sync
@@ -360,9 +360,39 @@ class BridgeClient:
             )
             return SyncStats()
 
+        if self.profile_config.batch_requests:
+            log.info(
+                f"[{self.profile_name}] Prefetching list entries for "
+                f"$$'{section.title}'$$ ({len(items)} items)"
+            )
+            try:
+                if section.media_kind == MediaKind.MOVIE:
+                    await movie_sync.prefetch_entries(
+                        cast(Sequence[LibraryMovie], items)
+                    )
+                elif section.media_kind == MediaKind.SHOW:
+                    await show_sync.prefetch_entries(cast(Sequence[LibraryShow], items))
+            except Exception:
+                log.error(
+                    f"[{self.profile_name}] Failed to prefetch list entries",
+                    exc_info=True,
+                )
+            if self.current_sync is not None:
+                self.current_sync = self.current_sync.model_copy(
+                    update={"stage": "processing"}
+                )
+
         for item in items:
             try:
-                await sync_client.process_media(item)  # type: ignore[arg-type]
+                if item.media_kind == MediaKind.MOVIE:
+                    await movie_sync.process_media(cast(LibraryMovie, item))
+                elif item.media_kind == MediaKind.SHOW:
+                    await show_sync.process_media(cast(LibraryShow, item))
+                else:
+                    raise MediaTypeError(
+                        f"Unsupported media type '{type(item).__name__}' "
+                        "encountered during sync"
+                    )
 
                 if self.current_sync is not None:
                     self.current_sync = self.current_sync.model_copy(
@@ -391,9 +421,3 @@ class BridgeClient:
             sync_client.flush_failure_history_cleanup()
 
         return sync_client.sync_stats
-
-    async def _prefetch_list_entries(self, items: Sequence[LibraryEntry]) -> None:
-        """Prefetch list entries for the provided media items when batching."""
-        # Prefetch is intentionally a no-op for the v3 mapping graph while
-        # provider-side resolution is being migrated.
-        return

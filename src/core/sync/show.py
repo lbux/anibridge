@@ -61,7 +61,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if keys:
                 targets: list[tuple[str, ListEntry]] = []
                 for key in keys:
-                    entry = await self.list_provider.get_entry(key)
+                    entry = await self._get_entry_cached(key)
                     if entry is None:
                         continue
                     targets.append((entry.media().key, entry))
@@ -73,6 +73,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 return []
 
             key = str(entry.media().key)
+            self._cache_list_entry(entry)
             return [(key, entry)]
 
         groups: dict[str, _SeasonGroup] = {}
@@ -143,6 +144,17 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         if not episodes:
             return []
         return ItemIdentifier.from_items(episodes)
+
+    async def _collect_prefetch_keys(self, item: LibraryShow) -> Sequence[str]:
+        seasons = self.__get_wanted_seasons(item)
+        if not seasons:
+            return []
+        collected: set[str] = set()
+        for season in seasons.values():
+            keys = await self._derive_list_keys(season, item)
+            for key in keys:
+                collected.add(str(key))
+        return tuple(sorted(collected))
 
     async def _calculate_status(
         self,

@@ -31,7 +31,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         if keys:
             yielded = False
             for key in keys:
-                entry = await self.list_provider.get_entry(key)
+                entry = await self._get_entry_cached(key)
                 if entry is None:
                     continue
                 yielded = True
@@ -49,6 +49,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
 
         entry = await self.search_media(item, item)
         if entry is not None:
+            self._cache_list_entry(entry)
             yield (
                 item,
                 (item,),
@@ -57,6 +58,9 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
                     entry=entry,
                 ),
             )
+
+    async def _collect_prefetch_keys(self, item: LibraryMovie) -> Sequence[str]:
+        return await self._derive_list_keys(item)
 
     async def search_media(
         self, item: LibraryMovie, child_item: LibraryMovie

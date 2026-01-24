@@ -130,6 +130,7 @@ class BaseSyncClient[
 
         self.sync_stats: SyncStats = SyncStats()
         self._pin_cache: dict[tuple[str, str], list[str]] = {}
+        self._prefetched_entries: dict[str, ListEntry] = {}
         self._pending_updates: list[BatchUpdate[ParentMediaT, ChildMediaT]] = []
         self._failure_history_cleanup_queue: set[tuple[str, str, str | None]] = set()
 
@@ -149,10 +150,77 @@ class BaseSyncClient[
     async def clear_cache(self) -> None:
         """Clear any LRU/TTL caches defined on the client."""
         self._pin_cache.clear()
+        self._prefetched_entries.clear()
         for v in dir(self):
             attr = getattr(self, v)
             if callable(attr) and hasattr(attr, "cache_clear"):
                 attr.cache_clear()
+
+    def _cache_list_entry(self, entry: ListEntry) -> None:
+        """Store a list entry in the local prefetch cache."""
+        media_key = entry.media().key
+        if media_key is not None:
+            self._prefetched_entries[str(media_key)] = entry
+        entry_key = getattr(entry, "key", None)
+        if entry_key is not None:
+            self._prefetched_entries[str(entry_key)] = entry
+
+    async def _get_entry_cached(self, key: str) -> ListEntry | None:
+        """Return a list entry from cache or fall back to the provider."""
+        cached = self._prefetched_entries.get(str(key))
+        if cached is not None:
+            return cached
+        entry = await self.list_provider.get_entry(key)
+        if entry is not None:
+            self._cache_list_entry(entry)
+        return entry
+
+    async def prefetch_entries(self, items: Sequence[ParentMediaT]) -> None:
+        """Prefetch list entries for the supplied library items."""
+        if not items:
+            return
+
+        collect_keys = getattr(self, "_collect_prefetch_keys", None)
+        if collect_keys is None:
+            return
+
+        collected: set[str] = set()
+        for item in items:
+            try:
+                keys = await collect_keys(item)
+            except Exception:
+                log.error(
+                    f"[{self.profile_name}] Failed to collect prefetch keys",
+                    exc_info=True,
+                )
+                continue
+            for key in keys:
+                if key is None:
+                    continue
+                collected.add(str(key))
+
+        if not collected:
+            return
+
+        get_entries_batch = getattr(self.list_provider, "get_entries_batch", None)
+        if get_entries_batch is None:
+            return
+
+        try:
+            entries = await get_entries_batch(list(sorted(collected)))
+        except NotImplementedError:
+            return
+        except Exception:
+            log.error(
+                f"[{self.profile_name}] Failed to prefetch list entries",
+                exc_info=True,
+            )
+            return
+
+        for entry in entries:
+            if entry is None:
+                continue
+            self._cache_list_entry(entry)
 
     def _get_pinned_fields(self, namespace: str, media_key: str | None) -> list[str]:
         """Return the set of pinned fields for the given list media identifier."""
@@ -301,6 +369,11 @@ class BaseSyncClient[
         self, item: ParentMediaT
     ) -> Sequence[ItemIdentifier]:
         """Return all identifiers that should be tracked for the given item."""
+        ...
+
+    @abstractmethod
+    async def _collect_prefetch_keys(self, item: ParentMediaT) -> Sequence[str]:
+        """Collect list provider keys to prefetch for the given item."""
         ...
 
     @abstractmethod
