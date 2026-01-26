@@ -54,7 +54,6 @@ def show_client() -> ShowSyncClient:
 def build_show(
     *,
     view_counts: Sequence[int],
-    ordering: str = "tvdb",
     show_kwargs: dict[str, Any] | None = None,
     season_kwargs: dict[str, Any] | None = None,
     episode_kwargs: dict[str, Any] | None = None,
@@ -63,7 +62,6 @@ def build_show(
     show = FakeLibraryShow(
         key="show-1",
         title="Show",
-        ordering=ordering,
         **(show_kwargs or {}),
     )
     season = FakeLibrarySeason(

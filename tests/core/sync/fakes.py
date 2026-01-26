@@ -189,28 +189,21 @@ class FakeLibraryMovie(FakeLibraryMediaBase, LibraryMovie):
 
 
 class FakeLibraryShow(FakeLibraryMediaBase, LibraryShow):
-    """Concrete show stub with configurable ordering/children."""
+    """Concrete show stub."""
 
     def __init__(
         self,
         *,
         key: str,
         title: str,
-        ordering: str = "",
         episodes: Sequence[FakeLibraryEpisode] | None = None,
         seasons: Sequence[FakeLibrarySeason] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the fake show with base media attributes."""
         super().__init__(key=key, title=title, media_kind=MediaKind.SHOW, **kwargs)
-        self._ordering = ordering
         self._episodes: list[FakeLibraryEpisode] = list(episodes or [])
         self._seasons: list[FakeLibrarySeason] = list(seasons or [])
-
-    @property
-    def ordering(self) -> str:
-        """Return the show's episode ordering scheme."""
-        return self._ordering
 
     def episodes(self) -> list[FakeLibraryEpisode]:
         """Return all episodes belonging to this show."""

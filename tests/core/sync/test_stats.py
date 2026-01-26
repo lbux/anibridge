@@ -44,7 +44,7 @@ def list_entry() -> ListEntry:
 
 def test_item_identifier_from_episode_includes_parent_metadata() -> None:
     """Episode identifiers include parent/season metadata for history tracking."""
-    show = FakeLibraryShow(key="show-1", title="Show", ordering="tvdb")
+    show = FakeLibraryShow(key="show-1", title="Show")
     season = FakeLibrarySeason(key="season-1", title="S1", index=1, show=show)
     episode = FakeLibraryEpisode(
         key="ep-1",
