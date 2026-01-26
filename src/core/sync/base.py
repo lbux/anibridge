@@ -343,22 +343,34 @@ class BaseSyncClient[
 
         results: list[tuple[ResolvedListTarget, ...]] = []
         for descriptor_set in normalized:
-            source_set = set(descriptor_set)
+            source_order = list(descriptor_set)
             filtered: list[ResolvedListTarget] = []
             for target in by_key.values():
-                direct = tuple(d for d in target.mapping_descriptors if d in source_set)
-                mappings = tuple(
-                    mapping
-                    for mapping in target.source_mappings
-                    if mapping.descriptor in source_set
+                ordered_descriptors = tuple(
+                    descriptor
+                    for descriptor in source_order
+                    if descriptor in target.mapping_descriptors
                 )
-                if not direct and not mappings:
+                mapping_lookup = {
+                    mapping.descriptor: mapping.ranges
+                    for mapping in target.source_mappings
+                }
+                ordered_mappings = tuple(
+                    SourceRangeMapping(
+                        descriptor=descriptor,
+                        ranges=mapping_lookup[descriptor],
+                    )
+                    for descriptor in source_order
+                    if descriptor in mapping_lookup
+                )
+                if not ordered_descriptors and not ordered_mappings:
                     continue
                 filtered.append(
                     ResolvedListTarget(
                         list_media_key=target.list_media_key,
-                        mapping_descriptors=direct or target.mapping_descriptors,
-                        source_mappings=mappings,
+                        mapping_descriptors=ordered_descriptors
+                        or target.mapping_descriptors,
+                        source_mappings=ordered_mappings,
                     )
                 )
             results.append(tuple(filtered))

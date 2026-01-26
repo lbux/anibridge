@@ -5,6 +5,7 @@ from datetime import datetime
 
 from anibridge.library import LibraryMovie
 from anibridge.list import ListEntry, ListMediaType, ListStatus
+
 from src.core.animap import descriptor_key
 from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier

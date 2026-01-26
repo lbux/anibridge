@@ -12,6 +12,7 @@ from anibridge.library import (
     LibraryShow,
 )
 from anibridge.list import ListEntry, ListMediaType, ListStatus, MappingDescriptor
+
 from src.core.animap import descriptor_key
 from src.core.sync.base import (
     BaseSyncClient,
@@ -21,7 +22,6 @@ from src.core.sync.base import (
 )
 from src.core.sync.stats import ItemIdentifier
 from src.utils.cache import gattl_cache, glru_cache
-from src.utils.mapping_ranges import SourceRange
 
 __all__ = ["ShowSyncClient"]
 
@@ -33,44 +33,11 @@ class _SeasonGroup:
     episodes: list[LibraryEpisode]
     entry: ListEntry
     media_key: str
-    mapping_descriptors: set[MappingDescriptor]
+    mapping_descriptors: list[MappingDescriptor]
 
 
 class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode]):
     """Synchronize show items between a library provider and a list provider."""
-
-    @staticmethod
-    def _scope_matches_season(scope: str | None, season_index: int) -> bool:
-        """Return True when the mapping scope applies to the given season."""
-        if scope is None:
-            return True
-        if scope.startswith("s") and scope[1:].isdigit():
-            return int(scope[1:]) == season_index
-        return True
-
-    def _filter_episodes_by_ranges(
-        self,
-        episodes: Sequence[LibraryEpisode],
-        season_index: int,
-        source_mappings: Sequence[SourceRangeMapping],
-    ) -> list[LibraryEpisode]:
-        """Filter episodes based on mapping source ranges."""
-        if not source_mappings:
-            return list(episodes)
-
-        ranges: list[SourceRange] = []
-        for mapping in source_mappings:
-            if self._scope_matches_season(mapping.descriptor[2], season_index):
-                ranges.extend(mapping.ranges)
-
-        if not ranges:
-            return list(episodes)
-
-        return [
-            episode
-            for episode in episodes
-            if any(range_.contains(episode.index) for range_ in ranges)
-        ]
 
     async def map_media(
         self, item: LibraryShow
@@ -159,7 +126,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                         episodes=list(filtered),
                         entry=entry,
                         media_key=media_key,
-                        mapping_descriptors=set(target.mapping_descriptors),
+                        mapping_descriptors=list(target.mapping_descriptors),
                     )
                     continue
 
@@ -167,7 +134,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     group.child_item, group.first_index = season, season_index
                 group.episodes.extend(filtered)
                 group.entry = entry
-                group.mapping_descriptors.update(target.mapping_descriptors)
+                for descriptor in target.mapping_descriptors:
+                    if descriptor not in group.mapping_descriptors:
+                        group.mapping_descriptors.append(descriptor)
 
         for group in sorted(groups.values(), key=lambda g: g.first_index):
             eps = sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
@@ -177,9 +146,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 SyncTarget(
                     list_media_key=group.media_key,
                     entry=group.entry,
-                    mapping_descriptors=tuple(
-                        sorted(group.mapping_descriptors, key=descriptor_key)
-                    ),
+                    mapping_descriptors=tuple(group.mapping_descriptors),
                 ),
             )
 
@@ -203,6 +170,27 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         ]
         candidates = filtered or tv_results
         return self._best_search_result(item.title, candidates)
+
+    def _filter_episodes_by_ranges(
+        self,
+        episodes: Sequence[LibraryEpisode],
+        season_index: int,
+        source_mappings: Sequence[SourceRangeMapping],
+    ) -> list[LibraryEpisode]:
+        """Filter episodes based on mapping source ranges."""
+        if not source_mappings:
+            return list(episodes)
+
+        matched: set[str] = set()
+        filtered: list[LibraryEpisode] = []
+        for mapping in source_mappings:
+            for episode in episodes:
+                if episode.key in matched:
+                    continue
+                if any(r.contains(episode.index) for r in mapping.ranges):
+                    matched.add(episode.key)
+                    filtered.append(episode)
+        return filtered or list(episodes)
 
     async def _get_all_trackable_items(
         self, item: LibraryShow
