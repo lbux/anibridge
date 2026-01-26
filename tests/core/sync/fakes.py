@@ -13,7 +13,9 @@ from anibridge.library import (
     LibraryShow,
     MediaKind,
 )
-from anibridge.list import ListMediaType, ListStatus, MappingDescriptor
+from anibridge.list import ListMediaType, ListStatus, ListTarget, MappingDescriptor
+
+from src.core.animap import AnimapEdge
 
 
 class FakeLibraryProvider:
@@ -291,6 +293,7 @@ class FakeListProvider:
     """Minimal ListProvider stub."""
 
     NAMESPACE = "_fake-list"
+    MAPPING_PROVIDERS = frozenset({"anilist", "tmdb", "_fake-mapping"})
 
     def __init__(self) -> None:
         """Initialize the provider with tracking storage."""
@@ -300,6 +303,11 @@ class FakeListProvider:
         self.batch_updates: list[list[FakeListEntry]] = []
         self.deleted_keys: list[str] = []
         self.derived_keys: list[str] = []
+        self.resolved_targets: dict[MappingDescriptor, list[str]] = {}
+
+    def mapping_providers(self) -> frozenset[str]:
+        """Return the mapping providers supported by this fake provider."""
+        return self.MAPPING_PROVIDERS
 
     async def get_entry(self, key: str) -> FakeListEntry | None:
         """Return the entry for the given key, or None if not found."""
@@ -310,6 +318,29 @@ class FakeListProvider:
         if not descriptors or not self.derived_keys:
             return set()
         return set(self.derived_keys)
+
+    async def resolve_mapping_descriptors(
+        self, descriptors: Sequence[MappingDescriptor]
+    ) -> Sequence[ListTarget]:
+        """Resolve descriptors into list keys for testing."""
+        if not descriptors:
+            return []
+        if self.resolved_targets:
+            results: list[ListTarget] = []
+            for descriptor in descriptors:
+                for media_key in self.resolved_targets.get(descriptor, []):
+                    results.append(
+                        ListTarget(descriptor=descriptor, media_key=media_key)
+                    )
+            return results
+        if not self.derived_keys:
+            return []
+        return [
+            ListTarget(descriptor=(provider, entry_id, scope), media_key=media_key)
+            for provider, entry_id, scope in descriptors
+            if provider in self.MAPPING_PROVIDERS
+            for media_key in self.derived_keys
+        ]
 
     async def update_entry(self, key: str, entry: FakeListEntry) -> FakeListEntry:
         """Record the updated entry and return it."""
@@ -481,6 +512,22 @@ class FakeAnimapClient:
         descriptors: Sequence[MappingDescriptor],
     ) -> tuple[MappingDescriptor, ...]:
         return self._resolved
+
+    def resolve_edges(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+        *,
+        target_providers: set[str] | frozenset[str] | None = None,
+    ) -> tuple[AnimapEdge, ...]:
+        return tuple()
+
+    def resolve_edges_grouped(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+        *,
+        target_providers: set[str] | frozenset[str] | None = None,
+    ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[str]]]:
+        return {}
 
 
 def make_history_entry(key: str, *, ts: datetime) -> HistoryEntry:

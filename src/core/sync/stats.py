@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from anibridge.library import LibraryEntry, MediaKind
-from anibridge.list import ListEntry, ListStatus
 from pydantic import BaseModel
 
+from anibridge.library import LibraryEntry, MediaKind
+from anibridge.list import ListEntry, ListStatus, MappingDescriptor
 from src.models.db.sync_history import SyncOutcome
 
 __all__ = [
@@ -74,7 +74,7 @@ class ItemIdentifier:
 
 
 class SyncStats(BaseModel):
-    """Enhanced statistics tracker for synchronization operations.
+    """Statistics tracker for synchronization operations.
 
     Uses an outcome-based approach where each item is tracked with its specific
     result, allowing for accurate reporting and easier debugging.
@@ -366,3 +366,4 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     after: EntrySnapshot
     entry: ListEntry
     list_media_key: str | None
+    mapping_descriptors: tuple[MappingDescriptor, ...] = ()

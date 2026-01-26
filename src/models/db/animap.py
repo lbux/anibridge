@@ -56,6 +56,11 @@ class AnimapMapping(Base):
             "source_range",
             "destination_range",
         ),
+        Index(
+            "ix_animap_mapping_destination_source",
+            "destination_entry_id",
+            "source_entry_id",
+        ),
     )
 
 

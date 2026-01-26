@@ -9,8 +9,9 @@ from itertools import batched
 from pathlib import Path
 
 from anibridge.list import MappingDescriptor
+from sqlalchemy import func
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql import delete, select, tuple_
 
 from src import log
@@ -63,73 +64,6 @@ class AnimapClient:
 
     _SQLITE_SAFE_VARIABLES = 900
 
-    def resolve_target_descriptors(
-        self,
-        descriptors: Sequence[MappingDescriptor],
-    ) -> tuple[MappingDescriptor, ...]:
-        """Resolve mapping descriptors into descriptors for the target provider."""
-        if not descriptors:
-            return tuple()
-
-        ordered: list[MappingDescriptor] = []
-        seen: set[MappingDescriptor] = set()
-
-        for descriptor in descriptors:
-            if descriptor in seen:
-                continue
-            seen.add(descriptor)
-            ordered.append(descriptor)
-
-        descriptor_list = list({descriptor for descriptor in descriptors})
-        source_ids: list[int] = []
-        with db() as ctx:
-            for chunk in batched(
-                descriptor_list, self._SQLITE_SAFE_VARIABLES, strict=False
-            ):
-                rows = (
-                    ctx.session.execute(
-                        select(AnimapEntry).where(
-                            tuple_(
-                                AnimapEntry.provider,
-                                AnimapEntry.entry_id,
-                                AnimapEntry.entry_scope,
-                            ).in_(chunk)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                source_ids.extend(entry.id for entry in rows)
-
-            if not source_ids:
-                return tuple(ordered)
-
-            destination_rows: list[tuple[str, str, str | None]] = []
-            for chunk in batched(source_ids, self._SQLITE_SAFE_VARIABLES, strict=False):
-                query = (
-                    select(
-                        AnimapEntry.provider,
-                        AnimapEntry.entry_id,
-                        AnimapEntry.entry_scope,
-                    )
-                    .select_from(AnimapMapping)
-                    .join(
-                        AnimapEntry,
-                        AnimapMapping.destination_entry_id == AnimapEntry.id,
-                    )
-                    .where(AnimapMapping.source_entry_id.in_(chunk))
-                )
-                rows = ctx.session.execute(query).all()
-                destination_rows.extend(rows)
-
-        for descriptor in destination_rows:
-            if descriptor in seen:
-                continue
-            seen.add(descriptor)
-            ordered.append(descriptor)
-
-        return tuple(ordered)
-
     def __init__(self, data_path: Path, upstream_url: str | None) -> None:
         """Create a new Animap client."""
         self.data_path = data_path
@@ -155,6 +89,117 @@ class AnimapClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit async context manager and close resources."""
         await self.close()
+
+    def resolve_edges(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+        *,
+        target_providers: set[str] | frozenset[str] | None = None,
+    ) -> tuple[AnimapEdge, ...]:
+        """Resolve mapping edges for the provided source descriptors."""
+        if not descriptors:
+            return tuple()
+
+        descriptor_list = list({descriptor for descriptor in descriptors})
+        source_ids: list[int] = []
+        with db() as ctx:
+            source_ids.extend(self._select_entry_ids(ctx.session, descriptor_list))
+
+            if not source_ids:
+                return tuple()
+
+            edges: list[AnimapEdge] = []
+            for chunk in batched(source_ids, self._SQLITE_SAFE_VARIABLES, strict=False):
+                source_entry = AnimapEntry
+                dest_entry = aliased(AnimapEntry)
+                query = (
+                    select(
+                        source_entry.provider,
+                        source_entry.entry_id,
+                        source_entry.entry_scope,
+                        dest_entry.provider,
+                        dest_entry.entry_id,
+                        dest_entry.entry_scope,
+                        AnimapMapping.source_range,
+                        AnimapMapping.destination_range,
+                    )
+                    .select_from(AnimapMapping)
+                    .join(
+                        source_entry,
+                        AnimapMapping.source_entry_id == source_entry.id,
+                    )
+                    .join(
+                        dest_entry,
+                        AnimapMapping.destination_entry_id == dest_entry.id,
+                    )
+                    .where(AnimapMapping.source_entry_id.in_(chunk))
+                )
+                if target_providers:
+                    query = query.where(dest_entry.provider.in_(target_providers))
+
+                rows = ctx.session.execute(query).all()
+                for row in rows:
+                    (
+                        src_provider,
+                        src_entry_id,
+                        src_scope,
+                        dst_provider,
+                        dst_entry_id,
+                        dst_scope,
+                        src_range,
+                        dst_range,
+                    ) = row
+                    edges.append(
+                        AnimapEdge(
+                            source=(src_provider, src_entry_id, src_scope),
+                            destination=(dst_provider, dst_entry_id, dst_scope),
+                            source_range=src_range,
+                            destination_range=dst_range,
+                        )
+                    )
+
+        return tuple(edges)
+
+    def resolve_edges_grouped(
+        self,
+        descriptors: Sequence[MappingDescriptor],
+        *,
+        target_providers: set[str] | frozenset[str] | None = None,
+    ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[str]]]:
+        """Resolve mapping edges into a grouped target->source mapping."""
+        grouped: dict[MappingDescriptor, dict[MappingDescriptor, list[str]]] = {}
+        for edge in self.resolve_edges(descriptors, target_providers=target_providers):
+            target_ranges = grouped.setdefault(edge.destination, {})
+            source_ranges = target_ranges.setdefault(edge.source, [])
+            source_ranges.append(edge.source_range)
+        return grouped
+
+    @classmethod
+    def _select_entry_ids(
+        cls,
+        session: Session,
+        descriptors: Sequence[MappingDescriptor],
+    ) -> list[int]:
+        """Return entry IDs matching the provided descriptors."""
+        entry_ids: list[int] = []
+        for chunk in batched(descriptors, cls._SQLITE_SAFE_VARIABLES, strict=False):
+            normalized = [
+                (provider, entry_id, scope or "") for provider, entry_id, scope in chunk
+            ]
+            if not normalized:
+                continue
+            scope_key = func.coalesce(AnimapEntry.entry_scope, "")
+            rows = session.execute(
+                select(AnimapEntry).where(
+                    tuple_(
+                        AnimapEntry.provider,
+                        AnimapEntry.entry_id,
+                        scope_key,
+                    ).in_(normalized)
+                )
+            ).scalars()
+            entry_ids.extend(entry.id for entry in rows)
+        return entry_ids
 
     def _sync_provenance_rows(
         self, session: Session, desired: dict[int, list[str]]

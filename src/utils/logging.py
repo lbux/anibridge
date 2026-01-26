@@ -122,7 +122,7 @@ class Logger(logging.Logger):
     SUCCESS = logging.INFO + 5
 
     def __init__(self, name, level=logging.NOTSET):
-        """Initialize the enhanced logger.
+        """Initialize the logger.
 
         Args:
             name (str): Logger name

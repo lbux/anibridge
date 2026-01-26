@@ -238,6 +238,22 @@ def test_best_search_result_applies_threshold(stub_client: StubSyncClient) -> No
     )
 
 
+@pytest.mark.asyncio
+async def test_resolve_list_targets_supports_one_to_many(
+    stub_client: StubSyncClient,
+) -> None:
+    """List resolution returns multiple targets for a single descriptor."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    descriptor = ("anilist", "100", None)
+    provider.resolved_targets = {descriptor: ["100", "101"]}
+    movie = make_movie(mapping_descriptors=[descriptor])
+
+    targets = await stub_client._resolve_list_targets(movie)
+    keys = {target.list_media_key for target in targets}
+
+    assert keys == {"100", "101"}
+
+
 def test_get_pinned_fields_caches_results(stub_client: StubSyncClient, sync_db) -> None:
     """Pinned field lookups use the database once and then hit the cache."""
     with sync_db as ctx:

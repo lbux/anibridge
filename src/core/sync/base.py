@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from anibridge.library import LibraryEntry, LibraryProvider
-from anibridge.list import ListEntry, ListProvider, ListStatus
+from anibridge.list import ListEntry, ListProvider, ListStatus, MappingDescriptor
 from rapidfuzz import fuzz
 from sqlalchemy import tuple_
 
 from src import log
 from src.config.database import db
 from src.config.settings import SyncField
-from src.core.animap import AnimapClient
+from src.core.animap import AnimapClient, descriptor_key
 from src.core.sync.stats import (
     BatchUpdate,
     EntrySnapshot,
@@ -24,6 +24,7 @@ from src.core.sync.stats import (
 from src.models.db.animap import AnimapEntry
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
+from src.utils.mapping_ranges import SourceRange, parse_source_range
 from src.utils.terminal import ARROW
 from src.utils.types import Comparable
 
@@ -61,6 +62,30 @@ class SyncTarget:
 
     list_media_key: str
     entry: ListEntry
+    mapping_descriptors: tuple[MappingDescriptor, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRangeMapping:
+    """Source descriptor with one or more source ranges."""
+
+    descriptor: MappingDescriptor
+    ranges: tuple[SourceRange, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedListTarget:
+    """Resolved list key with mapping descriptors and ranges."""
+
+    list_media_key: str
+    mapping_descriptors: tuple[MappingDescriptor, ...]
+    source_mappings: tuple[SourceRangeMapping, ...]
+
+
+@dataclass(slots=True)
+class _GroupedTargets:
+    descriptors: set[MappingDescriptor]
+    mappings: dict[MappingDescriptor, list[SourceRange]]
 
 
 class BaseSyncClient[
@@ -158,12 +183,8 @@ class BaseSyncClient[
 
     def _cache_list_entry(self, entry: ListEntry) -> None:
         """Store a list entry in the local prefetch cache."""
-        media_key = entry.media().key
-        if media_key is not None:
-            self._prefetched_entries[str(media_key)] = entry
-        entry_key = getattr(entry, "key", None)
-        if entry_key is not None:
-            self._prefetched_entries[str(entry_key)] = entry
+        self._prefetched_entries[entry.media().key] = entry
+        self._prefetched_entries[entry.key] = entry
 
     async def _get_entry_cached(self, key: str) -> ListEntry | None:
         """Return a list entry from cache or fall back to the provider."""
@@ -180,14 +201,10 @@ class BaseSyncClient[
         if not items:
             return
 
-        collect_keys = getattr(self, "_collect_prefetch_keys", None)
-        if collect_keys is None:
-            return
-
         collected: set[str] = set()
         for item in items:
             try:
-                keys = await collect_keys(item)
+                keys = await self._collect_prefetch_keys(item)
             except Exception:
                 log.error(
                     f"[{self.profile_name}] Failed to collect prefetch keys",
@@ -202,14 +219,8 @@ class BaseSyncClient[
         if not collected:
             return
 
-        get_entries_batch = getattr(self.list_provider, "get_entries_batch", None)
-        if get_entries_batch is None:
-            return
-
         try:
-            entries = await get_entries_batch(list(sorted(collected)))
-        except NotImplementedError:
-            return
+            entries = await self.list_provider.get_entries_batch(list(collected))
         except Exception:
             log.error(
                 f"[{self.profile_name}] Failed to prefetch list entries",
@@ -247,26 +258,121 @@ class BaseSyncClient[
         self._pin_cache[cache_key] = fields
         return fields
 
-    async def _derive_list_keys(self, *media_items: LibraryEntry) -> tuple[str, ...]:
-        """Derive list provider keys for the supplied media items."""
-        descriptors: list[tuple[str, str, str | None]] = []
-        seen: set[tuple[str, str, str | None]] = set()
-        for media in media_items:
-            for descriptor in media.mapping_descriptors():
-                if descriptor in seen:
+    async def _resolve_list_targets_batch(
+        self,
+        descriptor_sets: Sequence[Sequence[MappingDescriptor]],
+    ) -> list[tuple[ResolvedListTarget, ...]]:
+        """Resolve mapping descriptors into list targets in a single batch."""
+        normalized: list[tuple[MappingDescriptor, ...]] = []
+        all_descriptors: set[MappingDescriptor] = set()
+        for descriptor_set in descriptor_sets:
+            ordered = tuple(dict.fromkeys(descriptor_set))
+            normalized.append(ordered)
+            all_descriptors.update(ordered)
+
+        if not all_descriptors:
+            return [tuple() for _ in normalized]
+
+        grouped_edges = self.animap_client.resolve_edges_grouped(
+            list(all_descriptors),
+            target_providers=self.list_provider.MAPPING_PROVIDERS,
+        )
+        ranges_by_target: dict[
+            MappingDescriptor, dict[MappingDescriptor, list[SourceRange]]
+        ] = {
+            target_descriptor: {
+                source_descriptor: [
+                    parse_source_range(source_range) for source_range in source_ranges
+                ]
+                for source_descriptor, source_ranges in sources.items()
+            }
+            for target_descriptor, sources in grouped_edges.items()
+        }
+
+        direct_targets = [
+            descriptor
+            for descriptor in all_descriptors
+            if descriptor[0] in self.list_provider.MAPPING_PROVIDERS
+        ]
+        target_descriptors = {
+            *ranges_by_target.keys(),
+            *direct_targets,
+        }
+        if not target_descriptors:
+            return [tuple() for _ in normalized]
+
+        resolved_targets = await self.list_provider.resolve_mapping_descriptors(
+            list(target_descriptors)
+        )
+
+        grouped: dict[str, _GroupedTargets] = {}
+        for target in resolved_targets:
+            group = grouped.setdefault(
+                target.media_key,
+                _GroupedTargets(descriptors=set(), mappings={}),
+            )
+            group.descriptors.add(target.descriptor)
+            if target.descriptor in ranges_by_target:
+                for source_descriptor, ranges in ranges_by_target[
+                    target.descriptor
+                ].items():
+                    mapping_ranges = group.mappings.setdefault(source_descriptor, [])
+                    mapping_ranges.extend(ranges)
+
+        def _build_target(key: str, payload: _GroupedTargets) -> ResolvedListTarget:
+            descriptors = tuple(sorted(payload.descriptors, key=descriptor_key))
+            source_mappings = tuple(
+                SourceRangeMapping(
+                    descriptor=source_descriptor,
+                    ranges=tuple(ranges),
+                )
+                for source_descriptor, ranges in sorted(
+                    payload.mappings.items(),
+                    key=lambda item: descriptor_key(item[0]),
+                )
+            )
+            return ResolvedListTarget(
+                list_media_key=key,
+                mapping_descriptors=descriptors,
+                source_mappings=source_mappings,
+            )
+
+        by_key = {
+            key: _build_target(key, grouped[key]) for key in sorted(grouped.keys())
+        }
+
+        results: list[tuple[ResolvedListTarget, ...]] = []
+        for descriptor_set in normalized:
+            source_set = set(descriptor_set)
+            filtered: list[ResolvedListTarget] = []
+            for target in by_key.values():
+                direct = tuple(d for d in target.mapping_descriptors if d in source_set)
+                mappings = tuple(
+                    mapping
+                    for mapping in target.source_mappings
+                    if mapping.descriptor in source_set
+                )
+                if not direct and not mappings:
                     continue
-                seen.add(descriptor)
-                descriptors.append(descriptor)
-        if not descriptors:
-            return tuple()
+                filtered.append(
+                    ResolvedListTarget(
+                        list_media_key=target.list_media_key,
+                        mapping_descriptors=direct or target.mapping_descriptors,
+                        source_mappings=mappings,
+                    )
+                )
+            results.append(tuple(filtered))
+        return results
 
-        resolved = self.animap_client.resolve_target_descriptors(descriptors)
-        candidates = resolved or tuple(descriptors)
-
-        keys = await self.list_provider.derive_keys(candidates)
-        if not keys:
-            return tuple()
-        return tuple(sorted(keys))
+    async def _resolve_list_targets(
+        self, *media_items: LibraryEntry
+    ) -> tuple[ResolvedListTarget, ...]:
+        """Resolve mapping descriptors into list targets with range metadata."""
+        descriptors: list[MappingDescriptor] = []
+        for media in media_items:
+            descriptors.extend(media.mapping_descriptors())
+        resolved = await self._resolve_list_targets_batch([descriptors])
+        return resolved[0] if resolved else tuple()
 
     async def process_media(self, item: ParentMediaT) -> None:
         """Process a single library item."""
@@ -334,6 +440,7 @@ class BaseSyncClient[
                     grandchild_items=grandchildren,
                     entry=entry,
                     list_media_key=list_media_key,
+                    mapping_descriptors=target.mapping_descriptors,
                 )
                 self.sync_stats.track_items(grandchild_ids, outcome)
                 self.sync_stats.track_item(item_identifier, outcome)
@@ -424,6 +531,7 @@ class BaseSyncClient[
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
         list_media_key: str | None,
+        mapping_descriptors: Sequence[MappingDescriptor] | None = None,
     ) -> SyncOutcome:
         """Synchronize a mapped media item with the list provider."""
         resolved_list_key = list_media_key or entry.media().key
@@ -481,6 +589,7 @@ class BaseSyncClient[
                     grandchild_items=grandchild_items,
                     snapshots=(before_snapshot, None),
                     list_media_key=resolved_list_key,
+                    mapping_descriptors=mapping_descriptors,
                     outcome=SyncOutcome.DELETED,
                 )
                 return SyncOutcome.DELETED
@@ -556,34 +665,10 @@ class BaseSyncClient[
             after=after_snapshot,
             entry=entry,
             list_media_key=resolved_list_key,
+            mapping_descriptors=tuple(mapping_descriptors or ()),
         )
 
         diff_str = self._format_diff(diff)
-        return await self._dispatch_update(
-            plan,
-            diff_str,
-            debug_title=debug_title,
-            debug_ids=debug_ids,
-        )
-
-    async def _dispatch_update(
-        self,
-        plan: BatchUpdate[ParentMediaT, ChildMediaT],
-        diff_str: str,
-        *,
-        debug_title: str,
-        debug_ids: str,
-    ) -> SyncOutcome:
-        """Queue or apply an update based on batching and dry-run settings."""
-        if self.batch_requests:
-            log.info(
-                f"[{self.profile_name}] Queuing {plan.item.media_kind.value} "
-                f"for batch sync {debug_title} {debug_ids}"
-            )
-            log.success(f"\t\tQUEUED UPDATE: {diff_str}")
-            self._pending_updates.append(plan)
-            return SyncOutcome.SYNCED
-
         return await self._apply_update(plan, diff_str, debug_title, debug_ids)
 
     async def _apply_update(
@@ -593,7 +678,16 @@ class BaseSyncClient[
         debug_title: str,
         debug_ids: str,
     ) -> SyncOutcome:
-        """Apply a single list entry update or short-circuit when dry-run."""
+        """Queue or apply a list entry update."""
+        if self.batch_requests:
+            log.info(
+                f"[{self.profile_name}] Queuing {plan.item.media_kind.value} "
+                f"for batch sync {debug_title} {debug_ids}"
+            )
+            log.success(f"\t\tQUEUED UPDATE: {diff_str}")
+            self._pending_updates.append(plan)
+            return SyncOutcome.SYNCED
+
         if self.dry_run:
             log.info(
                 f"[{self.profile_name}] Dry run enabled; skipping sync of "
@@ -615,6 +709,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 list_media_key=plan.list_media_key,
+                mapping_descriptors=plan.mapping_descriptors,
                 outcome=SyncOutcome.SYNCED,
             )
             return SyncOutcome.SYNCED
@@ -630,6 +725,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 list_media_key=plan.list_media_key,
+                mapping_descriptors=plan.mapping_descriptors,
                 outcome=SyncOutcome.FAILED,
                 error_message=str(exc),
             )
@@ -682,7 +778,9 @@ class BaseSyncClient[
             updated = await self.list_provider.update_entries_batch(
                 [update.entry for update in self._pending_updates]
             )
-            updated_list_keys = {entry.media().key for entry in updated if entry}
+            updated_list_keys = {
+                entry.media().key for entry in updated if entry is not None
+            }
             for update in self._pending_updates:
                 await self._create_sync_history(
                     item=update.item,
@@ -690,6 +788,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
+                    mapping_descriptors=update.mapping_descriptors,
                     outcome=SyncOutcome.SYNCED
                     if update.after.media_key in updated_list_keys
                     else SyncOutcome.FAILED,
@@ -703,6 +802,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
+                    mapping_descriptors=update.mapping_descriptors,
                     outcome=SyncOutcome.FAILED,
                     error_message=str(exc),
                 )
@@ -718,6 +818,7 @@ class BaseSyncClient[
         grandchild_items: Sequence[LibraryEntry] | None,
         snapshots: tuple[EntrySnapshot | None, EntrySnapshot | None],
         list_media_key: str | None,
+        mapping_descriptors: Sequence[MappingDescriptor] | None = None,
         outcome: SyncOutcome,
         error_message: str | None = None,
     ) -> None:
@@ -756,14 +857,16 @@ class BaseSyncClient[
                 return
 
             async def get_mapping_entry_id() -> int | None:
-                if resolved_list_media_key is None:
+                if not mapping_descriptors:
                     return None
+                descriptor = sorted(mapping_descriptors, key=descriptor_key)[0]
+                provider, entry_id, scope = descriptor
                 entry = (
                     ctx.session.query(AnimapEntry)
                     .filter(
-                        AnimapEntry.provider == list_namespace,
-                        AnimapEntry.entry_id == resolved_list_media_key,
-                        AnimapEntry.entry_scope.is_(None),
+                        AnimapEntry.provider == provider,
+                        AnimapEntry.entry_id == entry_id,
+                        AnimapEntry.entry_scope == scope,
                     )
                     .first()
                 )

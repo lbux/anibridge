@@ -5,7 +5,6 @@ from datetime import datetime
 
 from anibridge.library import LibraryMovie
 from anibridge.list import ListEntry, ListMediaType, ListStatus
-
 from src.core.animap import descriptor_key
 from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
@@ -27,11 +26,11 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         ]
     ]:
         """Map a library movie to its corresponding list entry."""
-        keys = await self._derive_list_keys(item)
-        if keys:
+        targets = await self._resolve_list_targets(item)
+        if targets:
             yielded = False
-            for key in keys:
-                entry = await self._get_entry_cached(key)
+            for target in targets:
+                entry = await self._get_entry_cached(target.list_media_key)
                 if entry is None:
                     continue
                 yielded = True
@@ -42,6 +41,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
                     SyncTarget(
                         list_media_key=list_media_key,
                         entry=entry,
+                        mapping_descriptors=target.mapping_descriptors,
                     ),
                 )
             if yielded:
@@ -60,7 +60,8 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
             )
 
     async def _collect_prefetch_keys(self, item: LibraryMovie) -> Sequence[str]:
-        return await self._derive_list_keys(item)
+        targets = await self._resolve_list_targets(item)
+        return tuple(sorted({target.list_media_key for target in targets}))
 
     async def search_media(
         self, item: LibraryMovie, child_item: LibraryMovie
