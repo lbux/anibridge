@@ -17,7 +17,9 @@ class _DummyLogger:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
-    def debug(self, message: str) -> None:
+    def debug(self, message: str, *args, **kwargs) -> None:
+        if args:
+            message = message % args
         self.messages.append(message)
 
 

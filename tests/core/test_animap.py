@@ -3,6 +3,7 @@
 import asyncio
 import importlib
 import json
+import re
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
@@ -297,8 +298,16 @@ def test_sync_db_logs_distinct_mapping_changes(
     messages: list[str] = []
 
     def _capture_success(*args, **kwargs) -> None:
-        if args:
-            messages.append(str(args[0]))
+        if not args:
+            return
+        template = str(args[0])
+        if len(args) > 1:
+            try:
+                messages.append(template % tuple(args[1:]))
+                return
+            except Exception:
+                pass
+        messages.append(template)
 
     animap_module = importlib.import_module("src.core.animap")
     monkeypatch.setattr(animap_module.log, "success", _capture_success)
@@ -309,6 +318,7 @@ def test_sync_db_logs_distinct_mapping_changes(
     asyncio.run(animap_client.sync_db())
 
     assert messages
-    assert "1 removed" in messages[-1]
-    assert "1 updated" in messages[-1]
-    assert "1 created" in messages[-1]
+    assert re.search(
+        r"Mappings database sync complete: 1 removed, 1 updated, 1 created",
+        messages[-1],
+    )

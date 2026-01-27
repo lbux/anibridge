@@ -16,6 +16,7 @@ def restore_log(monkeypatch):
     dummy_logger = types.SimpleNamespace(
         debug=lambda *_, **__: None,
         error=lambda *_, **__: None,
+        exception=lambda *_, **__: None,
     )
     monkeypatch.setattr(requests_module, "log", dummy_logger)
 
@@ -60,12 +61,19 @@ def test_selective_verify_session_logs_error_on_failure(monkeypatch):
     """Test that SelectiveVerifySession logs an error when a request fails."""
     errors: list[str] = []
 
-    def error_logger(message, **_):
+    def error_logger(message, *args, **_):
+        if args:
+            try:
+                errors.append(message % args)
+                return
+            except Exception:
+                pass
         errors.append(message)
 
     dummy_logger = types.SimpleNamespace(
         debug=lambda *_, **__: None,
         error=error_logger,
+        exception=error_logger,
     )
     monkeypatch.setattr(requests_module, "log", dummy_logger)
 
