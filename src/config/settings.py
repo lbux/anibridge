@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import (
     BaseSettings,
+    EnvSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
@@ -381,6 +382,12 @@ class AniBridgeConfig(BaseSettings):
         return (
             init_settings,
             YamlConfigSettingsSource(settings_cls, yaml_file=find_yaml_config_file()),
+            EnvSettingsSource(
+                settings_cls,
+                env_prefix="AB_",
+                env_nested_delimiter="__",
+                env_parse_none_str="null",
+            ),
         )
 
     model_config = SettingsConfigDict(extra="ignore")
