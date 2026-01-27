@@ -1,7 +1,7 @@
 [project]
 name = "AniBridge"
 version = "2.0.0"
-description = "The smart way to keep your AniList profile perfectly synchronized with your Plex library."
+description = "The smart way to keep your anime lists perfectly synchronized."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "MIT" }
