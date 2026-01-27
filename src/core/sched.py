@@ -95,14 +95,6 @@ class ProfileScheduler:
         if self._running:
             return
 
-        if not self.scan_modes:
-            log.debug(
-                "[%s] No sync modes configured, triggering single run before exiting",
-                self.profile_name,
-            )
-            await self.sync()
-            return
-
         self._running = True
         if ScanMode.PERIODIC in self.scan_modes:
             self._spawn_loop(
