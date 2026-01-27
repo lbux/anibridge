@@ -5,6 +5,7 @@ from starlette.requests import Request
 
 from src import log
 from src.exceptions import SchedulerNotInitializedError
+from src.utils.async_tasks import schedule_task
 from src.web.state import get_app_state
 
 __all__ = ["router"]
@@ -46,10 +47,13 @@ async def provider_webhook(
                 profile_name,
                 library_keys,
             )
-            await scheduler.trigger_sync(
-                profile_name=profile_name,
-                poll=False,
-                library_keys=library_keys,
+            schedule_task(
+                scheduler.trigger_sync(
+                    profile_name=profile_name,
+                    poll=False,
+                    library_keys=library_keys,
+                ),
+                name=f"webhook_sync:{profile_name}",
             )
         except KeyError:
             log.error(

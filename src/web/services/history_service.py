@@ -22,6 +22,7 @@ from src.exceptions import (
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.models.schemas.provider import ProviderMediaMetadata
+from src.utils.async_tasks import schedule_task
 from src.web.state import get_app_state, get_bridge
 
 if TYPE_CHECKING:
@@ -534,8 +535,11 @@ class HistoryService:
                 "Cannot retry history item without library media key"
             )
 
-        await scheduler.trigger_sync(
-            profile, poll=False, library_keys=[row.library_media_key]
+        schedule_task(
+            scheduler.trigger_sync(
+                profile, poll=False, library_keys=[row.library_media_key]
+            ),
+            name=f"retry_history_item:{profile}:{item_id}",
         )
 
     async def clear_profile_cache(self, profile: str) -> None:

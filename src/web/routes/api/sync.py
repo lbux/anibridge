@@ -5,6 +5,7 @@ from fastapi.routing import APIRouter
 from pydantic import BaseModel
 
 from src.exceptions import SchedulerNotInitializedError
+from src.utils.async_tasks import schedule_task
 from src.web.state import get_app_state
 
 __all__ = ["router"]
@@ -33,7 +34,10 @@ async def sync_all(poll: bool = Query(False)) -> OkResponse:
     scheduler = get_app_state().scheduler
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
-    await scheduler.trigger_sync(poll=poll)
+    schedule_task(
+        scheduler.trigger_sync(poll=poll),
+        name="sync_all_profiles",
+    )
     return OkResponse(ok=True)
 
 
@@ -50,7 +54,10 @@ async def sync_database() -> OkResponse:
     scheduler = get_app_state().scheduler
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
-    await scheduler.shared_animap_client.sync_db()
+    schedule_task(
+        scheduler.shared_animap_client.sync_db(),
+        name="sync_database",
+    )
     return OkResponse(ok=True)
 
 
@@ -77,5 +84,8 @@ async def sync_profile(
     scheduler = get_app_state().scheduler
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
-    await scheduler.trigger_sync(profile, poll=poll, library_keys=library_keys)
+    schedule_task(
+        scheduler.trigger_sync(profile, poll=poll, library_keys=library_keys),
+        name=f"sync_profile:{profile}",
+    )
     return OkResponse(ok=True)
