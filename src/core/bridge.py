@@ -24,6 +24,7 @@ from src.core.sync.stats import SyncProgress, SyncStats
 from src.exceptions import MediaTypeError
 from src.models.db.housekeeping import Housekeeping
 from src.models.db.sync_history import SyncOutcome
+from src.utils.terminal import ARROW
 
 __all__ = ["BridgeClient"]
 
@@ -59,7 +60,7 @@ class BridgeClient:
 
     async def initialize(self) -> None:
         """Initialize both providers and prepare for synchronization."""
-        log.debug(f"[{self.profile_name}] Initializing bridge client")
+        log.debug("[%s] Initializing bridge client", self.profile_name)
 
         await self.library_provider.initialize()
         await self.list_provider.initialize()
@@ -72,14 +73,17 @@ class BridgeClient:
         list_label = list_user.title if list_user else "unknown"
 
         log.info(
-            f"[{self.profile_name}] Bridge client initialized for "
-            f"library user $$'{library_label}'$$ -> "
-            f"list user $$'{list_label}'$$"
+            "[%s] Bridge client initialized for library user $$'%s'$$ %s "
+            "list user $$'%s'$$",
+            self.profile_name,
+            library_label,
+            ARROW,
+            list_label,
         )
 
     async def close(self) -> None:
         """Close all provider connections."""
-        log.debug(f"[{self.profile_name}] Closing bridge client")
+        log.debug("[%s] Closing bridge client", self.profile_name)
         await self.list_provider.close()
         await self.library_provider.close()
 
@@ -121,16 +125,17 @@ class BridgeClient:
         except NotImplementedError:
             return
         except Exception:
-            log.error(
-                f"[{self.profile_name}] Failed to export list backup",
-                exc_info=True,
+            log.error("[%s] Failed to export list backup", self.profile_name)
+            log.exception(
+                "[%s] List backup export error details",
+                self.profile_name,
             )
             return
 
         if not payload:
             log.debug(
-                f"[{self.profile_name}] List provider produced an empty backup; "
-                "skipping write"
+                "[%s] List provider produced an empty backup; skipping write",
+                self.profile_name,
             )
             return
 
@@ -147,14 +152,20 @@ class BridgeClient:
             target_path.write_text(payload, encoding="utf-8")
         except Exception:
             log.error(
-                f"[{self.profile_name}] Failed to write backup file to "
-                f"$$'{target_path}'$$",
-                exc_info=True,
+                "[%s] Failed to write backup file to $$'%s'$$",
+                self.profile_name,
+                target_path,
+            )
+            log.exception(
+                "[%s] Backup write error details",
+                self.profile_name,
             )
             return
 
         log.info(
-            f"[{self.profile_name}] List provider backup written to $$'{target_path}'$$"
+            "[%s] List provider backup written to $$'%s'$$",
+            self.profile_name,
+            target_path,
         )
 
     async def sync(
@@ -173,11 +184,13 @@ class BridgeClient:
         list_label = list_user.title if list_user else "unknown"
 
         log.info(
-            f"[{self.profile_name}] Starting "
-            f"{'full ' if self.profile_config.full_scan else 'partial '}"
-            f"{'and destructive ' if self.profile_config.destructive_sync else ''}"
-            f"sync for library user $$'{library_label}'$$ "
-            f"-> list user $$'{list_label}'$$"
+            "[%s] Starting %s%ssync for library user $$'%s'$$ %s list user $$'%s'$$",
+            self.profile_name,
+            "full " if self.profile_config.full_scan else "partial ",
+            "and destructive " if self.profile_config.destructive_sync else "",
+            library_label,
+            ARROW,
+            list_label,
         )
 
         sync_start_time = datetime.now(UTC)
@@ -211,6 +224,11 @@ class BridgeClient:
         await show_sync.clear_cache()
 
         sections = list(await self.library_provider.get_sections())
+        log.debug(
+            "[%s] Retrieved %s library sections",
+            self.profile_name,
+            len(sections),
+        )
 
         self.current_sync = SyncProgress(
             state="running",
@@ -254,12 +272,17 @@ class BridgeClient:
             self._set_last_synced(sync_start_time)
 
             log.info(
-                f"[{self.profile_name}] Sync completed: "
-                f"{sync_stats.synced} synced, {sync_stats.deleted} deleted, "
-                f"{sync_stats.skipped} skipped, {sync_stats.not_found} not found, "
-                f"{sync_stats.failed} failed. Coverage: {sync_stats.coverage:.2%} "
-                f"({len(sync_stats.get_grandchild_items_by_outcome())} total) "
-                f"in {duration.total_seconds():.2f} seconds"
+                "[%s] Sync completed: %s synced, %s deleted, %s skipped, %s not found, "
+                "%s failed. Coverage: %.2f%% (%s total) in %.2f seconds",
+                self.profile_name,
+                sync_stats.synced,
+                sync_stats.deleted,
+                sync_stats.skipped,
+                sync_stats.not_found,
+                sync_stats.failed,
+                sync_stats.coverage * 100,
+                len(sync_stats.get_grandchild_items_by_outcome()),
+                duration.total_seconds(),
             )
 
             uncovered_items = sync_stats.get_grandchild_items_by_outcome(
@@ -269,18 +292,20 @@ class BridgeClient:
             )
             if uncovered_items:
                 log.debug(
-                    f"[{self.profile_name}] Uncovered items: "
-                    f"{', '.join([repr(item) for item in uncovered_items])}"
+                    "[%s] Uncovered items: %s",
+                    self.profile_name,
+                    ", ".join([repr(item) for item in uncovered_items]),
                 )
 
         except Exception as exc:
             end_time = datetime.now(UTC)
             duration = end_time - sync_start_time
 
-            log.error(
-                f"[{self.profile_name}] Sync failed after "
-                f"{duration.total_seconds():.2f} seconds: {exc}",
-                exc_info=True,
+            log.exception(
+                "[%s] Sync failed after %.2f seconds: %s",
+                self.profile_name,
+                duration.total_seconds(),
+                exc,
             )
             raise
         finally:
@@ -317,7 +342,11 @@ class BridgeClient:
         section_count: int,
     ) -> SyncStats:
         """Synchronize a single library section."""
-        log.info(f"[{self.profile_name}] Syncing section $$'{section.title}'$$")
+        log.info(
+            "[%s] Syncing section $$'%s'$$",
+            self.profile_name,
+            section.title,
+        )
 
         min_last_modified = (self.last_synced or datetime.now(UTC)) - timedelta(
             seconds=15
@@ -330,6 +359,13 @@ class BridgeClient:
                 require_watched=not self.profile_config.full_scan,
                 keys=keys,
             )
+        )
+        log.debug(
+            "[%s] Found %s items in section $$'%s'$$ (poll=%s)",
+            self.profile_name,
+            len(items),
+            section.title,
+            poll,
         )
 
         if self.current_sync is not None:
@@ -355,15 +391,18 @@ class BridgeClient:
             sync_client = show_sync
         else:
             log.warning(
-                f"[{self.profile_name}] Unsupported section kind "
-                f"'{section.media_kind.value}', skipping"
+                "[%s] Unsupported section kind '%s', skipping",
+                self.profile_name,
+                section.media_kind.value,
             )
             return SyncStats()
 
         if self.profile_config.batch_requests:
             log.info(
-                f"[{self.profile_name}] Prefetching list entries for "
-                f"$$'{section.title}'$$ ({len(items)} items)"
+                "[%s] Prefetching list entries for $$'%s'$$ (%s items)",
+                self.profile_name,
+                section.title,
+                len(items),
             )
             try:
                 if section.media_kind == MediaKind.MOVIE:
@@ -374,8 +413,12 @@ class BridgeClient:
                     await show_sync.prefetch_entries(cast(Sequence[LibraryShow], items))
             except Exception:
                 log.error(
-                    f"[{self.profile_name}] Failed to prefetch list entries",
-                    exc_info=True,
+                    "[%s] Failed to prefetch list entries",
+                    self.profile_name,
+                )
+                log.exception(
+                    "[%s] Prefetch error details",
+                    self.profile_name,
                 )
             if self.current_sync is not None:
                 self.current_sync = self.current_sync.model_copy(
@@ -406,8 +449,13 @@ class BridgeClient:
 
             except Exception:
                 log.error(
-                    f"[{self.profile_name}] Failed to sync item $$'{item.title}'$$",
-                    exc_info=True,
+                    "[%s] Failed to sync item $$'%s'$$",
+                    self.profile_name,
+                    item.title,
+                )
+                log.exception(
+                    "[%s] Item sync error details",
+                    self.profile_name,
                 )
 
         try:

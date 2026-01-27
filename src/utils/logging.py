@@ -54,26 +54,32 @@ class ColorFormatter(logging.Formatter):
             str: Color-formatted log message
         """
         orig_msg = record.msg
+        orig_args = record.args
         orig_levelname = record.levelname
+
         record.levelname = (
             f"{self.COLORS.get(record.levelname, '')}{record.levelname}"
             f"{Style.RESET_ALL}"
         )
 
-        if isinstance(record.msg, str):
-            # Color strings in quotes
-            record.msg = self.QUOTED_PATTERN.sub(
-                f"{Fore.LIGHTBLUE_EX}'\\1'{Style.RESET_ALL}", record.msg
+        message = record.getMessage()
+        if isinstance(message, str):
+            message = self.QUOTED_PATTERN.sub(
+                f"{Fore.LIGHTBLUE_EX}'\\1'{Style.RESET_ALL}", message
             )
-            # Color curly brace values
-            record.msg = self.BRACED_PATTERN.sub(
-                f"{Style.DIM}{{\\1}}{Style.RESET_ALL}", record.msg
+            message = self.BRACED_PATTERN.sub(
+                f"{Style.DIM}{{\\1}}{Style.RESET_ALL}", message
             )
 
-        result = super().format(record)
+        record.msg = message
+        record.args = ()
 
-        record.levelname = orig_levelname
-        record.msg = orig_msg
+        try:
+            result = super().format(record)
+        finally:
+            record.levelname = orig_levelname
+            record.msg = orig_msg
+            record.args = orig_args
 
         return result
 
@@ -99,19 +105,21 @@ class CleanFormatter(logging.Formatter):
             str: Clean log message without color markers
 
         """
-        if isinstance(record.msg, str):
-            orig_msg = record.msg
+        orig_msg = record.msg
+        orig_args = record.args
 
-            # Remove the $$ markers and keep the content
-            cleaned_msg = re.sub(self.QUOTED_PATTERN, "'\\1'", record.msg)
+        message = record.getMessage()
+        if isinstance(message, str):
+            cleaned_msg = re.sub(self.QUOTED_PATTERN, "'\\1'", message)
             cleaned_msg = re.sub(self.BRACED_PATTERN, "{\\1}", cleaned_msg)
             record.msg = cleaned_msg
+            record.args = ()
 
-            result = super().format(record)
-
-            record.msg = orig_msg
-
-            return result
+            try:
+                return super().format(record)
+            finally:
+                record.msg = orig_msg
+                record.args = orig_args
 
         return super().format(record)
 

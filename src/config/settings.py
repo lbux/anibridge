@@ -40,7 +40,7 @@ def find_yaml_config_file() -> Path:
     for ext in ("yaml", "yml"):
         yaml_file = data_path / f"config.{ext}"
         if yaml_file.exists():
-            _log.debug(f"Using YAML config file: {yaml_file.resolve()}")
+            _log.debug("Using YAML config file: %s", yaml_file.resolve())
             return yaml_file.resolve()
     return data_path / "config.yaml"
 

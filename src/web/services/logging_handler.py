@@ -41,7 +41,7 @@ class WebsocketLogHandler(logging.Handler):
         """
         with self._lock:
             self._connections.add(ws)
-        log.debug(f"Client added ({len(self._connections)} total)")
+        log.debug("Client added (%s total)", len(self._connections))
 
     async def remove(self, ws: WebSocket) -> None:
         """Remove a websocket connection from the handler.
@@ -51,7 +51,7 @@ class WebsocketLogHandler(logging.Handler):
         """
         with self._lock:
             self._connections.discard(ws)
-        log.debug(f"Client removed ({len(self._connections)} total)")
+        log.debug("Client removed (%s total)", len(self._connections))
 
     def emit(self, record: logging.LogRecord) -> None:
         """Emit a log record to all connected websocket clients.

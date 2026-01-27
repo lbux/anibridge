@@ -23,7 +23,10 @@ async def provider_webhook(
         provider_namespace (str): The provider namespace from the URL path.
         request (Request): The incoming HTTP request.
     """
-    log.info(f"Webhoo: Received webhook for provider '{provider_namespace}'")
+    log.info(
+        "Webhook: Received webhook for provider '%s'",
+        provider_namespace,
+    )
     scheduler = get_app_state().scheduler
     if not scheduler:
         log.warning("Webhook: Scheduler not available")
@@ -39,8 +42,9 @@ async def provider_webhook(
                 continue
 
             log.info(
-                f"Webhook: Triggering sync for profile '{profile_name}' "
-                f"and library keys: {library_keys}"
+                "Webhook: Triggering sync for profile '%s' and library keys: %s",
+                profile_name,
+                library_keys,
             )
             await scheduler.trigger_sync(
                 profile_name=profile_name,
@@ -48,5 +52,8 @@ async def provider_webhook(
                 library_keys=library_keys,
             )
         except KeyError:
-            log.error(f"Webhook: No bridge client found for profile '{profile_name}'")
+            log.error(
+                "Webhook: No bridge client found for profile '%s'",
+                profile_name,
+            )
             continue

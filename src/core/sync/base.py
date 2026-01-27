@@ -207,8 +207,12 @@ class BaseSyncClient[
                 keys = await self._collect_prefetch_keys(item)
             except Exception:
                 log.error(
-                    f"[{self.profile_name}] Failed to collect prefetch keys",
-                    exc_info=True,
+                    "[%s] Failed to collect prefetch keys",
+                    self.profile_name,
+                )
+                log.exception(
+                    "[%s] Prefetch key collection error details",
+                    self.profile_name,
                 )
                 continue
             for key in keys:
@@ -219,12 +223,22 @@ class BaseSyncClient[
         if not collected:
             return
 
+        log.debug(
+            "[%s] Prefetching %s list entries",
+            self.profile_name,
+            len(collected),
+        )
+
         try:
             entries = await self.list_provider.get_entries_batch(list(collected))
         except Exception:
             log.error(
-                f"[{self.profile_name}] Failed to prefetch list entries",
-                exc_info=True,
+                "[%s] Failed to prefetch list entries",
+                self.profile_name,
+            )
+            log.exception(
+                "[%s] Prefetch batch error details",
+                self.profile_name,
             )
             return
 
@@ -232,6 +246,12 @@ class BaseSyncClient[
             if entry is None:
                 continue
             self._cache_list_entry(entry)
+
+        log.debug(
+            "[%s] Prefetched %s list entries",
+            self.profile_name,
+            len(entries),
+        )
 
     def _get_pinned_fields(self, namespace: str, media_key: str | None) -> list[str]:
         """Return the set of pinned fields for the given list media identifier."""
@@ -396,8 +416,11 @@ class BaseSyncClient[
         )
         debug_title = self._debug_log_title(item=item, child_item=None)
         log.debug(
-            f"[{self.profile_name}] Processing {item.media_kind.value} "
-            f"{debug_title} {ids_summary}"
+            "[%s] Processing %s %s %s",
+            self.profile_name,
+            item.media_kind.value,
+            debug_title,
+            ids_summary,
         )
 
         item_identifier = ItemIdentifier.from_item(item)
@@ -407,8 +430,11 @@ class BaseSyncClient[
             self.sync_stats.track_item(item_identifier, SyncOutcome.PENDING)
         else:
             log.debug(
-                f"[{self.profile_name}] Skipping {item.media_kind.value} "
-                f"{debug_title} because it has no eligible items {ids_summary}"
+                "[%s] Skipping %s %s because it has no eligible items %s",
+                self.profile_name,
+                item.media_kind.value,
+                debug_title,
+                ids_summary,
             )
             self.sync_stats.track_item(item_identifier, SyncOutcome.SKIPPED)
             return
@@ -435,14 +461,19 @@ class BaseSyncClient[
             )
             if entry is None:
                 log.debug(
-                    f"[{self.profile_name}] No existing list entry for "
-                    f"{item.media_kind.value}; preparing new entry "
-                    f"{debug_title} {debug_ids}"
+                    "[%s] No existing list entry for %s; preparing new entry %s %s",
+                    self.profile_name,
+                    item.media_kind.value,
+                    debug_title,
+                    debug_ids,
                 )
             else:
                 log.debug(
-                    f"[{self.profile_name}] Found list entry for "
-                    f"{item.media_kind.value} {debug_title} {debug_ids}"
+                    "[%s] Found list entry for %s %s %s",
+                    self.profile_name,
+                    item.media_kind.value,
+                    debug_title,
+                    debug_ids,
                 )
 
             try:
@@ -458,18 +489,26 @@ class BaseSyncClient[
                 self.sync_stats.track_item(item_identifier, outcome)
             except Exception:
                 log.error(
-                    f"[{self.profile_name}] Failed to process {item.media_kind.value} "
-                    f"{debug_title} {debug_ids}",
-                    exc_info=True,
+                    "[%s] Failed to process %s %s %s",
+                    self.profile_name,
+                    item.media_kind.value,
+                    debug_title,
+                    debug_ids,
+                )
+                log.exception(
+                    "[%s] Sync processing error details",
+                    self.profile_name,
                 )
                 self.sync_stats.track_items(grandchild_ids, SyncOutcome.FAILED)
                 self.sync_stats.track_item(item_identifier, SyncOutcome.FAILED)
 
         if not found_match:
             log.warning(
-                f"[{self.profile_name}] No list entries found for "
-                f"{item.media_kind.value} "
-                f"{self._debug_log_title(item=item, child_item=None)} {ids_summary}"
+                "[%s] No list entries found for %s %s %s",
+                self.profile_name,
+                item.media_kind.value,
+                self._debug_log_title(item=item, child_item=None),
+                ids_summary,
             )
             await self._create_sync_history(
                 item=item,
@@ -583,13 +622,19 @@ class BaseSyncClient[
                 and SyncField.STATUS.value not in skip_fields
             ):
                 log.success(
-                    f"[{self.profile_name}] Deleting list entry for "
-                    f"{item.media_kind.value} {debug_title} {debug_ids}"
+                    "[%s] Deleting list entry for %s %s %s",
+                    self.profile_name,
+                    item.media_kind.value,
+                    debug_title,
+                    debug_ids,
                 )
                 if self.dry_run:
                     log.info(
-                        f"[{self.profile_name}] Dry run enabled; skipping deletion of "
-                        f"{item.media_kind.value} {debug_title} {debug_ids}"
+                        "[%s] Dry run enabled; skipping deletion of %s %s %s",
+                        self.profile_name,
+                        item.media_kind.value,
+                        debug_title,
+                        debug_ids,
                     )
                     return SyncOutcome.SKIPPED
                 else:
@@ -607,8 +652,11 @@ class BaseSyncClient[
                 return SyncOutcome.DELETED
 
             log.info(
-                f"[{self.profile_name}] Skipping {item.media_kind.value} "
-                f"due to no activity {debug_title} {debug_ids}"
+                "[%s] Skipping %s due to no activity %s %s",
+                self.profile_name,
+                item.media_kind.value,
+                debug_title,
+                debug_ids,
             )
             return SyncOutcome.SKIPPED
 
@@ -659,8 +707,11 @@ class BaseSyncClient[
 
         if not diff:
             log.info(
-                f"[{self.profile_name}] Skipping {item.media_kind.value} "
-                f"because it is already up to date {debug_title} {debug_ids}"
+                "[%s] Skipping %s because it is already up to date %s %s",
+                self.profile_name,
+                item.media_kind.value,
+                debug_title,
+                debug_ids,
             )
             self._cleanup_failure_history(
                 item=item,
@@ -693,28 +744,37 @@ class BaseSyncClient[
         """Queue or apply a list entry update."""
         if self.batch_requests:
             log.info(
-                f"[{self.profile_name}] Queuing {plan.item.media_kind.value} "
-                f"for batch sync {debug_title} {debug_ids}"
+                "[%s] Queuing %s for batch sync %s %s",
+                self.profile_name,
+                plan.item.media_kind.value,
+                debug_title,
+                debug_ids,
             )
-            log.success(f"\t\tQUEUED UPDATE: {diff_str}")
+            log.success("\t\tQUEUED UPDATE: %s", diff_str)
             self._pending_updates.append(plan)
             return SyncOutcome.SYNCED
 
         if self.dry_run:
             log.info(
-                f"[{self.profile_name}] Dry run enabled; skipping sync of "
-                f"{plan.item.media_kind.value} {debug_title} {debug_ids}"
+                "[%s] Dry run enabled; skipping sync of %s %s %s",
+                self.profile_name,
+                plan.item.media_kind.value,
+                debug_title,
+                debug_ids,
             )
-            log.success(f"\t\tDRY RUN UPDATE: {diff_str}")
+            log.success("\t\tDRY RUN UPDATE: %s", diff_str)
             return SyncOutcome.SKIPPED
 
         try:
             await self.list_provider.update_entry(plan.after.media_key, plan.entry)
             log.success(
-                f"[{self.profile_name}] Synced {plan.item.media_kind.value} "
-                f"{debug_title} {debug_ids}"
+                "[%s] Synced %s %s %s",
+                self.profile_name,
+                plan.item.media_kind.value,
+                debug_title,
+                debug_ids,
             )
-            log.success(f"\t\tUPDATE: {diff_str}")
+            log.success("\t\tUPDATE: %s", diff_str)
             await self._create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
@@ -727,9 +787,16 @@ class BaseSyncClient[
             return SyncOutcome.SYNCED
         except Exception as exc:
             log.error(
-                f"[{self.profile_name}] Failed to sync {plan.item.media_kind.value} "
-                f"{debug_title} {debug_ids}",
-                exc_info=True,
+                "[%s] Failed to sync %s %s %s: %s",
+                self.profile_name,
+                plan.item.media_kind.value,
+                debug_title,
+                debug_ids,
+                exc,
+            )
+            log.exception(
+                "[%s] Sync update error details",
+                self.profile_name,
             )
             await self._create_sync_history(
                 item=plan.item,
@@ -758,14 +825,16 @@ class BaseSyncClient[
             return
 
         log.success(
-            f"[{self.profile_name}] Syncing {len(self._pending_updates)} items "
-            f"to list provider in batch mode"
+            "[%s] Syncing %s items to list provider in batch mode",
+            self.profile_name,
+            len(self._pending_updates),
         )
 
         if self.dry_run:
             log.info(
-                f"[{self.profile_name}] Dry run enabled; skipping batch sync of "
-                f"{len(self._pending_updates)} items"
+                "[%s] Dry run enabled; skipping batch sync of %s items",
+                self.profile_name,
+                len(self._pending_updates),
             )
             for update in self._pending_updates:
                 diff_str = self._render_diff(update)
@@ -779,10 +848,13 @@ class BaseSyncClient[
                     media_key=update.after.media_key,
                 )
                 log.success(
-                    f"[{self.profile_name}] Dry run update for "
-                    f"{update.item.media_kind.value} {debug_title} {debug_ids}"
+                    "[%s] Dry run update for %s %s %s",
+                    self.profile_name,
+                    update.item.media_kind.value,
+                    debug_title,
+                    debug_ids,
                 )
-                log.success(f"\t\tDRY RUN BATCH UPDATE: {diff_str}")
+                log.success("\t\tDRY RUN BATCH UPDATE: %s", diff_str)
             self._pending_updates.clear()
             return
 
@@ -806,7 +878,8 @@ class BaseSyncClient[
                     else SyncOutcome.FAILED,
                 )
         except Exception as exc:
-            log.error("Batch sync failed", exc_info=True)
+            log.error("Batch sync failed: %s", exc)
+            log.exception("Batch sync error details")
             for update in self._pending_updates:
                 await self._create_sync_history(
                     item=update.item,

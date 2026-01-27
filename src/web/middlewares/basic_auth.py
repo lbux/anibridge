@@ -70,14 +70,14 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not self.htpasswd_path:
             return False
         if not self.htpasswd_path.exists():
-            log.error(f"HTPasswd file not found at {self.htpasswd_path}")
+            log.error("HTPasswd file not found at %s", self.htpasswd_path)
             return False
 
         try:
             htpasswd = HtpasswdFile.from_file(self.htpasswd_path)
             return htpasswd.check_password(username, password) or False
         except Exception as e:
-            log.error(f"Error reading HTPasswd file: {e}")
+            log.exception("Error reading HTPasswd file: %s", e)
             return False
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

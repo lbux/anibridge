@@ -19,10 +19,8 @@ class SelectiveVerifySession(requests.Session):
         super().__init__()
         self.whitelist = set(whitelist or [])
         if self.whitelist:
-            log.debug(
-                "SSL verify disabled for domains: "
-                + ", ".join([f"$$'{d}'$$" for d in sorted(self.whitelist)])
-            )
+            formatted = ", ".join([f"$$'{d}'$$" for d in sorted(self.whitelist)])
+            log.debug("SSL verify disabled for domains: %s", formatted)
 
     def request(self, method, url, *_, **kwargs):
         """Override the request method to selectively disable SSL verification."""
@@ -36,8 +34,10 @@ class SelectiveVerifySession(requests.Session):
                 try:
                     return super().request(method, url, **kwargs)
                 except Exception as e:
-                    log.error(
-                        (f"Error during request to $$'{domain}'$$: {e}"), exc_info=True
+                    log.exception(
+                        "Error during request to $$'%s'$$: %s",
+                        domain,
+                        e,
                     )
                     raise
         return super().request(method, url, *_, **kwargs)

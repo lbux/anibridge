@@ -200,8 +200,10 @@ class AniListClient:
         pages_per_request = 100
 
         log.debug(
-            f"Executing AniList media ID search with filters "
-            f"$${{filters: {filters}}}$$ to retrieve up to $$'{max_results}'$$ results"
+            "Executing AniList media ID search with filters $${filters: %s}$$ "
+            "to retrieve up to $$'%s'$$ results",
+            filters,
+            max_results,
         )
 
         while len(result) < max_results:
@@ -217,9 +219,11 @@ class AniListClient:
             start_idx = (current_page - 1) * per_page + 1
             end_idx = (current_page + batch_size - 1) * per_page
             log.debug(
-                f"Requesting AniList pages "
-                f"$$'[{current_page}..{current_page + batch_size - 1}] "
-                f"({start_idx}..{end_idx})'$$"
+                "Requesting AniList pages $$'[%s..%s] (%s..%s)'$$",
+                current_page,
+                current_page + batch_size - 1,
+                start_idx,
+                end_idx,
             )
 
             for idx in range(batch_size):
@@ -313,8 +317,9 @@ class AniListClient:
         cached_ids = [id for id in anilist_ids if id in self.offline_anilist_entries]
         if cached_ids:
             log.debug(
-                f"Pulling AniList data from local cache in "
-                f"batched mode $${{anilist_ids: {cached_ids}}}$$"
+                "Pulling AniList data from local cache in batched mode "
+                "$${anilist_ids: %s}$$",
+                cached_ids,
             )
             result.extend(self.offline_anilist_entries[id] for id in cached_ids)
 
@@ -327,8 +332,8 @@ class AniListClient:
         for i in range(0, len(missing_ids), BATCH_SIZE):
             batch_ids = missing_ids[i : i + BATCH_SIZE]
             log.debug(
-                f"Pulling AniList data from API in batched "
-                f"mode $${{anilist_ids: {batch_ids}}}$$"
+                "Pulling AniList data from API in batched mode $${anilist_ids: %s}$$",
+                batch_ids,
             )
 
             query = f"""
@@ -383,12 +388,19 @@ class AniListClient:
             - Includes Authorization header using the stored token
         """
         if retry_count >= 3:
+            log.error("AniList request failed after 3 attempts")
             raise aiohttp.ClientError("Failed to make request after 3 tries")
 
         if variables is None:
             variables = {}
 
         session = await self._get_session()
+        variable_keys = ", ".join(sorted(variables.keys()))
+        log.debug(
+            "AniList request attempt $$'%s'$$ with variables $${%s}$$",
+            retry_count + 1,
+            variable_keys,
+        )
 
         try:
             async with session.post(
@@ -396,13 +408,21 @@ class AniListClient:
             ) as response:
                 if response.status == 429:  # Handle rate limit retries
                     retry_after = int(response.headers.get("Retry-After", 60))
-                    log.warning(f"Rate limit exceeded, waiting {retry_after} seconds")
+                    log.warning(
+                        "Rate limit exceeded, waiting %s seconds (attempt %s/3)",
+                        retry_after,
+                        retry_count + 1,
+                    )
                     await asyncio.sleep(retry_after + 1)
                     return await self._make_request(
                         query=query, variables=variables, retry_count=retry_count + 1
                     )
                 elif response.status == 502:  # Bad Gateway
-                    log.warning("Received 502 Bad Gateway, retrying")
+                    log.warning(
+                        "Received 502 Bad Gateway from AniList, retrying "
+                        "(attempt %s/3)",
+                        retry_count + 1,
+                    )
                     await asyncio.sleep(1)
                     return await self._make_request(
                         query=query, variables=variables, retry_count=retry_count + 1
@@ -410,16 +430,23 @@ class AniListClient:
 
                 try:
                     response.raise_for_status()
-                except aiohttp.ClientResponseError as e:
-                    log.error("Failed to make request to AniList API")
+                except aiohttp.ClientResponseError as exc:
+                    log.error(
+                        "AniList API request failed with status %s %s",
+                        exc.status,
+                        exc.message,
+                    )
                     response_text = await response.text()
-                    log.error(f"\t\t{response_text}")
-                    raise e
+                    log.error("AniList API response payload: %s", response_text)
+                    raise
 
                 return await response.json()
 
         except (TimeoutError, aiohttp.ClientError):
-            log.error("Connection error while making request to AniList API")
+            log.warning(
+                "Connection error while making request to AniList API, retrying"
+            )
+            log.exception("AniList API connection error details")
             await asyncio.sleep(1)
             return await self._make_request(
                 query=query, variables=variables, retry_count=retry_count + 1

@@ -66,10 +66,10 @@ class BackupService:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
         """
-        log.debug(f"Listing backups for profile $$'{profile}'$$")
+        log.debug("Listing backups for profile $$'%s'$$", profile)
         bdir = self._backup_dir(profile) / profile
         if not bdir.exists():
-            log.debug(f"Backup directory $$'{bdir}'$$ does not exist")
+            log.debug("Backup directory $$'%s'$$ does not exist", bdir)
             return []
         metas: list[BackupMeta] = []
         now = datetime.now(UTC)
@@ -107,7 +107,11 @@ class BackupService:
                 count += 1
             except Exception:
                 continue
-        log.debug(f"Found {count} backups for profile $$'{profile}'$$")
+        log.debug(
+            "Found %s backups for profile $$'%s'$$",
+            count,
+            profile,
+        )
         return list(reversed(metas))  # Newest first
 
     def read_backup_raw(self, profile: str, filename: str) -> dict[str, Any]:
@@ -126,7 +130,11 @@ class BackupService:
             InvalidBackupFilenameError: If the filename is invalid.
             BackupFileNotFoundError: If the file does not exist.
         """
-        log.debug(f"Reading raw backup $$'{filename}'$$ for profile $$'{profile}'$$")
+        log.debug(
+            "Reading raw backup $$'%s'$$ for profile $$'%s'$$",
+            filename,
+            profile,
+        )
         path = self._resolve_backup_path(profile, filename)
 
         with path.open("r", encoding="utf-8") as fh:
@@ -158,7 +166,11 @@ class BackupService:
             BackupFileNotFoundError: If the file does not exist.
             BackupParseError: If there was an error parsing or restoring the backup.
         """
-        log.info(f"Restoring backup $$'{filename}'$$ for profile $$'{profile}'$$")
+        log.info(
+            "Restoring backup $$'%s'$$ for profile $$'%s'$$",
+            filename,
+            profile,
+        )
         bridge = self._get_profile_bridge(profile)
         path = self._resolve_backup_path(profile, filename)
 
@@ -172,7 +184,9 @@ class BackupService:
         except Exception as exc:
             raise BackupParseError(f"Error during backup restoration: {exc}") from exc
         log.info(
-            f"Successfully restored backup $$'{filename}'$$ for profile $$'{profile}'$$"
+            "Successfully restored backup $$'%s'$$ for profile $$'%s'$$",
+            filename,
+            profile,
         )
 
 

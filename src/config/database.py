@@ -51,7 +51,7 @@ class AniBridgeDB:
         self.data_path = data_path
         self.db_path = data_path / "anibridge.db"
 
-        log.debug(f"Initializing database at $$'{self.db_path}'$$")
+        log.debug("Initializing database at $$'%s'$$", self.db_path)
         self.engine = self._setup_db()
         self._SessionLocal = sessionmaker(
             bind=self.engine,
@@ -74,10 +74,13 @@ class AniBridgeDB:
             ValueError: If data_path exists but is a file instead of a directory
         """
         if not self.data_path.exists():
-            log.debug(f"Creating data directory at $$'{self.data_path}'$$")
+            log.debug(
+                "Creating data directory at $$'%s'$$",
+                self.data_path,
+            )
             self.data_path.mkdir(parents=True, exist_ok=True)
         elif self.data_path.is_file():
-            log.error(f"Invalid data path $$'{self.data_path}'$$ is a file")
+            log.error("Invalid data path $$'%s'$$ is a file", self.data_path)
             raise DataPathError(
                 f"The path '{self.data_path}' is a file, "
                 "please delete it first or choose a different data folder path"
@@ -89,7 +92,7 @@ class AniBridgeDB:
             pool_pre_ping=True,
             future=True,
         )
-        log.debug(f"SQLite engine created at $$'{self.db_path}'$$")
+        log.debug("SQLite engine created at $$'%s'$$", self.db_path)
 
         @sqlalchemy.event.listens_for(engine, "connect")
         def _set_sqlite_pragma(dbapi_connection: AsyncAdapt_aioodbc_connection, _):
@@ -136,7 +139,7 @@ class AniBridgeDB:
             command.upgrade(cfg, "head")
             log.debug("Database migrations up-to-date")
         except Exception as e:
-            log.error(f"Database migration failed: {e}", exc_info=True)
+            log.exception("Database migration failed: %s", e)
             raise
 
         # Ensure ORM metadata tables are present (Alembic is expected to manage

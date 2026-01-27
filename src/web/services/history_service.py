@@ -349,7 +349,11 @@ class HistoryService:
         Raises:
             HistoryItemNotFoundError: If the item does not exist.
         """
-        log.info(f"Deleting history item id={item_id} for profile {profile}")
+        log.info(
+            "Deleting history item id=%s for profile %s",
+            item_id,
+            profile,
+        )
         with db() as ctx:
             row = (
                 ctx.session.query(SyncHistory)
@@ -379,7 +383,11 @@ class HistoryService:
             ProfileNotFoundError: If the profile is unknown.
             HistoryItemNotFoundError: If the specified item does not exist.
         """
-        log.info(f"Undoing history item id={item_id} for profile {profile}")
+        log.info(
+            "Undoing history item id=%s for profile %s",
+            item_id,
+            profile,
+        )
         bridge = get_bridge(profile)
         list_provider = bridge.list_provider
 
@@ -431,22 +439,26 @@ class HistoryService:
             )
 
         if before_snapshot is None:
-            log.success(f"Deleting list entry {row.list_media_key} as part of undo")
+            log.success(
+                "Deleting list entry %s as part of undo",
+                row.list_media_key,
+            )
             if bridge.profile_config.dry_run:
                 log.info(
-                    "Dry run enabled; skipping deletion of list entry "
-                    f"{row.list_media_key}"
+                    "Dry run enabled; skipping deletion of list entry %s",
+                    row.list_media_key,
                 )
             else:
                 await list_provider.delete_entry(row.list_media_key)
         else:
             log.success(
-                f"Restoring list entry {before_snapshot.media_key} to previous state"
+                "Restoring list entry %s to previous state",
+                before_snapshot.media_key,
             )
             if bridge.profile_config.dry_run:
                 log.info(
-                    "Dry run enabled; skipping restoration of list entry "
-                    f"{before_snapshot.media_key}"
+                    "Dry run enabled; skipping restoration of list entry %s",
+                    before_snapshot.media_key,
                 )
             else:
                 entry = await list_provider.get_entry(before_snapshot.media_key)
@@ -488,7 +500,11 @@ class HistoryService:
 
     async def retry_item(self, profile: str, item_id: int) -> None:
         """Retry a failed history item by re-triggering a targeted sync."""
-        log.info(f"Retrying history item id={item_id} for profile {profile}")
+        log.info(
+            "Retrying history item id=%s for profile %s",
+            item_id,
+            profile,
+        )
 
         scheduler = get_app_state().scheduler
         if not scheduler:

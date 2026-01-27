@@ -116,15 +116,17 @@ class MappingsClient:
                 suffixes = suffixes[:-1]
             except zstandard.ZstdError:
                 log.error(
-                    f"Error decompressing Zstandard payload $$'{src}'$$",
-                    exc_info=True,
+                    "Error decompressing Zstandard payload $$'%s'$$",
+                    src,
                 )
+                log.exception("Zstandard decompression error details")
                 return {}
             except Exception:
                 log.error(
-                    f"Unexpected error decompressing Zstandard payload $$'{src}'$$",
-                    exc_info=True,
+                    "Unexpected error decompressing Zstandard payload $$'%s'$$",
+                    src,
                 )
+                log.exception("Zstandard decompression error details")
                 return {}
 
         suffix = suffixes[-1] if suffixes else ""
@@ -137,13 +139,16 @@ class MappingsClient:
                 return orjson.loads(payload)
 
             log.warning(
-                f"Unknown file type for $$'{src}'$$, defaulting to JSON parsing"
+                "Unknown file type for $$'%s'$$, defaulting to JSON parsing",
+                src,
             )
             return orjson.loads(payload)
         except (json.JSONDecodeError, yaml.YAMLError):
-            log.error(f"Error decoding file $$'{src}'$$", exc_info=True)
+            log.error("Error decoding file $$'%s'$$", src)
+            log.exception("Decode error details")
         except Exception:
-            log.error(f"Unexpected error reading file $$'{src}'$$", exc_info=True)
+            log.error("Unexpected error reading file $$'%s'$$", src)
+            log.exception("Unexpected decode error details")
         return {}
 
     async def _finalize_mappings(
@@ -153,7 +158,7 @@ class MappingsClient:
         self._loaded_sources.add(src)
 
         if not mappings:
-            log.warning(f"No mappings found in $$'{src}'$$")
+            log.warning("No mappings found in $$'%s'$$", src)
             return {}
 
         includes_value: dict | list = mappings.get("$includes", [])
@@ -162,7 +167,8 @@ class MappingsClient:
         else:
             includes = []
             log.warning(
-                f"The $includes key in $$'{src}'$$ is not a list, ignoring all entries"
+                "The $includes key in $$'%s'$$ is not a list, ignoring all entries",
+                src,
             )
 
         merged = self._deep_merge(
@@ -252,12 +258,16 @@ class MappingsClient:
 
             if resolved_include in loaded_chain:
                 log.warning(
-                    f"Circular include detected: "
-                    f"$$'{resolved_include}'$$ has already been loaded in this chain"
+                    "Circular include detected: $$'%s'$$ has already been loaded in "
+                    "this chain",
+                    resolved_include,
                 )
                 continue
             if resolved_include in self._loaded_sources:
-                log.info(f"Skipping already loaded include: $$'{resolved_include}'$$")
+                log.info(
+                    "Skipping already loaded include: $$'%s'$$",
+                    resolved_include,
+                )
                 continue
 
             tasks.append(asyncio.create_task(_load_one(resolved_include)))
@@ -268,10 +278,11 @@ class MappingsClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                log.error(
-                    "Failed to load include",
-                    exc_info=(type(result), result, result.__traceback__),
-                )
+                log.error("Failed to load include: %s", result)
+                try:
+                    raise result
+                except Exception:
+                    log.exception("Include load error details")
                 continue
             mappings = self._deep_merge(cast(AnimapDict, result), mappings)
 
@@ -286,9 +297,10 @@ class MappingsClient:
             payload = file_path.read_bytes()
         except Exception:
             log.error(
-                f"Unexpected error reading file $$'{file_path.resolve()!s}'$$",
-                exc_info=True,
+                "Unexpected error reading file $$'%s'$$",
+                file_path.resolve(),
             )
+            log.exception("Mappings file read error details")
             return {}
 
         mappings = self._decode_mappings(payload, str(file_path))
@@ -308,17 +320,20 @@ class MappingsClient:
         except (TimeoutError, aiohttp.ClientError):
             if retry_count < 2:
                 log.warning(
-                    f"Error reaching mappings URL $$'{url}'$$, retrying...",
-                    exc_info=True,
+                    "Error reaching mappings URL $$'%s'$$, retrying...",
+                    url,
                 )
+                log.exception("Mappings URL retry error details")
                 await asyncio.sleep(1)
                 return await self._load_mappings_url(url, loaded_chain, retry_count + 1)
-            log.error(f"Error reaching mappings URL $$'{url}'$$", exc_info=True)
+            log.error("Error reaching mappings URL $$'%s'$$", url)
+            log.exception("Mappings URL error details")
         except Exception:
             log.error(
-                f"Unexpected error fetching mappings from URL $$'{url}'$$",
-                exc_info=True,
+                "Unexpected error fetching mappings from URL $$'%s'$$",
+                url,
             )
+            log.exception("Mappings URL error details")
 
         if mappings_raw is None:
             return {}
@@ -344,13 +359,13 @@ class MappingsClient:
         loaded_chain = loaded_chain | {src}
 
         if self._is_file(src):
-            log.info(f"Loading mappings from file $$'{src}'$$")
+            log.info("Loading mappings from file $$'%s'$$", src)
             return await self._load_mappings_file(src, loaded_chain)
         elif self._is_url(src):
-            log.info(f"Loading mappings from URL $$'{src}'$$")
+            log.info("Loading mappings from URL $$'%s'$$", src)
             return await self._load_mappings_url(src, loaded_chain)
         else:
-            log.warning(f"Invalid mappings source: $$'{src}'$$, skipping")
+            log.warning("Invalid mappings source: $$'%s'$$, skipping", src)
             return {}
 
     def _deep_merge(self, d1: AnimapDict, d2: AnimapDict) -> AnimapDict:
@@ -383,7 +398,10 @@ class MappingsClient:
         self._provenance = {}
 
         if self.upstream_url is not None:
-            log.debug(f"Using upstream mappings URL $$'{self.upstream_url}'$$")
+            log.debug(
+                "Using upstream mappings URL $$'%s'$$",
+                self.upstream_url,
+            )
             db_mappings = await self._load_mappings(str(self.upstream_url))
         else:
             log.debug("No upstream mappings URL configured, skipping")
@@ -404,12 +422,26 @@ class MappingsClient:
 
         if len(existing_custom_mapping_files) > 1:
             log.warning(
-                f"Found multiple custom mappings files: "
-                f"{existing_custom_mapping_files}. Only one mappings file can be used "
-                f"at a time. Defaulting to $$'{custom_mappings_path}'$$"
+                "Found multiple custom mappings files: %s. Only one mappings file "
+                "can be used at a time. Defaulting to $$'%s'$$",
+                existing_custom_mapping_files,
+                custom_mappings_path,
+            )
+
+        if custom_mappings_path:
+            log.debug(
+                "Using custom mappings file $$'%s'$$",
+                custom_mappings_path,
             )
 
         merged_mappings = self._deep_merge(db_mappings, custom_mappings)
+
+        log.debug(
+            "Loaded %s upstream, %s custom, and %s merged mappings entries",
+            len(db_mappings),
+            len(custom_mappings),
+            len(merged_mappings),
+        )
 
         return {k: v for k, v in merged_mappings.items() if not k.startswith("$")}
 

@@ -75,7 +75,7 @@ class AnimapClient:
         try:
             await self.sync_db()
         except Exception as exc:
-            log.error(f"Failed to sync database: {exc}", exc_info=True)
+            log.exception("Failed to sync database: %s", exc)
             raise
 
     async def close(self) -> None:
@@ -294,7 +294,10 @@ class AnimapClient:
             try:
                 source_desc = parse_mapping_descriptor(raw_source)
             except ValueError:
-                log.warning(f"Invalid mapping descriptor $$'{raw_source}'$$; skipped")
+                log.warning(
+                    "Invalid mapping descriptor $$'%s'$$; skipped",
+                    raw_source,
+                )
                 invalid_count += 1
                 continue
 
@@ -302,8 +305,8 @@ class AnimapClient:
 
             if not isinstance(targets, dict):
                 log.warning(
-                    f"Descriptor $$'{raw_source}'$$ has non-object target payload; "
-                    "skipped",
+                    "Descriptor $$'%s'$$ has non-object target payload; skipped",
+                    raw_source,
                 )
                 invalid_count += 1
                 continue
@@ -313,8 +316,9 @@ class AnimapClient:
                     target_desc = parse_mapping_descriptor(raw_target)
                 except ValueError:
                     log.warning(
-                        f"Invalid target descriptor $$'{raw_target}'$$ under "
-                        f"$$'{raw_source}'$$; skipped",
+                        "Invalid target descriptor $$'%s'$$ under $$'%s'$$; skipped",
+                        raw_target,
+                        raw_source,
                     )
                     invalid_count += 1
                     continue
@@ -325,8 +329,9 @@ class AnimapClient:
                     continue
                 if not isinstance(ranges, dict):
                     log.warning(
-                        f"Descriptor $$'{raw_source}'$$ → $$'{raw_target}'$$ has "
-                        "non-object ranges; skipped",
+                        "Descriptor $$'%s'$$ → $$'%s'$$ has non-object ranges; skipped",
+                        raw_source,
+                        raw_target,
                     )
                     invalid_count += 1
                     continue
@@ -342,8 +347,11 @@ class AnimapClient:
                         continue
                     if not is_valid_source_range(source_range):
                         log.warning(
-                            f"Invalid source range $$'{source_range}'$$ under "
-                            f"$$'{raw_source}'$$ → $$'{raw_target}'$$; skipped"
+                            "Invalid source range $$'%s'$$ under $$'%s'$$ → "
+                            "$$'%s'$$; skipped",
+                            source_range,
+                            raw_source,
+                            raw_target,
                         )
                         invalid_count += 1
                         continue
@@ -351,8 +359,11 @@ class AnimapClient:
                         destination_range
                     ):
                         log.warning(
-                            f"Invalid destination range $$'{destination_range}'$$ under"
-                            f" $$'{raw_source}'$$ → $$'{raw_target}'$$; skipped"
+                            "Invalid destination range $$'%s'$$ under $$'%s'$$ → "
+                            "$$'%s'$$; skipped",
+                            destination_range,
+                            raw_source,
+                            raw_target,
                         )
                         invalid_count += 1
                         continue
@@ -392,9 +403,19 @@ class AnimapClient:
         mappings = await self.mappings_client.load_mappings()
         provenance_by_descriptor = self.mappings_client.get_provenance()
 
-        descriptors, edges, provenance, _invalid_count = self._build_edges(
+        descriptors, edges, provenance, invalid_count = self._build_edges(
             mappings, provenance_by_descriptor
         )
+        log.debug(
+            "Parsed mappings into %s descriptors, %s edges",
+            len(descriptors),
+            len(edges),
+        )
+        if invalid_count:
+            log.warning(
+                "Skipped %s invalid mapping entries during parse",
+                invalid_count,
+            )
         curr_mappings_hash = md5(
             json.dumps(mappings, sort_keys=True).encode()
         ).hexdigest()
@@ -412,6 +433,12 @@ class AnimapClient:
 
             to_delete_entries = existing_entry_keys - new_entry_keys
             to_insert_entries = new_entry_keys - existing_entry_keys
+
+            log.debug(
+                "Deleted %s and inserted %s animap entries",
+                len(to_delete_entries),
+                len(to_insert_entries),
+            )
 
             if to_delete_entries:
                 for chunk in batched(
@@ -484,6 +511,12 @@ class AnimapClient:
 
             to_delete_mappings = existing_keys - new_keys
             to_insert_mappings = new_keys - existing_keys
+
+            log.debug(
+                "Deleted %s and inserted %s animap mappings",
+                len(to_delete_mappings),
+                len(to_insert_mappings),
+            )
 
             if to_delete_mappings:
                 for chunk in batched(
@@ -572,8 +605,8 @@ class AnimapClient:
             updated_pairs = changed_pairs - removed_pairs - created_pairs
 
             log.success(
-                "Mappings database sync complete: "
-                f"{len(removed_pairs)} removed, "
-                f"{len(updated_pairs)} updated, "
-                f"{len(created_pairs)} created"
+                "Mappings database sync complete: %s removed, %s updated, %s created",
+                len(removed_pairs),
+                len(updated_pairs),
+                len(created_pairs),
             )

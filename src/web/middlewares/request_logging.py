@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from src import log
+from src.utils.terminal import ARROW
 
 __all__ = ["RequestLoggingMiddleware"]
 
@@ -67,12 +68,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             process_time = time.time() - start_time
 
             log.debug(
-                f"Request: {full_request_info} -> "
-                f"Response: {response.status_code} ({process_time:.3f}s)"
+                "Request: %s %s Response: %s (%.3fs)",
+                full_request_info,
+                ARROW,
+                response.status_code,
+                process_time,
             )
 
             return response
         except Exception:
             process_time = time.time() - start_time
-            log.debug(f"Request: {full_request_info} -> Failed ({process_time:.3f}s)")
+            log.debug(
+                "Request: %s %s Failed (%.3fs)",
+                full_request_info,
+                ARROW,
+                process_time,
+            )
             raise
