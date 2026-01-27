@@ -308,14 +308,14 @@ class SchedulerClient:
                     next_sync_time,
                 )
 
-        # If every profile is a single-run profile (no scan_modes), exit
         if self.profile_schedulers and all(
             not self.global_config.get_profile(name).scan_modes
             for name in self.profile_schedulers
         ):
-            log.info("All profiles are single-run, stopping application")
-            self.stop_event.set()
-            return
+            log.info(
+                "None of the profiles have any scan modes enabled; the scheduler will "
+                "remain idle until manually triggered",
+            )
 
         if self.profile_schedulers:
             log.info(

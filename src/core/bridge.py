@@ -73,11 +73,13 @@ class BridgeClient:
         list_label = list_user.title if list_user else "unknown"
 
         log.info(
-            "[%s] Bridge client initialized for library user $$'%s'$$ %s "
-            "list user $$'%s'$$",
+            "[%s] Bridge client initialized for $s library user $$'%s'$$ %s %s list "
+            "user $$'%s'$$",
             self.profile_name,
+            self.library_provider.NAMESPACE,
             library_label,
             ARROW,
+            self.list_provider.NAMESPACE,
             list_label,
         )
 
