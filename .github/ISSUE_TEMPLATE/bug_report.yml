@@ -37,14 +37,14 @@ body:
           label: Environment
           description: |
               examples:
-                - **OS**: Ubuntu 22.04
+                - **OS**: Ubuntu 24.04
                 - **AniBridge**: AniBridge 2.0.0
                 - **Docker Install**: Yes
-                - **Database**: Sqlite 3.41.1
+                - **Database**: Sqlite 3.45.1
           value: |
-              - OS: 
-              - AniBridge: 
-              - Docker Install: 
+              - OS:
+              - AniBridge:
+              - Docker Install:
               - Database:
           render: markdown
       validations:
@@ -55,7 +55,7 @@ body:
           options:
               - Main
               - Develop
-              - Other (This issue will be closed)
+              - Other (This issue will likely be closed)
       validations:
           required: true
     - type: textarea

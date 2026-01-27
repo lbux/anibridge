@@ -25,4 +25,3 @@ YES - ###
 - [ ] My code passes the code style checks of this project (`ruff check && (cd frontend && pnpm lint)`)
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made changes to the documentation in `docs/` if applicable

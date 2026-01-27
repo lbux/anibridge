@@ -22,17 +22,21 @@ _If you decide to use a different IDE, you will need to set up the environment m
 5. The dev container will build and setup all required packages and dependencies.
 6. Once the dev container is ready, you can activate the Python virtual environment with `source .venv/bin/activate`.
 
-## Documentation
-
-If you are only making changes to the documentation, you can opt to clone the repository and edit the documentation files in your preferred text editor or directly in the GitHub web UI. The documentation is located in the `docs/` directory.
-
-1. Fork AniBridge.
-2. Clone the repository into your development machine ([_info_](https://docs.github.com/en/get-started/quickstart/fork-a-repo)) or edit directly in the GitHub web UI.
-3. Make your changes to the documentation files in the `docs/` directory.
-
 ## Contributing Code
 
-The AniBridge codebase is primarily written in Python for the backend and Svelte/TypeScript for the frontend.
+The AniBridge codebase can be split into three primary components:
+
+```
+.
+├── README.md
+├── frontend
+│   └── ... # Frontend (Svelte/TypeScript)
+└── src
+    ├── core
+    │   └── ... # Core synchronization engine (Python)
+    └── web
+        └── ... # API (Python/FastAPI)
+```
 
 The project has a set of developer scripts at `scripts/dev.py` to help with common tasks. You can run these scripts with `python scripts/dev.py <command>`. Run `python scripts/dev.py --help` to see a list of available commands.
 
@@ -40,7 +44,6 @@ The project has a set of developer scripts at `scripts/dev.py` to help with comm
     - Run `python scripts/dev.py lint` to ensure your Python and Svelte code passes the linting rules.
     - Run `python scripts/dev.py format` to auto-format your Python and Svelte code.
     - Run `python scripts/dev.py test` to run the test suite and ensure all tests pass.
-- Update or add documentation in the `docs/` directory if it affects usage.
 - Make sure any complex or non-obvious code is explained with comments. This helps maintain readability and ease of review.
 
 ## Pull Requesting
