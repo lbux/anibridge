@@ -171,6 +171,8 @@ cython_debug/
 
 # Profilers
 *.pyspy
+*.memray
+*profile.bin
 
 # Node
 node_modules/
