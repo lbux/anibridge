@@ -5,18 +5,18 @@ from collections.abc import Iterable
 from typing import Any
 
 import aiohttp
-from limiter import Limiter
 
 from src import __version__, log
 from src.exceptions import AniListFilterError, AniListSearchError
 from src.models.schemas.anilist import Media
 from src.utils.cache import cache, ttl_cache
+from src.utils.limiter import Limiter
 
 __all__ = ["AniListClient"]
 
 # The rate limit for the AniList API *should* be 90 requests per minute, but in practice
 # it seems to be around 30 requests per minute
-anilist_limiter = Limiter(rate=30 / 60, capacity=3, jitter=False)
+anilist_limiter = Limiter(rate=30 / 60, capacity=3)
 
 
 class AniListClient:
