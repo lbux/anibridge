@@ -2,10 +2,13 @@
 
 import asyncio
 import functools
+import inspect
 import threading
 import time
 from collections.abc import Awaitable, Callable
 from typing import ClassVar, ParamSpec, TypeVar, overload
+
+__all__ = ["Limiter"]
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -88,7 +91,7 @@ class Limiter:
             target: Callable[P, R] | Callable[P, Awaitable[R]],
         ) -> Callable[P, R] | Callable[P, Awaitable[R]]:
             """Decorator that rate-limits the target callable."""
-            if asyncio.iscoroutinefunction(target):
+            if inspect.iscoroutinefunction(target):
 
                 @functools.wraps(target)
                 async def async_wrapper(*args: P.args, **kwargs: P.kwargs):

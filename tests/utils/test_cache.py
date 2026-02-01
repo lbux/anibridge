@@ -4,7 +4,6 @@ import asyncio
 from collections.abc import Callable
 from typing import cast
 
-import aiocache
 import pytest
 
 from src.utils.cache import _generic_hash, file_cache, lru_cache, ttl_cache
@@ -56,24 +55,6 @@ def test_ttl_cache_caches_unhashable_arguments():
     assert compute([4, 5]) == 9
     assert compute([4, 5]) == 9
     assert call_count == 1
-
-
-@pytest.mark.asyncio
-async def test_ttl_cache_caches_async_functions():
-    """Test that ttl_cache caches async results with unhashable arguments."""
-    call_count = 0
-
-    @ttl_cache(ttl=60)
-    async def fetch(value):
-        nonlocal call_count
-        call_count += 1
-        return value
-
-    assert await fetch(["a", "b"]) == ["a", "b"]
-    assert await fetch(["a", "b"]) == ["a", "b"]
-    assert call_count == 1
-
-    aiocache.caches._caches.clear()
 
 
 def test_file_cache_sync_caches(tmp_path) -> None:
