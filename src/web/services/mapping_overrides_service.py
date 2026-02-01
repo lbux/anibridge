@@ -17,6 +17,7 @@ from src.exceptions import (
     MissingDescriptorError,
     SchedulerNotInitializedError,
 )
+from src.utils.cache import cache
 from src.utils.mapping_ranges import is_valid_source_range, is_valid_target_range
 from src.web.state import get_app_state
 
@@ -380,16 +381,11 @@ class MappingOverridesService:
         return await self.get_mapping_detail(descriptor_str)
 
 
-_mapping_overrides_service: MappingOverridesService | None = None
-
-
+@cache
 def get_mapping_overrides_service() -> MappingOverridesService:
     """Return a singleton mapping overrides service instance.
 
     Returns:
         MappingOverridesService: The singleton service instance.
     """
-    global _mapping_overrides_service
-    if _mapping_overrides_service is None:
-        _mapping_overrides_service = MappingOverridesService()
-    return _mapping_overrides_service
+    return MappingOverridesService()

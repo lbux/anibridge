@@ -33,6 +33,7 @@ from src.utils.booru_query import (
     evaluate,
     parse_query,
 )
+from src.utils.cache import cache
 from src.web.services.mappings_query_spec import (
     QueryFieldKind,
     QueryFieldSpec,
@@ -1063,16 +1064,11 @@ class MappingsService:
         return item.to_dict()
 
 
-_mappings_service: MappingsService | None = None
-
-
+@cache
 def get_mappings_service() -> MappingsService:
     """Return a singleton mappings service instance.
 
     Returns:
         MappingsService: The singleton service instance.
     """
-    global _mappings_service
-    if _mappings_service is None:
-        _mappings_service = MappingsService()
-    return _mappings_service
+    return MappingsService()
