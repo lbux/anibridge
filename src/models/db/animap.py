@@ -67,7 +67,7 @@ class AnimapMapping(Base):
 class AnimapProvenance(Base):
     """Tracks the provenance (source paths/URLs) for each Animap row.
 
-    Stores one row per source with an order column ``n`` to preserve the
+    Stores one row per source with an order column `n` to preserve the
     original order of sources for a given entry.
     """
 

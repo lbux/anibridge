@@ -5,7 +5,7 @@ import functools
 import threading
 import time
 from collections.abc import Awaitable, Callable
-from typing import ParamSpec, TypeVar, overload
+from typing import ClassVar, ParamSpec, TypeVar, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -13,6 +13,8 @@ R = TypeVar("R")
 
 class Limiter:
     """Token-bucket limiter supporting sync and async call sites."""
+
+    DISABLED: ClassVar[bool] = False  # Switch to disable all limiters during tests
 
     def __init__(self, rate: float, capacity: int) -> None:
         """Initialize the limiter with a rate and capacity.
@@ -42,6 +44,8 @@ class Limiter:
 
     def _consume_sync(self) -> None:
         """Consume a token in a blocking manner."""
+        if Limiter.DISABLED:
+            return
         while True:
             with self._sync_lock:
                 now = time.monotonic()
@@ -54,6 +58,8 @@ class Limiter:
 
     async def _consume_async(self) -> None:
         """Consume a token in an async manner."""
+        if Limiter.DISABLED:
+            return
         while True:
             async with self._async_lock:
                 now = time.monotonic()

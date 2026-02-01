@@ -2,11 +2,13 @@
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from src.config.database import db
 from src.config.settings import SyncField
+from src.core.sched import SchedulerClient
 from src.models.db.pin import Pin
 from src.web.services.pin_service import PinService, UpdatePinPayload
 from src.web.state import get_app_state
@@ -27,7 +29,9 @@ def _pin_scheduler():
     state = get_app_state()
     original = state.scheduler
     bridge = SimpleNamespace(list_provider=DummyListProvider())
-    state.scheduler = SimpleNamespace(bridge_clients={"default": bridge})
+    state.scheduler = cast(
+        SchedulerClient, SimpleNamespace(bridge_clients={"default": bridge})
+    )
     yield
     state.scheduler = original
 

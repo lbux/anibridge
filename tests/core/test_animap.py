@@ -145,6 +145,87 @@ def _fetch_edges(ctx) -> list[AnimapEdge]:
     return edges
 
 
+def test_descriptor_key_and_parse_mapping_descriptor_roundtrip() -> None:
+    """Descriptor helpers should round-trip provider entries and scopes."""
+    descriptor = ("anilist", "1", None)
+    scoped = ("tmdb", "2", "s1")
+
+    from src.core.animap import descriptor_key, parse_mapping_descriptor
+
+    assert parse_mapping_descriptor(descriptor_key(descriptor)) == descriptor
+    assert parse_mapping_descriptor(descriptor_key(scoped)) == scoped
+
+
+def test_parse_mapping_descriptor_rejects_invalid() -> None:
+    """Invalid mapping descriptors should raise a ValueError."""
+    from src.core.animap import parse_mapping_descriptor
+
+    with pytest.raises(ValueError):
+        parse_mapping_descriptor("bad-descriptor!")
+
+
+def test_resolve_edges_and_grouping(
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+) -> None:
+    """Resolved edges should honor target filters and grouping."""
+    mapping_data = {
+        "anilist:1": {
+            "tmdb:10": {"1": None},
+            "tvdb:20": {"1": "1-12"},
+        }
+    }
+    _write_mapping_file(tmp_path, mapping_data)
+
+    asyncio.run(animap_client.sync_db())
+
+    descriptors = [("anilist", "1", None)]
+    edges = animap_client.resolve_edges(descriptors)
+    filtered = animap_client.resolve_edges(descriptors, target_providers={"tmdb"})
+    grouped = animap_client.resolve_edges_grouped(descriptors)
+
+    assert len(edges) == 2
+    assert len(filtered) == 1
+    assert ("tmdb", "10", None) in grouped
+    assert ("anilist", "1", None) in grouped[("tmdb", "10", None)]
+
+
+def test_select_entry_ids_returns_ids(
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+) -> None:
+    """Entry lookup should return IDs for known descriptors."""
+    mapping_data = {"anilist:1": {"tmdb:10": {"1": None}}}
+    _write_mapping_file(tmp_path, mapping_data)
+    asyncio.run(animap_client.sync_db())
+
+    with in_memory_db as ctx:
+        ids = AnimapClient._select_entry_ids(
+            ctx.session,
+            [("anilist", "1", None), ("missing", "2", None)],
+        )
+
+    assert len(ids) == 1
+
+
+def test_build_edges_handles_invalid_payloads(
+    animap_client: AnimapClient,
+) -> None:
+    """Invalid descriptors and ranges should be skipped during build."""
+    mappings = {
+        "bad": "value",
+        "anilist:1": "not-a-dict",
+        "anilist:2": {"bad-target": {"1": None}},
+        "anilist:3": {"tmdb:3": {"": None, "1,2": "bad"}},
+    }
+
+    _descriptors, edges, provenance, invalid_count = animap_client._build_edges(
+        mappings, {}
+    )
+
+    assert invalid_count >= 3
+    assert edges == {}
+    assert provenance == {}
+
+
 def test_sync_db_creates_entries_mappings_and_provenance(
     animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
 ) -> None:

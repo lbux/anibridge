@@ -16,7 +16,7 @@ from anibridge.list import (
 
 from src.config.settings import SyncField
 from src.core.sync.base import BaseSyncClient, SyncTarget, diff_snapshots
-from src.core.sync.stats import EntrySnapshot, ItemIdentifier
+from src.core.sync.stats import BatchUpdate, EntrySnapshot, ItemIdentifier
 from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.utils.terminal import ARROW
@@ -135,7 +135,7 @@ def make_movie(**kwargs) -> FakeLibraryMovie:
 
 
 def test_diff_snapshots_returns_changed_fields() -> None:
-    """``diff_snapshots`` only includes differences for requested fields."""
+    """`diff_snapshots` only includes differences for requested fields."""
     before = EntrySnapshot(
         media_key="123",
         status=ListStatus.CURRENT,
@@ -166,6 +166,25 @@ def test_diff_snapshots_returns_changed_fields() -> None:
     }
 
 
+def test_comparison_helpers_cover_all_ops() -> None:
+    """Comparison helpers should evaluate each operator correctly."""
+    cmp_ne = BaseSyncClient._comparison("ne")
+    cmp_gt = BaseSyncClient._comparison("gt")
+    cmp_gte = BaseSyncClient._comparison("gte")
+    cmp_lt = BaseSyncClient._comparison("lt")
+    cmp_lte = BaseSyncClient._comparison("lte")
+
+    assert cmp_ne(1, 2) is True
+    assert cmp_gt(1, 2) is True
+    assert cmp_gte(2, 2) is True
+    assert cmp_lt(2, 1) is True
+    assert cmp_lte(2, 2) is True
+    assert cmp_ne(1, 1) is False
+
+    cmp_unknown = BaseSyncClient._comparison("noop")
+    assert cmp_unknown(1, 2) is False
+
+
 def test_should_update_field_respects_comparison_rules(
     stub_client: StubSyncClient,
 ) -> None:
@@ -189,6 +208,328 @@ def test_should_update_field_respects_comparison_rules(
     assert stub_client._should_apply_field(
         SyncField.PROGRESS, progress_rule, 1, None, set()
     )
+
+
+def test_get_pinned_fields_uses_cache(stub_client: StubSyncClient, sync_db) -> None:
+    """Pinned fields should be loaded from the database and cached."""
+    with sync_db as ctx:
+        ctx.session.add(
+            Pin(
+                profile_name=stub_client.profile_name,
+                list_namespace=stub_client.list_provider.NAMESPACE,
+                list_media_key="123",
+                fields=["status"],
+            )
+        )
+        ctx.session.commit()
+
+    fields = stub_client._get_pinned_fields(stub_client.list_provider.NAMESPACE, "123")
+    cached = stub_client._get_pinned_fields(stub_client.list_provider.NAMESPACE, "123")
+
+    assert fields == ["status"]
+    assert cached == ["status"]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_entries_handles_provider_error(
+    stub_client: StubSyncClient,
+) -> None:
+    """Prefetch should swallow provider errors."""
+
+    async def _collect(_item):
+        return ["1"]
+
+    async def _boom(_keys):
+        raise RuntimeError("boom")
+
+    stub_client._collect_prefetch_keys = _collect  # type: ignore[method-assign]
+    stub_client.list_provider.get_entries_batch = _boom  # type: ignore[method-assign]
+
+    await stub_client.prefetch_entries([make_movie()])
+
+
+@pytest.mark.asyncio
+async def test_sync_media_deletes_entry_when_destructive(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Destructive sync should delete entries when status becomes None."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    provider.entries["200"] = entry
+    stub_client.destructive_sync = True
+    stub_client._status_override = None
+
+    outcome = await stub_client.sync_media(
+        item=make_movie(),
+        child_item=make_movie(),
+        grandchild_items=(),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="200",
+        mapping_descriptors=None,
+    )
+
+    assert outcome is SyncOutcome.DELETED
+    assert provider.deleted_keys == ["200"]
+
+
+@pytest.mark.asyncio
+async def test_sync_media_skips_when_no_status(
+    stub_client: StubSyncClient,
+) -> None:
+    """Non-destructive sync should skip when no status is computed."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="201",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    stub_client._status_override = None
+
+    outcome = await stub_client.sync_media(
+        item=make_movie(),
+        child_item=make_movie(),
+        grandchild_items=(),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="201",
+        mapping_descriptors=None,
+    )
+
+    assert outcome is SyncOutcome.SKIPPED
+
+
+@pytest.mark.asyncio
+async def test_apply_update_dry_run_returns_skipped(
+    stub_client: StubSyncClient,
+) -> None:
+    """Dry-run updates should return SKIPPED without applying changes."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="300",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    plan = BatchUpdate(
+        item=make_movie(),
+        child=make_movie(),
+        grandchildren=(),
+        before=before,
+        after=after,
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="300",
+        mapping_descriptors=(),
+    )
+
+    stub_client.dry_run = True
+    outcome = await stub_client._apply_update(
+        plan,
+        diff_str="progress: 0 → 1",
+        debug_title="Movie",
+        debug_ids="id",
+    )
+
+    assert outcome is SyncOutcome.SKIPPED
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_dry_run_clears_queue(
+    stub_client: StubSyncClient,
+) -> None:
+    """Batch sync dry-run should clear the pending queue."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="400",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    stub_client._pending_updates = [
+        BatchUpdate(
+            item=make_movie(),
+            child=make_movie(),
+            grandchildren=(),
+            before=before,
+            after=after,
+            entry=cast(ListEntryProtocol, entry),
+            list_media_key="400",
+            mapping_descriptors=(),
+        )
+    ]
+    stub_client.dry_run = True
+
+    await stub_client.batch_sync()
+
+    assert stub_client._pending_updates == []
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_failure_raises(stub_client: StubSyncClient, sync_db) -> None:
+    """Batch sync errors should propagate and clear the queue."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="500",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    stub_client._pending_updates = [
+        BatchUpdate(
+            item=make_movie(),
+            child=make_movie(),
+            grandchildren=(),
+            before=before,
+            after=after,
+            entry=cast(ListEntryProtocol, entry),
+            list_media_key="500",
+            mapping_descriptors=(),
+        )
+    ]
+
+    async def _boom(_entries):
+        raise RuntimeError("boom")
+
+    stub_client.list_provider.update_entries_batch = _boom  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        await stub_client.batch_sync()
+
+    assert stub_client._pending_updates == []
+
+
+def test_render_diff_includes_changes(stub_client: StubSyncClient) -> None:
+    """Rendered diffs should include updated attributes."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="600",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    plan = BatchUpdate(
+        item=make_movie(),
+        child=make_movie(),
+        grandchildren=(),
+        before=before,
+        after=after,
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="600",
+        mapping_descriptors=(),
+    )
+
+    diff = stub_client._render_diff(plan)
+
+    assert "progress" in diff
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_success(stub_client: StubSyncClient, sync_db) -> None:
+    """Batch sync should update entries and clear the queue."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="700",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    stub_client._pending_updates = [
+        BatchUpdate(
+            item=make_movie(),
+            child=make_movie(),
+            grandchildren=(),
+            before=before,
+            after=after,
+            entry=cast(ListEntryProtocol, entry),
+            list_media_key="700",
+            mapping_descriptors=(),
+        )
+    ]
+
+    await stub_client.batch_sync()
+
+    assert provider.batch_updates
+    assert stub_client._pending_updates == []
+
+
+@pytest.mark.asyncio
+async def test_apply_update_raises_on_provider_error(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Provider update errors should be surfaced to callers."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="800",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    before = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+    entry.progress = 1
+    after = EntrySnapshot.from_entry(cast(ListEntryProtocol, entry))
+
+    plan = BatchUpdate(
+        item=make_movie(),
+        child=make_movie(),
+        grandchildren=(),
+        before=before,
+        after=after,
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="800",
+        mapping_descriptors=(),
+    )
+
+    async def _boom(_key, _entry):
+        raise RuntimeError("boom")
+
+    stub_client.list_provider.update_entry = _boom  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        await stub_client._apply_update(
+            plan,
+            diff_str="progress: 0 → 1",
+            debug_title="Movie",
+            debug_ids="id",
+        )
 
 
 def test_format_diff_serializes_status_and_datetimes(
@@ -346,7 +687,7 @@ async def test_sync_media_skips_when_entry_up_to_date(
 async def test_sync_media_deletes_when_destructive(
     stub_client: StubSyncClient, sync_db
 ) -> None:
-    """Destructive sync removes entries whose status resolves to ``None``."""
+    """Destructive sync removes entries whose status resolves to `None`."""
     stub_client.destructive_sync = True
     stub_client._status_override = None
 

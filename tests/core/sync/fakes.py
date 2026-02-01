@@ -27,7 +27,7 @@ class FakeLibraryProvider:
         """No-op setup hook to satisfy the protocol."""
 
     def user(self) -> None:
-        """Return ``None`` to keep the stub lightweight."""
+        """Return `None` to keep the stub lightweight."""
         return None
 
     def mapping_descriptors(self, media: Any) -> list[MappingDescriptor]:

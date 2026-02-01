@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from src.utils.limiter import Limiter
+
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="ab-tests-"))
 os.environ["AB_DATA_PATH"] = str(_TEST_DATA_DIR)
 _TEST_CONFIG_FILE = _TEST_DATA_DIR / "config.yaml"
@@ -29,6 +31,8 @@ _TEST_CONFIG_FILE.write_text(
     ),
     encoding="utf-8",
 )
+
+Limiter.DISABLED = True
 
 from src.config import settings as settings_module  # noqa: E402
 from src.web.state import get_app_state  # noqa: E402

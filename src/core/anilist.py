@@ -121,8 +121,8 @@ class AniListClient:
 
         Args:
             filters (dict[str, Any]): GraphQL-compatible media arguments. Keys must
-                match AniList's ``Media`` query arguments (e.g. ``search`` or
-                ``duration_greater``).
+                match AniList's `Media` query arguments (e.g. `search` or
+                `duration_greater`).
             max_results (int): Maximum number of identifiers to return.
             per_page (int): AniList page size to request per API call.
 

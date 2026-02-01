@@ -27,9 +27,9 @@ def test_color_formatter_applies_color_codes():
 
     formatted = formatter.format(record)
 
-    assert colorama.Fore.GREEN in formatted
-    assert colorama.Fore.LIGHTBLUE_EX in formatted
-    assert colorama.Style.DIM in formatted
+    assert str(colorama.Fore.GREEN) in formatted
+    assert str(colorama.Fore.LIGHTBLUE_EX) in formatted
+    assert str(colorama.Style.DIM) in formatted
     assert record.msg == original_message
 
 

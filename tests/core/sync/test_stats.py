@@ -1,4 +1,4 @@
-"""Unit tests for ``src.core.sync.stats`` components."""
+"""Unit tests for `src.core.sync.stats` components."""
 
 from datetime import UTC, datetime
 from typing import cast

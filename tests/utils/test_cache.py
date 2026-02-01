@@ -1,9 +1,13 @@
 """Tests for caching utilities."""
 
+import asyncio
+from collections.abc import Callable
+from typing import cast
+
 import aiocache
 import pytest
 
-from src.utils.cache import _generic_hash, lru_cache, ttl_cache
+from src.utils.cache import _generic_hash, file_cache, lru_cache, ttl_cache
 
 
 def test_generic_hash_order_insensitive_for_dicts():
@@ -70,3 +74,70 @@ async def test_ttl_cache_caches_async_functions():
     assert call_count == 1
 
     aiocache.caches._caches.clear()
+
+
+def test_file_cache_sync_caches(tmp_path) -> None:
+    """Synchronous file_cache should store and reuse results."""
+    calls = {"count": 0}
+
+    @file_cache(cache_dir=tmp_path)  # type: ignore[misc]
+    def add(x: int, y: int) -> int:
+        calls["count"] += 1
+        return x + y
+
+    assert add(1, 2) == 3
+    assert add(1, 2) == 3
+    assert calls["count"] == 1
+
+    add.cache_clear()
+
+
+def test_file_cache_sync_unpickleable_result(tmp_path) -> None:
+    """Unpickleable results should not be cached."""
+    calls = {"count": 0}
+
+    @file_cache(cache_dir=tmp_path)
+    def make_callable(x: int):
+        calls["count"] += 1
+        return lambda: x
+
+    result = cast(Callable[[], int], make_callable(1))
+    assert result() == 1
+    result = cast(Callable[[], int], make_callable(1))
+    assert result() == 1
+    assert calls["count"] == 2
+
+
+def test_file_cache_custom_key_error(tmp_path) -> None:
+    """Key errors should skip caching."""
+    calls = {"count": 0}
+
+    def _bad_key(*_args, **_kwargs):
+        raise ValueError("boom")
+
+    @file_cache(cache_dir=tmp_path, key=_bad_key)  # type: ignore[misc]
+    def calc(x: int) -> int:
+        calls["count"] += 1
+        return x
+
+    assert calc(5) == 5
+    assert calc(5) == 5
+    assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_file_cache_async_caches(tmp_path) -> None:
+    """Async file_cache should store and reuse results."""
+    calls = {"count": 0}
+
+    @file_cache(cache_dir=tmp_path)
+    async def fetch(x: int) -> int:
+        calls["count"] += 1
+        await asyncio.sleep(0)
+        return x
+
+    assert await fetch(1) == 1
+    assert await fetch(1) == 1
+    assert calls["count"] == 1
+
+    fetch.cache_clear()

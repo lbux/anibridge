@@ -23,7 +23,7 @@ def test_basic_auth_middleware_challenges_and_allows_access() -> None:
     """BasicAuthMiddleware challenges invalid credentials and allows valid ones."""
     test_app = FastAPI()
     test_app.add_middleware(
-        BasicAuthMiddleware,
+        BasicAuthMiddleware,  # type: ignore[arg-type]
         username="admin",
         password="secret",
         realm="Realm",
@@ -62,7 +62,7 @@ def test_basic_auth_middleware_allows_access_with_htpasswd(
 
     test_app = FastAPI()
     test_app.add_middleware(
-        BasicAuthMiddleware,
+        BasicAuthMiddleware,  # type: ignore[arg-type]
         htpasswd_path=htpasswd_file,
         realm="Realm",
     )
@@ -95,7 +95,7 @@ def test_basic_auth_middleware_plain_and_htpasswd(
 
     test_app = FastAPI()
     test_app.add_middleware(
-        BasicAuthMiddleware,
+        BasicAuthMiddleware,  # type: ignore[arg-type]
         username="plainuser",
         password="plainpass",
         htpasswd_path=htpasswd_file,
