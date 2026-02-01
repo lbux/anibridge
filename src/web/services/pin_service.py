@@ -3,7 +3,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +10,7 @@ from src.config.database import db
 from src.config.settings import SyncField
 from src.models.db.pin import Pin
 from src.models.schemas.provider import ProviderMediaMetadata
+from src.utils.cache import cache
 from src.web.state import get_bridge
 
 __all__ = [
@@ -291,7 +291,7 @@ class PinService:
         )
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_pin_service() -> PinService:
     """Return cached pin service instance."""
     return PinService()

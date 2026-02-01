@@ -9,7 +9,7 @@ from anibridge.list import ListEntry, ListMediaType, ListStatus
 from src.core.animap import descriptor_key
 from src.core.sync.base import BaseSyncClient, SyncTarget
 from src.core.sync.stats import ItemIdentifier
-from src.utils.cache import gattl_cache
+from src.utils.cache import ttl_cache
 
 __all__ = ["MovieSyncClient"]
 
@@ -84,7 +84,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
     ) -> Sequence[ItemIdentifier]:
         return [ItemIdentifier.from_item(item)]
 
-    @gattl_cache(ttl=15, key=lambda self, item: item)
+    @ttl_cache(ttl=15)
     async def _get_history(self, item: LibraryMovie):
         return await item.history()
 

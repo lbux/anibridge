@@ -3,16 +3,17 @@
 import locale
 import os
 import sys
-from functools import lru_cache
 
 import colorama
+
+from src.utils.cache import cache
 
 __all__ = ["ARROW", "supports_color", "supports_utf8"]
 
 ARROW = ARROW = "→" if sys.stdout.encoding == "utf-8" else "->"
 
 
-@lru_cache(maxsize=1)
+@cache
 def supports_utf8() -> bool:
     """Check if the terminal supports UTF-8 encoding.
 
@@ -23,7 +24,7 @@ def supports_utf8() -> bool:
     return encoding.lower().startswith("utf")
 
 
-@lru_cache(maxsize=1)
+@cache
 def supports_color() -> bool:
     """Check if the terminal supports ANSI color codes.
 

@@ -13,7 +13,7 @@ import zstandard
 from yaml import CSafeLoader as YamlLoader
 
 from src import __version__, log
-from src.utils.cache import gattl_cache
+from src.utils.cache import ttl_cache
 
 __all__ = ["AnimapDict", "MappingsClient"]
 
@@ -445,7 +445,7 @@ class MappingsClient:
 
         return {k: v for k, v in merged_mappings.items() if not k.startswith("$")}
 
-    @gattl_cache(ttl=300, key=lambda self, src: src)
+    @ttl_cache(ttl=300)
     async def load_source(self, src: str) -> AnimapDict:
         """Load mappings from a single source without merging.
 

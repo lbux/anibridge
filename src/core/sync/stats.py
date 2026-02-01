@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
-
 from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import ListEntry, ListStatus, MappingDescriptor
+from pydantic import BaseModel
+
 from src.models.db.sync_history import SyncOutcome
 
 __all__ = [

@@ -7,11 +7,11 @@ route handlers and websocket endpoints.
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from src.core.anilist import AniListClient
 from src.exceptions import ProfileNotFoundError, SchedulerNotInitializedError
+from src.utils.cache import cache
 
 __all__ = ["AppState", "get_app_state", "get_bridge"]
 
@@ -77,7 +77,7 @@ class AppState:
             self.public_anilist = None
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_app_state() -> AppState:
     """Get the singleton application state instance.
 

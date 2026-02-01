@@ -6,13 +6,12 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from cachetools.func import lru_cache
-
 from src import log
 from src.config.settings import AniBridgeConfig, ScanMode
 from src.core.animap import AnimapClient
 from src.core.bridge import BridgeClient
 from src.exceptions import ProfileNotFoundError
+from src.utils.cache import lru_cache
 
 __all__ = ["SchedulerClient"]
 

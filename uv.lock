@@ -110,9 +110,7 @@ dependencies = [
     { name = "anibridge-list-base" },
     { name = "anibridge-mal-provider" },
     { name = "anibridge-plex-provider" },
-    { name = "async-lru" },
     { name = "bcrypt" },
-    { name = "cachetools" },
     { name = "colorama" },
     { name = "fastapi", extra = ["all"] },
     { name = "limiter" },
@@ -149,9 +147,7 @@ requires-dist = [
     { name = "anibridge-list-base", specifier = ">=0.2.0b3" },
     { name = "anibridge-mal-provider", specifier = ">=0.2.0b3,<0.3.0" },
     { name = "anibridge-plex-provider", specifier = ">=0.2.0b1,<0.3.0" },
-    { name = "async-lru", specifier = ">=2.0.5" },
     { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "cachetools", specifier = ">=6.2.3" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "fastapi", extras = ["all"], specifier = ">=0.124.4" },
     { name = "limiter", specifier = ">=0.5.0" },
@@ -344,15 +340,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c0/f6/688d2cd64bfd0b14d805ddb8a565e11ca1fb0fd6817175d58b10052b6d88/bcrypt-5.0.0-cp39-abi3-win32.whl", hash = "sha256:64d7ce196203e468c457c37ec22390f1a61c85c6f0b8160fd752940ccfb3a683", size = 153725, upload-time = "2025-09-25T19:50:34.384Z" },
     { url = "https://files.pythonhosted.org/packages/9f/b9/9d9a641194a730bda138b3dfe53f584d61c58cd5230e37566e83ec2ffa0d/bcrypt-5.0.0-cp39-abi3-win_amd64.whl", hash = "sha256:64ee8434b0da054d830fa8e89e1c8bf30061d539044a39524ff7dec90481e5c2", size = 150912, upload-time = "2025-09-25T19:50:35.69Z" },
     { url = "https://files.pythonhosted.org/packages/27/44/d2ef5e87509158ad2187f4dd0852df80695bb1ee0cfe0a684727b01a69e0/bcrypt-5.0.0-cp39-abi3-win_arm64.whl", hash = "sha256:f2347d3534e76bf50bca5500989d6c1d05ed64b440408057a37673282c654927", size = 144953, upload-time = "2025-09-25T19:50:37.32Z" },
-]
-
-[[package]]
-name = "cachetools"
-version = "6.2.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/86/e7/18ea2907d2ca91e9c0697596b8e60cd485b091152eb4109fad1e468e457d/cachetools-6.2.5.tar.gz", hash = "sha256:6d8bfbba1ba94412fb9d9196c4da7a87e9d4928fffc5e93542965dca4740c77f", size = 32168, upload-time = "2026-01-25T14:57:40.349Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/a6/24169d70ec5264b65ba54ba49b3d10f46d6b1ad97e185c94556539b3dfc8/cachetools-6.2.5-py3-none-any.whl", hash = "sha256:db3ae5465e90befb7c74720dd9308d77a09b7cf13433570e07caa0845c30d5fe", size = 11553, upload-time = "2026-01-25T14:57:39.112Z" },
 ]
 
 [[package]]

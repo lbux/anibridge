@@ -4,12 +4,12 @@ import asyncio
 import logging
 import threading
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Any
 
 from starlette.websockets import WebSocket
 
 from src import log
+from src.utils.cache import cache
 
 __all__ = ["WebsocketLogHandler", "get_log_ws_handler"]
 
@@ -121,7 +121,7 @@ class WebsocketLogHandler(logging.Handler):
             await self.remove(ws)
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_log_ws_handler() -> WebsocketLogHandler:
     """Get the singleton WebsocketLogHandler instance.
 

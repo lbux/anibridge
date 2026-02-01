@@ -2,7 +2,6 @@
 
 import json
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +15,7 @@ from src.exceptions import (
     ProfileNotFoundError,
     SchedulerNotInitializedError,
 )
+from src.utils.cache import cache
 from src.web.state import get_app_state
 
 if TYPE_CHECKING:
@@ -190,7 +190,7 @@ class BackupService:
         )
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_backup_service() -> BackupService:
     """Get the singleton BackupService instance.
 

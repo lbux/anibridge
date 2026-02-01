@@ -2,10 +2,8 @@
 
 from collections import defaultdict
 from collections.abc import Sequence
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
-from async_lru import alru_cache
 from fastapi.param_functions import Query
 from pydantic import BaseModel
 from sqlalchemy.sql import select
@@ -23,6 +21,7 @@ from src.models.db.pin import Pin
 from src.models.db.sync_history import SyncHistory, SyncOutcome
 from src.models.schemas.provider import ProviderMediaMetadata
 from src.utils.async_tasks import schedule_task
+from src.utils.cache import cache, lru_cache, ttl_cache
 from src.web.state import get_app_state, get_bridge
 
 if TYPE_CHECKING:
@@ -176,7 +175,7 @@ class HistoryService:
 
         return dto_items
 
-    @alru_cache(ttl=300)
+    @lru_cache(maxsize=64)
     async def _fetch_list_metadata_batch(
         self,
         profile: str,
@@ -206,7 +205,7 @@ class HistoryService:
             )
         return metadata
 
-    @alru_cache(ttl=300)
+    @lru_cache(maxsize=64)
     async def _fetch_library_metadata_batch(
         self,
         profile: str,
@@ -253,7 +252,7 @@ class HistoryService:
                 )
         return metadata
 
-    @alru_cache(ttl=60)
+    @ttl_cache(ttl=60)
     async def _fetch_profile_stats(self, profile: str) -> dict[str, int]:
         """Cached profile statistics fetch."""
         with db() as ctx:
@@ -571,7 +570,7 @@ class HistoryService:
         }
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_history_service() -> HistoryService:
     """Get the singleton HistoryService instance.
 

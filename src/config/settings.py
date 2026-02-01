@@ -2,7 +2,7 @@
 
 import os
 from enum import StrEnum
-from functools import cached_property, lru_cache
+from functools import cached_property
 from pathlib import Path
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
@@ -15,6 +15,7 @@ from pydantic_settings import (
 )
 
 from src.exceptions import ProfileConfigError, ProfileNotFoundError
+from src.utils.cache import cache
 from src.utils.logging import _get_logger
 
 __all__ = [
@@ -393,7 +394,7 @@ class AniBridgeConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_config() -> AniBridgeConfig:
     """Get the singleton instance of AniBridgeConfig.
 

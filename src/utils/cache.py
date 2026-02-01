@@ -1,21 +1,82 @@
-"""Cache Utilities Module."""
+"""Caching decorators for LRU, TTL, and file-based caching. Supports async functions."""
 
-from collections.abc import Callable
-from functools import wraps
-from typing import Any
+import contextlib
+import functools
+import hashlib
+import inspect
+import os
+import pickle
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, ParamSpec, Protocol, TypeVar, cast, overload
 
-import aiocache
-import cachetools
-
-__all__ = [
-    "gattl_cache",
-    "generic_hash",
-    "glru_cache",
-    "gttl_cache",
-]
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
-def _generic_hash(obj: Any, _visited_ids: set[int]) -> int:
+_DEFAULT_CACHE_DIR: Path | None = None
+
+
+def _resolve_default_cache_dir() -> Path:
+    """Resolve the default cache directory without eager settings import."""
+    global _DEFAULT_CACHE_DIR
+    if _DEFAULT_CACHE_DIR is None:
+        from src.config.settings import get_config
+
+        _DEFAULT_CACHE_DIR = get_config().data_path / ".cache"
+    return _DEFAULT_CACHE_DIR
+
+
+class CachedFunction(Protocol[P, T]):
+    """Protocol for cached functions with cache management methods."""
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
+        """Call the cached function."""
+        ...
+
+    def cache_clear(self) -> None:
+        """Clear the cache."""
+        ...
+
+    def cache_info(self) -> CacheInfo:
+        """Get cache information."""
+        ...
+
+
+class CachedAsyncFunction(Protocol[P, T]):
+    """Protocol for cached async functions with cache management methods."""
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Awaitable[T]:
+        """Call the cached async function."""
+        ...
+
+    def cache_clear(self) -> None:
+        """Clear the cache."""
+        ...
+
+    def cache_info(self) -> CacheInfo:
+        """Get cache information."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class CacheInfo:
+    """Cache statistics snapshot."""
+
+    hits: int
+    misses: int
+    maxsize: int | None
+    currsize: int
+    ttl: float | None = None
+
+
+def _generic_hash(obj: Any, _visited_ids: set[int] | None = None) -> int:
+    """Generate a hash for arbitrary objects, handling unhashable types."""
+    if _visited_ids is None:
+        _visited_ids = set()
+
     obj_id = id(obj)
     if obj_id in _visited_ids:
         return hash("<cycle>")
@@ -37,124 +98,569 @@ def _generic_hash(obj: Any, _visited_ids: set[int]) -> int:
                     )
                 )
             )
-        elif hasattr(obj, "__dict__"):
-            h = _generic_hash(obj.__dict__, _visited_ids)
-        elif hasattr(obj, "__iter__"):
-            h = hash(tuple(_generic_hash(item, _visited_ids) for item in obj))
         else:
-            h = hash(str(obj))
-    _visited_ids.remove(obj_id)
+            h = hash(obj_id)
+    finally:
+        # Use finally to ensure cleanup even if exception occurs
+        _visited_ids.discard(obj_id)
     return h
 
 
-def generic_hash(*args, **kwargs):
-    """Recursively computes a hash for any Python object(s).
-
-    If a single object is passed (and no keyword arguments), its hash is computed.
-    If multiple positional and/or keyword arguments are passed, a combined hash
-    is returned based on all of them.
-
-    For built-in hashable objects, the built-in hash is used.
-    For unhashable objects (e.g. lists, dicts, sets), they are converted into
-    a hashable representation by processing their elements.
-    """
-    visited_ids = set()
-
-    if not kwargs and len(args) == 1:
-        return _generic_hash(args[0], visited_ids)
-    else:
-        args_hash = _generic_hash(args, visited_ids)
-        kwargs_hash = _generic_hash(tuple(sorted(kwargs.items())), visited_ids)
-        return hash((args_hash, kwargs_hash))
+def _make_key(
+    args: tuple[Any, ...], kwargs: dict[str, Any], strict: bool = True
+) -> int | tuple[Any, ...] | None:
+    """Generate a cache key from args and kwargs. Supports unhashable types."""
+    try:
+        key = (args, tuple(sorted(kwargs.items())))
+        hash(key)
+        return key
+    except TypeError:
+        if strict is False:
+            try:
+                return _generic_hash((args, kwargs))
+            except Exception:
+                return None
+        return None
 
 
-def glru_cache(maxsize: int | None = 128, key: Callable = generic_hash):
-    """Function decorator to cache function results using an LRU cache.
+class TTLCache:
+    """Time-to-live cache implementation."""
 
-    Unlike functools.lru_cache, this decorator can be used with any object,
-    even if it's unhashable. The cache key is computed by hashing the input
-    arguments using a recursive algorithm.
+    def __init__(self, ttl: float) -> None:
+        """Initialize the TTL cache.
 
-    An optional custom key function can be provided. If not provided, the
-    generic_hash function is used.
+        Args:
+            ttl (float): Time in seconds before cache entries expire.
+        """
+        self.ttl = ttl
+        self.cache: dict[Any, Any] = {}
+        self.timestamps: dict[Any, float] = {}
+
+    def get(self, key: Any) -> Any:
+        """Get value from cache if not expired.
+
+        Args:
+            key (Any): Key to retrieve.
+
+        Returns:
+            Any: Cached value.
+
+        Raises:
+            KeyError: If key is not in cache or has expired.
+        """
+        if key in self.cache:
+            if time.time() - self.timestamps[key] < self.ttl:
+                return self.cache[key]
+            else:  # Expired - remove from cache
+                del self.cache[key]
+                del self.timestamps[key]
+        raise KeyError(key)
+
+    def set(self, key: Any, value: Any) -> None:
+        """Store value in cache with current timestamp.
+
+        Args:
+            key (Any): Key to store.
+            value (Any): Value to store.
+        """
+        self.cache[key] = value
+        self.timestamps[key] = time.time()
+
+    def clear(self) -> None:
+        """Clear all cached items."""
+        self.cache.clear()
+        self.timestamps.clear()
+
+
+@overload
+def ttl_cache(
+    ttl: float = 300, *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, T]], CachedFunction[P, T]]: ...
+
+
+@overload
+def ttl_cache(
+    ttl: float = 300, *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, Awaitable[T]]], CachedAsyncFunction[P, T]]: ...
+
+
+def ttl_cache(
+    ttl: float = 300, *, key: Callable[..., Any] | None = None
+) -> Callable[
+    [Callable[P, T] | Callable[P, Awaitable[T]]],
+    CachedFunction[P, T] | CachedAsyncFunction[P, T],
+]:
+    """Decorator that caches function results with a time-to-live.
 
     Args:
-        maxsize (int | None): Maximum number of items in the cache. Defaults to 128.
-        key (Callable | None): Custom key function for cache. Defaults to generic_hash.
+        ttl (float): Time in seconds before cache expires (default: 300)
+        key (Callable | None): Optional function to generate cache key from args/kwargs.
+            Should accept the same arguments as the decorated function and return a
+            hashable key.
 
     Returns:
-        Callable: Decorator function that caches the decorated function's results
+        Decorator: Decorated function with TTL-based caching
+
+    Example:
+        @ttl_cache(ttl=60)
+        def expensive_function(x):
+            return x ** 2
+
+        @ttl_cache(ttl=120, key=lambda x, y: (x, y))
+        async def async_expensive_function(x, y):
+            await asyncio.sleep(1)
+            return x + y
     """
-    if maxsize is None:
-        maxsize = 2**32  # 'infinitely' large cache
 
-    def decorator(func):
-        @wraps(func)
-        @cachetools.cached(cachetools.LRUCache(maxsize), key=key)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
+    def decorator(
+        func: Callable[P, T] | Callable[P, Awaitable[T]],
+    ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
+        """Inner decorator function."""
+        cache = TTLCache(ttl)
+        is_async = inspect.iscoroutinefunction(func)
 
-        return wrapper
+        def cache_clear() -> None:
+            cache.clear()
+
+        hits = 0
+        misses = 0
+
+        def cache_info() -> CacheInfo:
+            return CacheInfo(
+                hits=hits,
+                misses=misses,
+                maxsize=None,
+                currsize=len(cache.cache),
+                ttl=ttl,
+            )
+
+        def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+            """Generate cache key using custom function or default."""
+            if key is not None:
+                try:
+                    return key(*args, **kwargs)
+                except Exception:
+                    return None
+            return _make_key(args, kwargs, strict=False)
+
+        if is_async:
+
+            @functools.wraps(func)
+            async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                nonlocal hits, misses
+                cache_key = get_cache_key(args, kwargs)
+                if cache_key is None:
+                    result = func(*args, **kwargs)
+                    return await cast(Awaitable[T], result)
+
+                try:
+                    cached = cache.get(cache_key)
+                    hits += 1
+                    return cast(T, cached)
+                except KeyError:
+                    misses += 1
+                    result = func(*args, **kwargs)
+                    awaited_result = await cast(Awaitable[T], result)
+                    cache.set(cache_key, awaited_result)
+                    return awaited_result
+
+            async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+            async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+            return cast(CachedAsyncFunction[P, T], async_wrapper)
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            nonlocal hits, misses
+            cache_key = get_cache_key(args, kwargs)
+            if cache_key is None:
+                return cast(T, func(*args, **kwargs))
+
+            try:
+                cached = cache.get(cache_key)
+                hits += 1
+                return cast(T, cached)
+            except KeyError:
+                misses += 1
+                result = cast(T, func(*args, **kwargs))
+                cache.set(cache_key, result)
+                return result
+
+        sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        sync_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+        return cast(CachedFunction[P, T], sync_wrapper)
 
     return decorator
 
 
-def gttl_cache(maxsize: int | None = 128, ttl: int = 600, key: Callable = generic_hash):
-    """Function decorator to cache function results using a TTL cache.
+@overload
+def lru_cache(
+    maxsize: int = 128, *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, T]], CachedFunction[P, T]]: ...
 
-    Unlike functools.lru_cache, this decorator can be used with any object,
-    even if it's unhashable. The cache key is computed by hashing the input
-    arguments using a recursive algorithm.
 
-    An optional custom key function can be provided. If not provided, the
-    generic_hash function is used.
+@overload
+def lru_cache(
+    maxsize: int = 128, *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, Awaitable[T]]], CachedAsyncFunction[P, T]]: ...
+
+
+def lru_cache(
+    maxsize: int = 128, *, key: Callable[..., Any] | None = None
+) -> Callable[
+    [Callable[P, T] | Callable[P, Awaitable[T]]],
+    CachedFunction[P, T] | CachedAsyncFunction[P, T],
+]:
+    """LRU cache decorator for both sync and async functions.
 
     Args:
-        maxsize (int | None): Maximum number of items in the cache. Defaults to 128.
-        ttl (int | None): Time-to-live for cached items in seconds. Defaults to 600.
-        key (Callable | None): Custom key function for cache. Defaults to generic_hash.
+        maxsize (int): Maximum number of cached items.
+        key (Callable | None): Optional function to generate cache key from args/kwargs.
+            Should accept the same arguments as the decorated function and return a
+            hashable key.
+
+    Returns:
+        Decorator: Decorated function with LRU caching.
+
+    Example:
+        @lru_cache(maxsize=256)
+        async def fetch_data(url):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    return await response.text()
+
+        # Custom key that only considers the first argument
+        @lru_cache(maxsize=100, key=lambda user_id, include_details=False: user_id)
+        async def get_user(user_id, include_details=False):
+            return await fetch_user_data(user_id, include_details)
+
+        # Works with sync functions too
+        @lru_cache(maxsize=50, key=lambda x, y, z=None: (x, y))
+        def compute(x, y, z=None):
+            return x + y
     """
-    if maxsize is None:  # 'infinitely' large cache
-        maxsize = 2**32
 
-    def decorator(func):
-        @wraps(func)
-        @cachetools.cached(cachetools.TTLCache(maxsize, ttl), key=key)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
+    def decorator(
+        func: Callable[P, T] | Callable[P, Awaitable[T]],
+    ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
+        """Inner decorator function."""
+        cache: dict[Any, Any] = {}
+        access_order: list[Any] = []
+        is_async = inspect.iscoroutinefunction(func)
 
-        return wrapper
+        def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+            """Generate cache key using custom function or default."""
+            if key is not None:
+                try:
+                    return key(*args, **kwargs)
+                except Exception:
+                    return None
+            else:
+                return _make_key(args, kwargs, strict=False)
+
+        if is_async:
+            hits = 0
+            misses = 0
+
+            @functools.wraps(func)
+            async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                nonlocal cache, access_order, hits, misses
+
+                cache_key = get_cache_key(args, kwargs)
+                if cache_key is None:
+                    result = func(*args, **kwargs)
+                    return await cast(Awaitable[T], result)
+
+                if cache_key in cache:
+                    # Move to end (most recently used)
+                    access_order.remove(cache_key)
+                    access_order.append(cache_key)
+                    hits += 1
+                    return cache[cache_key]
+
+                misses += 1
+
+                result = func(*args, **kwargs)
+                awaited_result = await cast(Awaitable[T], result)
+
+                cache[cache_key] = awaited_result
+                access_order.append(cache_key)
+
+                # Remove oldest if exceeding maxsize
+                if maxsize is not None and len(cache) > maxsize:
+                    oldest = access_order.pop(0)
+                    del cache[oldest]
+
+                return awaited_result
+
+            def cache_clear() -> None:
+                nonlocal cache, access_order
+                cache.clear()
+                access_order.clear()
+
+            def cache_info() -> CacheInfo:
+                return CacheInfo(
+                    hits=hits,
+                    misses=misses,
+                    maxsize=maxsize,
+                    currsize=len(cache),
+                )
+
+            async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+            async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+            return cast(CachedAsyncFunction[P, T], async_wrapper)
+        else:
+            hits = 0
+            misses = 0
+
+            @functools.wraps(func)
+            def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                nonlocal cache, access_order, hits, misses
+
+                cache_key = get_cache_key(args, kwargs)
+                if cache_key is None:
+                    return cast(T, func(*args, **kwargs))
+
+                if cache_key in cache:
+                    # Move to end (most recently used)
+                    access_order.remove(cache_key)
+                    access_order.append(cache_key)
+                    hits += 1
+                    return cache[cache_key]
+
+                misses += 1
+
+                result = cast(T, func(*args, **kwargs))
+
+                cache[cache_key] = result
+                access_order.append(cache_key)
+
+                # Remove oldest if exceeding maxsize
+                if maxsize is not None and len(cache) > maxsize:
+                    oldest = access_order.pop(0)
+                    del cache[oldest]
+
+                return result
+
+            def cache_clear() -> None:
+                nonlocal cache, access_order
+                cache.clear()
+                access_order.clear()
+
+            def cache_info() -> CacheInfo:
+                return CacheInfo(
+                    hits=hits,
+                    misses=misses,
+                    maxsize=maxsize,
+                    currsize=len(cache),
+                )
+
+            sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+            sync_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+            return cast(CachedFunction[P, T], sync_wrapper)
 
     return decorator
 
 
-def gattl_cache(ttl: int = 60, key: Callable = generic_hash):
-    """Decorator for functions to cache results using a generic, async-aware TTL cache.
+@overload
+def file_cache(
+    cache_dir: str | Path | None = None,
+    ttl: float | None = None,
+    *,
+    key: Callable[..., Any] | None = None,
+) -> Callable[[Callable[P, Awaitable[T]]], CachedAsyncFunction[P, T]]: ...
 
-    This decorator can be used with any object, even if it's unhashable,
-    because it uses the generic_hash function to compute the cache key.
 
-    It uses `aiocache` as the backend to ensure compatibility with async functions.
+@overload
+def file_cache(
+    cache_dir: str | Path | None = None,
+    ttl: float | None = None,
+    *,
+    key: Callable[..., Any] | None = None,
+) -> Callable[[Callable[P, T]], CachedFunction[P, T]]: ...
+
+
+def file_cache(
+    cache_dir: str | Path | None = None,
+    ttl: float | None = None,
+    *,
+    key: Callable[..., Any] | None = None,
+) -> Callable[
+    [Callable[P, T] | Callable[P, Awaitable[T]]],
+    CachedFunction[P, T] | CachedAsyncFunction[P, T],
+]:
+    """Decorator that caches function results to disk using pickle.
 
     Args:
-        ttl (int): Time-to-live for cached items in seconds. Defaults to 60.
-        key (Callable): Custom key function for cache. Defaults to generic_hash.
+        cache_dir (str | Path): Directory to store cache files (default: ".cache")
+        ttl (float | None): Optional time-to-live in seconds (None = no expiration)
+        key (Callable | None): Optional function to generate cache key from args/kwargs.
+            Should accept the same arguments as the decorated function and return a
+            hashable key.
+
+    Returns:
+        Decorator: Decorated function with file-based caching
+
+    Example:
+        @file_cache(cache_dir="./my_cache", ttl=3600)
+        def process_large_dataset(data_path):
+            # Expensive computation
+            return result
+
+        @file_cache(ttl=600, key=lambda endpoint, **kwargs: endpoint)
+        async def fetch_api_data(endpoint, **kwargs):
+            # API call - cache only based on endpoint, ignore other params
+            return data
+
+        # Cache based on specific parameters only
+        @file_cache(cache_dir="./cache", key=lambda x, y, z=None: (x, y))
+        def compute(x, y, z=None):
+            # z is not part of the cache key
+            return x + y
     """
+    if cache_dir is None:
+        cache_dir = _resolve_default_cache_dir()
+    cache_dir = Path(cache_dir)
 
-    def decorator(func):
-        # Create a unique alias for the cache configuration.
-        cache_alias = f"galru_{func.__module__}.{func.__qualname__}_{id(func)}"
+    def decorator(
+        func: Callable[P, T] | Callable[P, Awaitable[T]],
+    ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
+        """Inner decorator function."""
+        func_name = getattr(func, "__name__", "unknown_function")
+        os.makedirs(cache_dir / func_name, exist_ok=True)
+        is_async = inspect.iscoroutinefunction(func)
 
-        aiocache.caches.add(cache_alias, {"cache": aiocache.Cache.MEMORY, "ttl": ttl})
+        def get_cache_path(cache_key: Any) -> Path:
+            """Generate a cache file path based on the function name and arguments."""
+            try:
+                key_str = str(cache_key)
+            except Exception:
+                key_str = repr(cache_key)
+            key_hash = hashlib.md5(key_str.encode()).hexdigest()
+            return cache_dir / func_name / f"{func_name}_{key_hash}.cache"
 
-        def key_builder_adapter(f, *args, **kwargs):
-            return key(*args, **kwargs)
+        def load_from_cache(cache_path: Path) -> tuple[bool, Any]:
+            """Load cached value if valid. Returns (success, value)."""
+            if os.path.exists(cache_path) and (
+                ttl is None or (time.time() - os.path.getmtime(cache_path) < ttl)
+            ):
+                try:
+                    with open(cache_path, "rb") as f:
+                        return True, pickle.load(f)
+                except (pickle.PickleError, EOFError, Exception):
+                    pass
+            return False, None
 
-        @wraps(func)
-        @aiocache.cached(alias=cache_alias, key_builder=key_builder_adapter)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
+        def save_to_cache(cache_path: Path, result: Any) -> None:
+            """Save result to cache file."""
+            try:
+                with cache_path.open("wb") as f:
+                    pickle.dump(result, f)
+            except (pickle.PickleError, TypeError, Exception):
+                pass  # Can't pickle result - don't cache
 
-        return wrapper
+        def cache_clear() -> None:
+            """Clear all cache files for this function."""
+            try:
+                func_cache_dir = cache_dir / func_name
+                for filename in os.listdir(func_cache_dir):
+                    if filename.endswith(".cache"):
+                        os.remove(func_cache_dir / filename)
+                with contextlib.suppress(OSError):
+                    os.rmdir(func_cache_dir)
+            except FileNotFoundError:
+                pass
+
+        def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+            """Generate cache key using custom function or default."""
+            if key is not None:
+                try:
+                    return key(*args, **kwargs)
+                except Exception:
+                    return None
+            return _make_key(args, kwargs, strict=False)
+
+        if is_async:
+
+            @functools.wraps(func)
+            async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                cache_key = get_cache_key(args, kwargs)
+                if cache_key is None:
+                    result = func(*args, **kwargs)
+                    return await cast(Awaitable[T], result)
+
+                cache_path = get_cache_path(cache_key)
+                success, cached_value = load_from_cache(cache_path)
+                if success:
+                    return cast(T, cached_value)
+
+                result = func(*args, **kwargs)
+                awaited_result = await cast(Awaitable[T], result)
+                save_to_cache(cache_path, awaited_result)
+                return awaited_result
+
+            async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+            return cast(CachedAsyncFunction[P, T], async_wrapper)
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            cache_key = get_cache_key(args, kwargs)
+            if cache_key is None:
+                return cast(T, func(*args, **kwargs))
+
+            cache_path = get_cache_path(cache_key)
+            success, cached_value = load_from_cache(cache_path)
+            if success:
+                return cast(T, cached_value)
+
+            result = cast(T, func(*args, **kwargs))
+            save_to_cache(cache_path, result)
+            return result
+
+        sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        return cast(CachedFunction[P, T], sync_wrapper)
 
     return decorator
+
+
+@overload
+def cache[**P, T](func: Callable[P, T]) -> CachedFunction[P, T]: ...
+
+
+@overload
+def cache[**P, T](
+    func: Callable[P, Awaitable[T]],
+) -> CachedAsyncFunction[P, T]: ...
+
+
+@overload
+def cache[**P, T](
+    *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, T]], CachedFunction[P, T]]: ...
+
+
+@overload
+def cache[**P, T](
+    *, key: Callable[..., Any] | None = None
+) -> Callable[[Callable[P, Awaitable[T]]], CachedAsyncFunction[P, T]]: ...
+
+
+def cache[**P, T](
+    func: Callable[P, T] | Callable[P, Awaitable[T]] | None = None,
+    *,
+    key: Callable[..., Any] | None = None,
+) -> (
+    Callable[
+        [Callable[P, T] | Callable[P, Awaitable[T]]],
+        CachedFunction[P, T] | CachedAsyncFunction[P, T],
+    ]
+    | CachedFunction[P, T]
+    | CachedAsyncFunction[P, T]
+):
+    """Alias for lru_cache with maxsize=1.
+
+    Supports usage as ``@cache`` or ``@cache(key=...)``.
+    """
+    decorator = lru_cache(maxsize=1, key=key)
+    if func is None:
+        return decorator
+    return decorator(func)

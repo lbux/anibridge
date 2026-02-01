@@ -1,6 +1,5 @@
 """Database Configuration for AniBridge."""
 
-from functools import lru_cache
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
@@ -12,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from src import __file__ as src_file
 from src import config, log
 from src.exceptions import DataPathError
+from src.utils.cache import cache
 
 __all__ = ["AniBridgeDB", "db"]
 
@@ -172,7 +172,7 @@ class AniBridgeDB:
         return self._session
 
 
-@lru_cache(maxsize=1)
+@cache
 def db() -> AniBridgeDB:
     """Get the singleton instance of the AniBridgeDB.
 

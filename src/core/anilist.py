@@ -10,7 +10,7 @@ from limiter import Limiter
 from src import __version__, log
 from src.exceptions import AniListFilterError, AniListSearchError
 from src.models.schemas.anilist import Media
-from src.utils.cache import gattl_cache, generic_hash, glru_cache
+from src.utils.cache import cache, ttl_cache
 
 __all__ = ["AniListClient"]
 
@@ -68,7 +68,7 @@ class AniListClient:
         """Prepare the client for use by clearing cached entries."""
         self.offline_anilist_entries.clear()
 
-    @glru_cache(maxsize=1)
+    @cache
     def _get_genres_and_tags(self) -> tuple[Iterable[str], Iterable[str]]:
         """Get the list of AniList genres and tags.
 
@@ -109,12 +109,7 @@ class AniListClient:
         _, tags = self._get_genres_and_tags()
         return tags
 
-    @gattl_cache(
-        ttl=3600,
-        key=lambda self, *, filters, max_results=1000, per_page=50: generic_hash(
-            id(self), filters, max_results, per_page
-        ),
-    )
+    @ttl_cache(ttl=3600)
     async def search_media_ids(
         self,
         *,

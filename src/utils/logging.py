@@ -3,13 +3,14 @@
 import logging
 import re
 import sys
-from functools import lru_cache
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import ClassVar
 
 import colorama
 from colorama import Fore, Style
+
+from src.utils.cache import cache
 
 __all__ = ["Logger", "get_logger"]
 
@@ -298,7 +299,7 @@ def _get_logger(
     return logger
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_logger() -> Logger:
     """Get the main application logger.
 

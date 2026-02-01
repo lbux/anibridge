@@ -21,7 +21,7 @@ from src.core.sync.base import (
     SyncTarget,
 )
 from src.core.sync.stats import ItemIdentifier
-from src.utils.cache import gattl_cache, glru_cache
+from src.utils.cache import lru_cache, ttl_cache
 
 __all__ = ["ShowSyncClient"]
 
@@ -381,7 +381,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         )
         return f"$${{{', '.join(formatted)}}}$$"
 
-    @glru_cache(maxsize=32, key=lambda self, item: item)
+    @lru_cache(maxsize=32)
     def __get_wanted_seasons(self, item: LibraryShow) -> dict[int, LibrarySeason]:
         seasons: dict[int, LibrarySeason] = {}
         for season in item.seasons():
@@ -396,7 +396,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 seasons[season.index] = season
         return seasons
 
-    @glru_cache(maxsize=32, key=lambda self, item: item)
+    @lru_cache(maxsize=32)
     def __get_wanted_episodes(self, item: LibraryShow) -> list[LibraryEpisode]:
         seasons = self.__get_wanted_seasons(item)
         if not seasons:
@@ -405,7 +405,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             episode for episode in item.episodes() if episode.season_index in seasons
         ]
 
-    @gattl_cache(ttl=15, key=lambda self, item, episodes: (item, tuple(episodes)))
+    @ttl_cache(ttl=15)
     async def _filter_history_by_episodes(
         self, item: LibraryShow, episodes: Sequence[LibraryEpisode]
     ) -> list[HistoryEntry]:
