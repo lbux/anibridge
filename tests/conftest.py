@@ -40,6 +40,17 @@ from src.web.state import get_app_state  # noqa: E402
 settings_module.get_config.cache_clear()
 
 
+def pytest_sessionstart() -> None:
+    """Fail fast if tests are configured to use the real data directory."""
+    data_path = Path(os.getenv("AB_DATA_PATH", "./data")).resolve()
+    repo_data_path = (Path(__file__).resolve().parents[1] / "data").resolve()
+    if data_path == repo_data_path or data_path == Path("./data").resolve():
+        raise RuntimeError(
+            "Refusing to run tests against the real data directory. "
+            "Set AB_DATA_PATH to a temporary location."
+        )
+
+
 @pytest.fixture(autouse=True)
 def _reset_app_state():
     """Ensure each test interacts with a fresh AppState instance."""
