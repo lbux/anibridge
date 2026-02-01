@@ -622,45 +622,4 @@ def file_cache(
     return decorator
 
 
-@overload
-def cache[**P, T](func: Callable[P, T]) -> CachedFunction[P, T]: ...
-
-
-@overload
-def cache[**P, T](
-    func: Callable[P, Awaitable[T]],
-) -> CachedAsyncFunction[P, T]: ...
-
-
-@overload
-def cache[**P, T](
-    *, key: Callable[..., Any] | None = None
-) -> Callable[[Callable[P, T]], CachedFunction[P, T]]: ...
-
-
-@overload
-def cache[**P, T](
-    *, key: Callable[..., Any] | None = None
-) -> Callable[[Callable[P, Awaitable[T]]], CachedAsyncFunction[P, T]]: ...
-
-
-def cache[**P, T](
-    func: Callable[P, T] | Callable[P, Awaitable[T]] | None = None,
-    *,
-    key: Callable[..., Any] | None = None,
-) -> (
-    Callable[
-        [Callable[P, T] | Callable[P, Awaitable[T]]],
-        CachedFunction[P, T] | CachedAsyncFunction[P, T],
-    ]
-    | CachedFunction[P, T]
-    | CachedAsyncFunction[P, T]
-):
-    """Alias for lru_cache with maxsize=1.
-
-    Supports usage as ``@cache`` or ``@cache(key=...)``.
-    """
-    decorator = lru_cache(maxsize=1, key=key)
-    if func is None:
-        return decorator
-    return decorator(func)
+cache = lru_cache(maxsize=1)
