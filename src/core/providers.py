@@ -8,6 +8,7 @@ from anibridge.library import provider_registry as library_registry
 from anibridge.list import ListProvider
 from anibridge.list import provider_registry as list_registry
 
+from src import log
 from src.config.settings import AniBridgeConfig, AniBridgeProfileConfig
 from src.exceptions import ProfileConfigError
 
@@ -31,8 +32,17 @@ def _import_modules(modules: Iterable[str]) -> None:
     for module in modules:
         if not module or module in _LOADED_MODULES:
             continue
-        import_module(module)
-        _LOADED_MODULES.add(module)
+        try:
+            import_module(module)
+        except Exception as exc:
+            log.error("Failed to import provider module '%s'", module)
+            log.exception("Provider module import error details")
+            raise ProfileConfigError(
+                f"Failed to import provider module '{module}'. "
+                "Ensure the dependency is installed and the module path is valid."
+            ) from exc
+        else:
+            _LOADED_MODULES.add(module)
 
 
 def _collect_module_overrides(config: AniBridgeConfig) -> set[str]:

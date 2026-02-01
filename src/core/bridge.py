@@ -62,8 +62,33 @@ class BridgeClient:
         """Initialize both providers and prepare for synchronization."""
         log.debug("[%s] Initializing bridge client", self.profile_name)
 
-        await self.library_provider.initialize()
-        await self.list_provider.initialize()
+        try:
+            await self.library_provider.initialize()
+        except Exception:
+            log.error(
+                "[%s] Library provider '%s' initialization failed",
+                self.profile_name,
+                self.library_provider.NAMESPACE,
+            )
+            log.exception(
+                "[%s] Library provider initialization error details",
+                self.profile_name,
+            )
+            raise
+
+        try:
+            await self.list_provider.initialize()
+        except Exception:
+            log.error(
+                "[%s] List provider '%s' initialization failed",
+                self.profile_name,
+                self.list_provider.NAMESPACE,
+            )
+            log.exception(
+                "[%s] List provider initialization error details",
+                self.profile_name,
+            )
+            raise
 
         await self._backup_list()
 
@@ -86,8 +111,31 @@ class BridgeClient:
     async def close(self) -> None:
         """Close all provider connections."""
         log.debug("[%s] Closing bridge client", self.profile_name)
-        await self.list_provider.close()
-        await self.library_provider.close()
+        try:
+            await self.list_provider.close()
+        except Exception:
+            log.error(
+                "[%s] List provider '%s' close failed",
+                self.profile_name,
+                self.list_provider.NAMESPACE,
+            )
+            log.exception(
+                "[%s] List provider close error details",
+                self.profile_name,
+            )
+
+        try:
+            await self.library_provider.close()
+        except Exception:
+            log.error(
+                "[%s] Library provider '%s' close failed",
+                self.profile_name,
+                self.library_provider.NAMESPACE,
+            )
+            log.exception(
+                "[%s] Library provider close error details",
+                self.profile_name,
+            )
 
     async def __aenter__(self) -> BridgeClient:
         """Enter async context manager."""
@@ -330,7 +378,19 @@ class BridgeClient:
                 and a sequence of library media keys to sync, or None if not
                 applicable.
         """
-        return await self.library_provider.parse_webhook(request)
+        try:
+            return await self.library_provider.parse_webhook(request)
+        except Exception:
+            log.error(
+                "[%s] Library provider '%s' webhook parsing failed",
+                self.profile_name,
+                self.library_provider.NAMESPACE,
+            )
+            log.exception(
+                "[%s] Webhook parsing error details",
+                self.profile_name,
+            )
+            return False, None
 
     async def _sync_section(
         self,
