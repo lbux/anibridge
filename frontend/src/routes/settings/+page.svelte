@@ -11,7 +11,7 @@
         TriangleAlert,
     } from "@lucide/svelte";
 
-    import CodeEditor from "$lib/components/code-editor.svelte";
+    import YamlEditor from "$lib/components/code-editor/yaml-editor.svelte";
     import type {
         ConfigDocumentResponse,
         ConfigDocumentUpdateRequest,
@@ -33,6 +33,7 @@
     let fileExists = $state(false);
     let editorValue = $state("");
     let initialValue = $state("");
+    let configSchema = $state<Record<string, unknown> | null>(null);
     let mtime: number | null = null;
 
     const hasChanges = $derived(editorValue !== initialValue);
@@ -49,6 +50,7 @@
             fileExists = payload.file_exists;
             editorValue = payload.content ?? "";
             initialValue = editorValue;
+            configSchema = payload.schema ?? null;
             mtime = payload.mtime ?? null;
         } catch (error) {
             loadError = formatError(error);
@@ -111,7 +113,7 @@
             <div>
                 <h2 class="text-base font-semibold">Configuration</h2>
                 <p class="text-xs text-slate-500">
-                    Edit the raw AniBridge YAML file directly.
+                    Edit your AniBridge configuration file directly.
                 </p>
             </div>
         </div>
@@ -123,6 +125,13 @@
                 disabled={loading || saving}>
                 <RefreshCw class="h-3.5 w-3.5" /> Reload
             </button>
+            <a
+                href="https://anibridge.eliasbenb.dev"
+                target="_blank"
+                rel="noreferrer"
+                class="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-3 py-1 text-slate-100 hover:bg-slate-800/60">
+                <Info class="h-3.5 w-3.5" /> Docs
+            </a>
             <button
                 type="button"
                 class="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-3 py-1 text-slate-100 hover:bg-slate-800/60 disabled:opacity-50"
@@ -182,17 +191,24 @@
                 and requires restarting AniBridge to apply changes.
             </p>
         </div>
-        <div class="rounded bg-slate-950/80 p-2">
+        <div
+            class="rounded-lg border border-slate-800 bg-slate-950/70 p-2 shadow-inner">
             {#if loading}
                 <div
                     class="flex items-center justify-center gap-2 py-32 text-xs text-slate-400">
                     <LoaderCircle class="h-4 w-4 animate-spin" /> Loading configuration…
                 </div>
             {:else}
-                <CodeEditor
-                    class="h-196"
-                    bind:content={editorValue}
-                    language="yaml" />
+                <div
+                    class="h-130 min-h-70 overflow-hidden rounded-md border border-slate-900/80">
+                    <YamlEditor
+                        bind:value={editorValue}
+                        theme="dark"
+                        fontSize="13px"
+                        readOnly={saving}
+                        schemaObject={configSchema ?? undefined}
+                        fileUri={configPath ? `file://${configPath}` : undefined} />
+                </div>
             {/if}
         </div>
         {#if hasChanges}

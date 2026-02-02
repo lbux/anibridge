@@ -1,5 +1,7 @@
 """Configuration management API endpoints."""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError
 
@@ -14,6 +16,7 @@ class ConfigDocumentResponse(BaseModel):
     file_exists: bool
     content: str
     mtime: int | None = None
+    schema: dict[str, Any]
 
 
 class ConfigDocumentUpdateRequest(BaseModel):
@@ -53,6 +56,7 @@ def get_configuration() -> ConfigDocumentResponse:
             detail=str(exc),
         ) from exc
 
+    payload["schema"] = AniBridgeConfig.model_json_schema()
     return ConfigDocumentResponse(**payload)
 
 

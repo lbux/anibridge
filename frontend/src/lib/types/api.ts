@@ -187,6 +187,7 @@ export interface ConfigDocumentResponse {
     file_exists: boolean;
     content: string;
     mtime?: number | null;
+    schema?: Record<string, unknown> | null;
 }
 
 export interface ConfigDocumentUpdateRequest {
