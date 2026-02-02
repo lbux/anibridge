@@ -17,7 +17,6 @@ export default defineConfig({
                 "pwa-maskable-192x192.png",
                 "pwa-maskable-512x512.png",
             ],
-            devOptions: { enabled: false },
             workbox: { maximumFileSizeToCacheInBytes: 8000000 },
             manifest: {
                 name: "AniBridge",
@@ -53,7 +52,7 @@ export default defineConfig({
                 background_color: "#05070d",
                 theme_color: "#020618",
                 description:
-                    "The smart way to keep your AniList profile perfectly synchronized with your Plex library.",
+                    "The smart way to keep your anime lists perfectly synchronized.",
             },
         }),
     ],
