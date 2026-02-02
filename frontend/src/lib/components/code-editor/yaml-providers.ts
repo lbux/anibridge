@@ -1,22 +1,32 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type * as Monaco from "monaco-editor";
+import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 
 class YamlSchemaManager {
     private schema: any = { properties: {}, definitions: {} };
     private suggestionsMap: Map<string, any[]> = new Map();
-    private schemaUrl =
-        "https://raw.githubusercontent.com/anibridge/anibridge-mappings/refs/heads/main/mappings.schema.json";
+    private schemaUrl?: string;
     private rawSchema: any | null = null;
     public ready: Promise<void>;
 
     constructor() {
         this.parseSchema();
-        this.ready = this.fetchLatestSchema();
+        this.ready = Promise.resolve();
     }
 
-    setSchemaUrl(url: string) {
-        if (!url || url === this.schemaUrl) return;
+    setSchemaUrl(url: string | undefined) {
+        if (!url) {
+            this.schemaUrl = undefined;
+            this.rawSchema = null;
+            this.schema = { properties: {}, definitions: {} };
+            this.suggestionsMap.clear();
+            this.parseSchema();
+            this.ready = Promise.resolve();
+            return;
+        }
+
+        if (url === this.schemaUrl) return;
         this.schemaUrl = url;
+        this.rawSchema = null;
         this.ready = this.fetchLatestSchema();
     }
 
@@ -126,6 +136,7 @@ class YamlSchemaManager {
     }
 
     private async fetchLatestSchema(retries = 2): Promise<void> {
+        if (!this.schemaUrl) return;
         if (this.rawSchema) return;
         try {
             const response = await fetch(this.schemaUrl);
@@ -435,7 +446,6 @@ export function registerYamlProviders(monaco: typeof Monaco) {
 }
 
 export function setYamlSchemaUrl(url: string | undefined) {
-    if (!url) return;
     yamlSchemaManager.setSchemaUrl(url);
 }
 

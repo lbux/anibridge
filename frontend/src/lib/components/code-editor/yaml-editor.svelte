@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
 
-    import Ajv, { type ErrorObject } from "ajv";
+    import type { ErrorObject } from "ajv";
     import jsyaml from "js-yaml";
     import type * as Monaco from "monaco-editor";
 
@@ -28,7 +28,7 @@
     }: Props = $props();
 
     let monacoModule: typeof import("./monaco") | null = null;
-    let monacoInstance = $state<typeof import("monaco-editor") | null>(null);
+    let monacoInstance = $state<typeof import("./monaco").monaco | null>(null);
     let editorElement: HTMLDivElement;
     let editor = $state<Monaco.editor.IStandaloneCodeEditor | null>(null);
     let model = $state<Monaco.editor.ITextModel | null>(null);
@@ -41,6 +41,7 @@
     let schemaForValidation = $state<unknown | null>(null);
     let schemaFetchAbort: AbortController | null = null;
     let activeLine = $state<number | null>(null);
+    let validationRunId = 0;
 
     const langId = "yaml";
     const editorTheme = $derived(
@@ -273,54 +274,78 @@
             return;
         }
 
-        const ajv = new Ajv({ allErrors: true, strict: false, validateFormats: false });
-        let validate;
-        try {
-            validate = ajv.compile(schemaForValidation as Record<string, unknown>);
-        } catch {
-            validationMarkers = [];
-            return;
-        }
+        const runId = ++validationRunId;
+        const currentActiveLine = activeLine;
+        const schemaSnapshot = schemaForValidation;
+        const modelForMarkers = activeModel;
+        const monacoForMarkers = monaco;
 
-        const valid = validate(data);
-        if (valid) {
-            validationMarkers = [];
-            return;
-        }
+        void (async () => {
+            const { default: Ajv } = await import("ajv");
+            const ajv = new Ajv({
+                allErrors: true,
+                strict: false,
+                validateFormats: false,
+            });
 
-        const errors = validate.errors || [];
-        validationMarkers = errors
-            .map((err: ErrorObject) => {
-                const pointer = err.instancePath || "";
-                const segments = pointer
-                    .split("/")
-                    .filter(Boolean)
-                    .map((s: string) => decodePointerSegment(s));
-                let key = segments.length > 0 ? segments[segments.length - 1] : "";
-                if (err.keyword === "required" && typeof err.params === "object") {
-                    const missing = (err.params as { missingProperty?: string })
-                        .missingProperty;
-                    if (missing) key = missing;
-                }
-                if (/^\d+$/.test(key) && segments.length > 1) {
-                    key = segments[segments.length - 2];
-                }
+            let validate;
+            try {
+                validate = ajv.compile(schemaSnapshot as Record<string, unknown>);
+            } catch {
+                if (runId !== validationRunId) return;
+                validationMarkers = [];
+                return;
+            }
 
-                const lineNumber = key ? findLineForKey(key) : 1;
-                if (activeLine !== null && lineNumber === activeLine) {
-                    return null;
-                }
-                const maxColumn = activeModel.getLineMaxColumn(lineNumber);
-                return {
-                    severity: monaco.MarkerSeverity.Error,
-                    message: err.message || "Schema validation error",
-                    startLineNumber: lineNumber,
-                    startColumn: 1,
-                    endLineNumber: lineNumber,
-                    endColumn: maxColumn,
-                };
-            })
-            .filter((marker): marker is Monaco.editor.IMarkerData => Boolean(marker));
+            const valid = validate(data);
+            if (runId !== validationRunId) return;
+            if (valid) {
+                validationMarkers = [];
+                return;
+            }
+
+            const errors = validate.errors || [];
+            const markers = errors
+                .map((err: ErrorObject): Monaco.editor.IMarkerData | null => {
+                    const pointer = err.instancePath || "";
+                    const segments = pointer
+                        .split("/")
+                        .filter(Boolean)
+                        .map((s: string) => decodePointerSegment(s));
+                    let key = segments.length > 0 ? segments[segments.length - 1] : "";
+                    if (err.keyword === "required" && typeof err.params === "object") {
+                        const missing = (err.params as { missingProperty?: string })
+                            .missingProperty;
+                        if (missing) key = missing;
+                    }
+                    if (/^\d+$/.test(key) && segments.length > 1) {
+                        key = segments[segments.length - 2];
+                    }
+
+                    const lineNumber = key ? findLineForKey(key) : 1;
+                    if (
+                        currentActiveLine !== null &&
+                        lineNumber === currentActiveLine
+                    ) {
+                        return null;
+                    }
+                    const maxColumn = modelForMarkers.getLineMaxColumn(lineNumber);
+                    return {
+                        severity: monacoForMarkers.MarkerSeverity.Error,
+                        message: err.message || "Schema validation error",
+                        startLineNumber: lineNumber,
+                        startColumn: 1,
+                        endLineNumber: lineNumber,
+                        endColumn: maxColumn,
+                    } as Monaco.editor.IMarkerData;
+                })
+                .filter((marker): marker is Monaco.editor.IMarkerData =>
+                    Boolean(marker),
+                );
+
+            if (runId !== validationRunId) return;
+            validationMarkers = markers;
+        })();
     });
 
     $effect(() => {
