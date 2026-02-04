@@ -4,8 +4,8 @@ import contextlib
 import functools
 import hashlib
 import inspect
-import os
 import pickle
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -137,6 +137,7 @@ class TTLCache:
         self.ttl = ttl
         self.cache: dict[Any, Any] = {}
         self.timestamps: dict[Any, float] = {}
+        self._lock = threading.RLock()
 
     def get(self, key: Any) -> Any:
         """Get value from cache if not expired.
@@ -150,10 +151,11 @@ class TTLCache:
         Raises:
             KeyError: If key is not in cache or has expired.
         """
-        if key in self.cache:
-            if time.time() - self.timestamps[key] < self.ttl:
-                return self.cache[key]
-            else:  # Expired - remove from cache
+        with self._lock:
+            if key in self.cache:
+                if time.time() - self.timestamps[key] < self.ttl:
+                    return self.cache[key]
+                # Expired - remove from cache
                 del self.cache[key]
                 del self.timestamps[key]
         raise KeyError(key)
@@ -165,13 +167,20 @@ class TTLCache:
             key (Any): Key to store.
             value (Any): Value to store.
         """
-        self.cache[key] = value
-        self.timestamps[key] = time.time()
+        with self._lock:
+            self.cache[key] = value
+            self.timestamps[key] = time.time()
 
     def clear(self) -> None:
         """Clear all cached items."""
-        self.cache.clear()
-        self.timestamps.clear()
+        with self._lock:
+            self.cache.clear()
+            self.timestamps.clear()
+
+    def size(self) -> int:
+        """Return the current cache size."""
+        with self._lock:
+            return len(self.cache)
 
 
 @overload
@@ -219,6 +228,7 @@ def ttl_cache(
     ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
         """Inner decorator function."""
         cache = TTLCache(ttl)
+        stats_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
 
         def cache_clear() -> None:
@@ -228,11 +238,14 @@ def ttl_cache(
         misses = 0
 
         def cache_info() -> CacheInfo:
+            with stats_lock:
+                hits_snapshot = hits
+                misses_snapshot = misses
             return CacheInfo(
-                hits=hits,
-                misses=misses,
+                hits=hits_snapshot,
+                misses=misses_snapshot,
                 maxsize=None,
-                currsize=len(cache.cache),
+                currsize=cache.size(),
                 ttl=ttl,
             )
 
@@ -257,10 +270,12 @@ def ttl_cache(
 
                 try:
                     cached = cache.get(cache_key)
-                    hits += 1
+                    with stats_lock:
+                        hits += 1
                     return cast(T, cached)
                 except KeyError:
-                    misses += 1
+                    with stats_lock:
+                        misses += 1
                     result = func(*args, **kwargs)
                     awaited_result = await cast(Awaitable[T], result)
                     cache.set(cache_key, awaited_result)
@@ -279,10 +294,12 @@ def ttl_cache(
 
             try:
                 cached = cache.get(cache_key)
-                hits += 1
+                with stats_lock:
+                    hits += 1
                 return cast(T, cached)
             except KeyError:
-                misses += 1
+                with stats_lock:
+                    misses += 1
                 result = cast(T, func(*args, **kwargs))
                 cache.set(cache_key, result)
                 return result
@@ -347,6 +364,7 @@ def lru_cache(
         """Inner decorator function."""
         cache: dict[Any, Any] = {}
         access_order: list[Any] = []
+        cache_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
 
         def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
@@ -372,39 +390,53 @@ def lru_cache(
                     result = func(*args, **kwargs)
                     return await cast(Awaitable[T], result)
 
-                if cache_key in cache:
-                    # Move to end (most recently used)
-                    access_order.remove(cache_key)
-                    access_order.append(cache_key)
-                    hits += 1
-                    return cache[cache_key]
+                with cache_lock:
+                    if cache_key in cache:
+                        # Move to end (most recently used)
+                        if cache_key in access_order:
+                            access_order.remove(cache_key)
+                        access_order.append(cache_key)
+                        hits += 1
+                        return cache[cache_key]
 
-                misses += 1
+                    misses += 1
 
                 result = func(*args, **kwargs)
                 awaited_result = await cast(Awaitable[T], result)
 
-                cache[cache_key] = awaited_result
-                access_order.append(cache_key)
+                with cache_lock:
+                    if cache_key in cache:
+                        if cache_key in access_order:
+                            access_order.remove(cache_key)
+                        access_order.append(cache_key)
+                        return cache[cache_key]
 
-                # Remove oldest if exceeding maxsize
-                if maxsize is not None and len(cache) > maxsize:
-                    oldest = access_order.pop(0)
-                    del cache[oldest]
+                    cache[cache_key] = awaited_result
+                    access_order.append(cache_key)
+
+                    # Remove oldest if exceeding maxsize
+                    if maxsize is not None and len(cache) > maxsize:
+                        oldest = access_order.pop(0)
+                        del cache[oldest]
 
                 return awaited_result
 
             def cache_clear() -> None:
                 nonlocal cache, access_order
-                cache.clear()
-                access_order.clear()
+                with cache_lock:
+                    cache.clear()
+                    access_order.clear()
 
             def cache_info() -> CacheInfo:
+                with cache_lock:
+                    hits_snapshot = hits
+                    misses_snapshot = misses
+                    currsize = len(cache)
                 return CacheInfo(
-                    hits=hits,
-                    misses=misses,
+                    hits=hits_snapshot,
+                    misses=misses_snapshot,
                     maxsize=maxsize,
-                    currsize=len(cache),
+                    currsize=currsize,
                 )
 
             async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
@@ -422,38 +454,52 @@ def lru_cache(
                 if cache_key is None:
                     return cast(T, func(*args, **kwargs))
 
-                if cache_key in cache:
-                    # Move to end (most recently used)
-                    access_order.remove(cache_key)
-                    access_order.append(cache_key)
-                    hits += 1
-                    return cache[cache_key]
+                with cache_lock:
+                    if cache_key in cache:
+                        # Move to end (most recently used)
+                        if cache_key in access_order:
+                            access_order.remove(cache_key)
+                        access_order.append(cache_key)
+                        hits += 1
+                        return cache[cache_key]
 
-                misses += 1
+                    misses += 1
 
                 result = cast(T, func(*args, **kwargs))
 
-                cache[cache_key] = result
-                access_order.append(cache_key)
+                with cache_lock:
+                    if cache_key in cache:
+                        if cache_key in access_order:
+                            access_order.remove(cache_key)
+                        access_order.append(cache_key)
+                        return cache[cache_key]
 
-                # Remove oldest if exceeding maxsize
-                if maxsize is not None and len(cache) > maxsize:
-                    oldest = access_order.pop(0)
-                    del cache[oldest]
+                    cache[cache_key] = result
+                    access_order.append(cache_key)
+
+                    # Remove oldest if exceeding maxsize
+                    if maxsize is not None and len(cache) > maxsize:
+                        oldest = access_order.pop(0)
+                        del cache[oldest]
 
                 return result
 
             def cache_clear() -> None:
                 nonlocal cache, access_order
-                cache.clear()
-                access_order.clear()
+                with cache_lock:
+                    cache.clear()
+                    access_order.clear()
 
             def cache_info() -> CacheInfo:
+                with cache_lock:
+                    hits_snapshot = hits
+                    misses_snapshot = misses
+                    currsize = len(cache)
                 return CacheInfo(
-                    hits=hits,
-                    misses=misses,
+                    hits=hits_snapshot,
+                    misses=misses_snapshot,
                     maxsize=maxsize,
-                    currsize=len(cache),
+                    currsize=currsize,
                 )
 
             sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
@@ -520,16 +566,20 @@ def file_cache(
             return x + y
     """
     if cache_dir is None:
-        cache_dir = _resolve_default_cache_dir()
-    cache_dir = Path(cache_dir)
+        resolved_cache_dir = _resolve_default_cache_dir()
+    else:
+        resolved_cache_dir = Path(cache_dir)
 
     def decorator(
         func: Callable[P, T] | Callable[P, Awaitable[T]],
     ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
         """Inner decorator function."""
-        func_name = getattr(func, "__name__", "unknown_function")
-        os.makedirs(cache_dir / func_name, exist_ok=True)
+        func_name = str(getattr(func, "__name__", "unknown_function"))
+        (resolved_cache_dir / func_name).mkdir(parents=True, exist_ok=True)
+        stats_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
+        hits = 0
+        misses = 0
 
         def get_cache_path(cache_key: Any) -> Path:
             """Generate a cache file path based on the function name and arguments."""
@@ -538,12 +588,12 @@ def file_cache(
             except Exception:
                 key_str = repr(cache_key)
             key_hash = hashlib.md5(key_str.encode()).hexdigest()
-            return cache_dir / func_name / f"{func_name}_{key_hash}.cache"
+            return resolved_cache_dir / func_name / f"{func_name}_{key_hash}.cache"
 
         def load_from_cache(cache_path: Path) -> tuple[bool, Any]:
             """Load cached value if valid. Returns (success, value)."""
-            if os.path.exists(cache_path) and (
-                ttl is None or (time.time() - os.path.getmtime(cache_path) < ttl)
+            if cache_path.exists() and (
+                ttl is None or (time.time() - cache_path.stat().st_mtime < ttl)
             ):
                 try:
                     with open(cache_path, "rb") as f:
@@ -563,14 +613,41 @@ def file_cache(
         def cache_clear() -> None:
             """Clear all cache files for this function."""
             try:
-                func_cache_dir = cache_dir / func_name
-                for filename in os.listdir(func_cache_dir):
-                    if filename.endswith(".cache"):
-                        os.remove(func_cache_dir / filename)
-                with contextlib.suppress(OSError):
-                    os.rmdir(func_cache_dir)
+                func_cache_dir = resolved_cache_dir / func_name
+                with stats_lock:
+                    for filename in func_cache_dir.iterdir():
+                        if filename.name.endswith(".cache"):
+                            filename.unlink()
+                    with contextlib.suppress(OSError):
+                        func_cache_dir.rmdir()
             except FileNotFoundError:
                 pass
+
+        def cache_info() -> CacheInfo:
+            with stats_lock:
+                hits_snapshot = hits
+                misses_snapshot = misses
+                func_cache_dir = resolved_cache_dir / func_name
+                with contextlib.suppress(FileNotFoundError):
+                    currsize = sum(
+                        1
+                        for filename in func_cache_dir.iterdir()
+                        if filename.name.endswith(".cache")
+                    )
+                    return CacheInfo(
+                        hits=hits_snapshot,
+                        misses=misses_snapshot,
+                        maxsize=None,
+                        currsize=currsize,
+                        ttl=ttl,
+                    )
+            return CacheInfo(
+                hits=hits_snapshot,
+                misses=misses_snapshot,
+                maxsize=None,
+                currsize=0,
+                ttl=ttl,
+            )
 
         def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
             """Generate cache key using custom function or default."""
@@ -585,43 +662,93 @@ def file_cache(
 
             @functools.wraps(func)
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                nonlocal hits, misses
                 cache_key = get_cache_key(args, kwargs)
                 if cache_key is None:
                     result = func(*args, **kwargs)
                     return await cast(Awaitable[T], result)
 
                 cache_path = get_cache_path(cache_key)
-                success, cached_value = load_from_cache(cache_path)
+                with stats_lock:
+                    success, cached_value = load_from_cache(cache_path)
                 if success:
+                    with stats_lock:
+                        hits += 1
                     return cast(T, cached_value)
 
+                with stats_lock:
+                    misses += 1
                 result = func(*args, **kwargs)
                 awaited_result = await cast(Awaitable[T], result)
-                save_to_cache(cache_path, awaited_result)
+                with stats_lock:
+                    save_to_cache(cache_path, awaited_result)
                 return awaited_result
 
             async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+            async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
             return cast(CachedAsyncFunction[P, T], async_wrapper)
 
         @functools.wraps(func)
         def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            nonlocal hits, misses
             cache_key = get_cache_key(args, kwargs)
             if cache_key is None:
                 return cast(T, func(*args, **kwargs))
 
             cache_path = get_cache_path(cache_key)
-            success, cached_value = load_from_cache(cache_path)
+            with stats_lock:
+                success, cached_value = load_from_cache(cache_path)
             if success:
+                with stats_lock:
+                    hits += 1
                 return cast(T, cached_value)
 
+            with stats_lock:
+                misses += 1
             result = cast(T, func(*args, **kwargs))
-            save_to_cache(cache_path, result)
+            with stats_lock:
+                save_to_cache(cache_path, result)
             return result
 
         sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        sync_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
         return cast(CachedFunction[P, T], sync_wrapper)
 
     return decorator
 
 
-cache = lru_cache(maxsize=1)
+@overload
+def cache[**P, T](
+    func: Callable[P, T],
+) -> CachedFunction[P, T]: ...
+
+
+@overload
+def cache[**P, T](
+    func: Callable[P, Awaitable[T]],
+) -> CachedAsyncFunction[P, T]: ...
+
+
+def cache(
+    func: Callable[P, T] | Callable[P, Awaitable[T]],
+) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
+    """Generic cache decorator that applies an LRU cache with cache size of 1.
+
+    Args:
+        func (Callable): Function to be cached.
+
+    Returns:
+        Decorator: Decorated function with LRU caching.
+
+    Example:
+        @cache
+        def compute_square(x):
+            return x * x
+
+        @cache
+        async def fetch_data(url):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    return await response.text()
+    """
+    return lru_cache(maxsize=1)(func)
