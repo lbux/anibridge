@@ -238,10 +238,22 @@ class AniBridgeProfileConfig(BaseModel):
 
         for field in self.__class__.model_fields:
             if field in ("library_provider_config", "list_provider_config"):
-                # Special handling to do 1-level dict merge for provider configs
+                # Special handling to merge provider configs one level deep.
                 global_providers = getattr(self._parent.global_config, field)
                 profile_providers = getattr(self, field)
-                setattr(self, field, {**global_providers, **profile_providers})
+                merged_providers = {**global_providers}
+                for provider_namespace, provider_settings in profile_providers.items():
+                    global_settings = global_providers.get(provider_namespace)
+                    if isinstance(global_settings, dict) and isinstance(
+                        provider_settings, dict
+                    ):
+                        merged_providers[provider_namespace] = {
+                            **global_settings,
+                            **provider_settings,
+                        }
+                    else:
+                        merged_providers[provider_namespace] = provider_settings
+                setattr(self, field, merged_providers)
             elif field in self.model_fields_set:  # Field set on profile level
                 continue
             else:  # Inherit from global if not set

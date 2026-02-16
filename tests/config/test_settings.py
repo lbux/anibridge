@@ -100,6 +100,38 @@ def test_config_profile_inherits_global_values() -> None:
     assert profile.library_provider_config["plex"]["url"] == "http://global"
 
 
+def test_provider_config_merges_one_level_per_namespace() -> None:
+    """Test provider config merge keeps global keys and applies profile overrides."""
+    config = AniBridgeConfig(
+        global_config=AniBridgeProfileConfig(
+            library_provider_config={
+                "plex": {
+                    "url": "http://global",
+                    "token": "global-token",
+                    "advanced": {"timeout": 30, "retry": 2},
+                }
+            }
+        ),
+        profiles={
+            "primary": AniBridgeProfileConfig(
+                library_provider_config={
+                    "plex": {
+                        "sections": ["Anime"],
+                        "advanced": {"timeout": 60},
+                    }
+                }
+            )
+        },
+    )
+
+    profile = config.get_profile("primary")
+
+    assert profile.library_provider_config["plex"]["url"] == "http://global"
+    assert profile.library_provider_config["plex"]["token"] == "global-token"
+    assert profile.library_provider_config["plex"]["sections"] == ["Anime"]
+    assert profile.library_provider_config["plex"]["advanced"] == {"timeout": 60}
+
+
 def test_get_profile_raises_for_unknown_name(
     tmp_path: Path,
 ) -> None:
