@@ -16,7 +16,7 @@ class ConfigDocumentResponse(BaseModel):
     file_exists: bool
     content: str
     mtime: int | None = None
-    schema: dict[str, Any]
+    schema_: dict[str, Any] = Field(alias="schema")
 
 
 class ConfigDocumentUpdateRequest(BaseModel):
