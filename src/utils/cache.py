@@ -1,16 +1,19 @@
 """Caching decorators for LRU, TTL, and file-based caching. Supports async functions."""
 
+import asyncio
 import contextlib
 import functools
 import hashlib
 import inspect
-import pickle
 import threading
-import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ParamSpec, Protocol, TypeVar, cast, overload
+
+from cachetools import LRUCache as CachetoolsLRUCache
+from cachetools import TTLCache as CachetoolsTTLCache
+from diskcache import Cache as DiskCache
 
 __all__ = ["CacheInfo", "cache", "file_cache", "lru_cache", "ttl_cache"]
 
@@ -19,6 +22,8 @@ T = TypeVar("T")
 
 
 _DEFAULT_CACHE_DIR: Path | None = None
+_UNBOUNDED_MAXSIZE = 2**31 - 1
+_MISSING = object()
 
 
 def _resolve_default_cache_dir() -> Path:
@@ -46,6 +51,20 @@ class CachedFunction(Protocol[P, T]):
         """Get cache information."""
         ...
 
+    @overload
+    def __get__(
+        self,
+        instance: None,
+        owner: type[Any] | None = None,
+    ) -> CachedFunction[P, T]: ...
+
+    @overload
+    def __get__(
+        self,
+        instance: object,
+        owner: type[Any] | None = None,
+    ) -> BoundCachedFunction[T]: ...
+
 
 class CachedAsyncFunction(Protocol[P, T]):
     """Protocol for cached async functions with cache management methods."""
@@ -61,6 +80,40 @@ class CachedAsyncFunction(Protocol[P, T]):
     def cache_info(self) -> CacheInfo:
         """Get cache information."""
         ...
+
+    @overload
+    def __get__(
+        self,
+        instance: None,
+        owner: type[Any] | None = None,
+    ) -> CachedAsyncFunction[P, T]: ...
+
+    @overload
+    def __get__(
+        self,
+        instance: object,
+        owner: type[Any] | None = None,
+    ) -> BoundCachedAsyncFunction[T]: ...
+
+
+class BoundCachedFunction(Protocol[T]):
+    """Protocol for bound cached sync methods."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> T: ...
+
+    def cache_clear(self) -> None: ...
+
+    def cache_info(self) -> CacheInfo: ...
+
+
+class BoundCachedAsyncFunction(Protocol[T]):
+    """Protocol for bound cached async methods."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Awaitable[T]: ...
+
+    def cache_clear(self) -> None: ...
+
+    def cache_info(self) -> CacheInfo: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,75 +165,18 @@ def _make_key(
     args: tuple[Any, ...], kwargs: dict[str, Any], strict: bool = True
 ) -> int | tuple[Any, ...] | None:
     """Generate a cache key from args and kwargs. Supports unhashable types."""
+    if strict:
+        try:
+            key = (args, tuple(sorted(kwargs.items())))
+            hash(key)
+            return key
+        except TypeError:
+            return None
+
     try:
-        key = (args, tuple(sorted(kwargs.items())))
-        hash(key)
-        return key
-    except TypeError:
-        if strict is False:
-            try:
-                return _generic_hash((args, kwargs))
-            except Exception:
-                return None
+        return _generic_hash((args, kwargs))
+    except Exception:
         return None
-
-
-class TTLCache:
-    """Time-to-live cache implementation."""
-
-    def __init__(self, ttl: float) -> None:
-        """Initialize the TTL cache.
-
-        Args:
-            ttl (float): Time in seconds before cache entries expire.
-        """
-        self.ttl = ttl
-        self.cache: dict[Any, Any] = {}
-        self.timestamps: dict[Any, float] = {}
-        self._lock = threading.RLock()
-
-    def get(self, key: Any) -> Any:
-        """Get value from cache if not expired.
-
-        Args:
-            key (Any): Key to retrieve.
-
-        Returns:
-            Any: Cached value.
-
-        Raises:
-            KeyError: If key is not in cache or has expired.
-        """
-        with self._lock:
-            if key in self.cache:
-                if time.time() - self.timestamps[key] < self.ttl:
-                    return self.cache[key]
-                # Expired - remove from cache
-                del self.cache[key]
-                del self.timestamps[key]
-        raise KeyError(key)
-
-    def set(self, key: Any, value: Any) -> None:
-        """Store value in cache with current timestamp.
-
-        Args:
-            key (Any): Key to store.
-            value (Any): Value to store.
-        """
-        with self._lock:
-            self.cache[key] = value
-            self.timestamps[key] = time.time()
-
-    def clear(self) -> None:
-        """Clear all cached items."""
-        with self._lock:
-            self.cache.clear()
-            self.timestamps.clear()
-
-    def size(self) -> int:
-        """Return the current cache size."""
-        with self._lock:
-            return len(self.cache)
 
 
 @overload
@@ -227,12 +223,14 @@ def ttl_cache(
         func: Callable[P, T] | Callable[P, Awaitable[T]],
     ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
         """Inner decorator function."""
-        cache = TTLCache(ttl)
+        cache = CachetoolsTTLCache(maxsize=_UNBOUNDED_MAXSIZE, ttl=ttl)
         stats_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
+        in_flight: dict[Any, asyncio.Future[T]] = {}
 
         def cache_clear() -> None:
-            cache.clear()
+            with stats_lock:
+                cache.clear()
 
         hits = 0
         misses = 0
@@ -245,7 +243,7 @@ def ttl_cache(
                 hits=hits_snapshot,
                 misses=misses_snapshot,
                 maxsize=None,
-                currsize=cache.size(),
+                currsize=len(cache),
                 ttl=ttl,
             )
 
@@ -268,18 +266,48 @@ def ttl_cache(
                     result = func(*args, **kwargs)
                     return await cast(Awaitable[T], result)
 
-                try:
-                    cached = cache.get(cache_key)
-                    with stats_lock:
+                should_compute = False
+                pending: asyncio.Future[T]
+                with stats_lock:
+                    cached = cache.get(cache_key, _MISSING)
+                    if cached is not _MISSING:
                         hits += 1
-                    return cast(T, cached)
-                except KeyError:
-                    with stats_lock:
+                        return cast(T, cached)
+
+                    pending = in_flight.get(cache_key)  # type: ignore[assignment]
+                    if pending is None:
+                        pending = asyncio.get_running_loop().create_future()
+                        in_flight[cache_key] = pending
                         misses += 1
+                        should_compute = True
+
+                if not should_compute:
+                    return await asyncio.shield(pending)
+
+                try:
                     result = func(*args, **kwargs)
                     awaited_result = await cast(Awaitable[T], result)
-                    cache.set(cache_key, awaited_result)
-                    return awaited_result
+                except Exception as exc:
+                    with stats_lock:
+                        active = in_flight.pop(cache_key, None)
+                        if active is not None and not active.done():
+                            active.set_exception(exc)
+                    raise
+
+                with stats_lock:
+                    existing = cache.get(cache_key, _MISSING)
+                    final_value: T
+                    if existing is not _MISSING:
+                        final_value = cast(T, existing)
+                    else:
+                        cache[cache_key] = awaited_result
+                        final_value = awaited_result
+
+                    active = in_flight.pop(cache_key, None)
+                    if active is not None and not active.done():
+                        active.set_result(final_value)
+
+                return final_value
 
             async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
             async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
@@ -292,17 +320,23 @@ def ttl_cache(
             if cache_key is None:
                 return cast(T, func(*args, **kwargs))
 
-            try:
-                cached = cache.get(cache_key)
+            with stats_lock:
+                cached = cache.get(cache_key, _MISSING)
+            if cached is not _MISSING:
                 with stats_lock:
                     hits += 1
                 return cast(T, cached)
-            except KeyError:
-                with stats_lock:
-                    misses += 1
-                result = cast(T, func(*args, **kwargs))
-                cache.set(cache_key, result)
-                return result
+
+            with stats_lock:
+                misses += 1
+            result = cast(T, func(*args, **kwargs))
+
+            with stats_lock:
+                existing = cache.get(cache_key, _MISSING)
+                if existing is not _MISSING:
+                    return cast(T, existing)
+                cache[cache_key] = result
+            return result
 
         sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
         sync_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
@@ -362,10 +396,10 @@ def lru_cache(
         func: Callable[P, T] | Callable[P, Awaitable[T]],
     ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
         """Inner decorator function."""
-        cache: dict[Any, Any] = {}
-        access_order: list[Any] = []
+        cache = CachetoolsLRUCache(maxsize=maxsize)
         cache_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
+        in_flight: dict[Any, asyncio.Future[T]] = {}
 
         def get_cache_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
             """Generate cache key using custom function or default."""
@@ -383,49 +417,59 @@ def lru_cache(
 
             @functools.wraps(func)
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                nonlocal cache, access_order, hits, misses
+                nonlocal hits, misses
 
                 cache_key = get_cache_key(args, kwargs)
                 if cache_key is None:
                     result = func(*args, **kwargs)
                     return await cast(Awaitable[T], result)
 
+                should_compute = False
+                pending: asyncio.Future[T]
                 with cache_lock:
-                    if cache_key in cache:
-                        # Move to end (most recently used)
-                        if cache_key in access_order:
-                            access_order.remove(cache_key)
-                        access_order.append(cache_key)
+                    cached = cache.get(cache_key, _MISSING)
+                    if cached is not _MISSING:
                         hits += 1
-                        return cache[cache_key]
+                        return cast(T, cached)
 
-                    misses += 1
+                    pending = in_flight.get(cache_key)  # type: ignore[assignment]
+                    if pending is None:
+                        pending = asyncio.get_running_loop().create_future()
+                        in_flight[cache_key] = pending
+                        misses += 1
+                        should_compute = True
 
-                result = func(*args, **kwargs)
-                awaited_result = await cast(Awaitable[T], result)
+                if not should_compute:
+                    return await asyncio.shield(pending)
+
+                try:
+                    result = func(*args, **kwargs)
+                    awaited_result = await cast(Awaitable[T], result)
+                except Exception as exc:
+                    with cache_lock:
+                        active = in_flight.pop(cache_key, None)
+                        if active is not None and not active.done():
+                            active.set_exception(exc)
+                    raise
 
                 with cache_lock:
-                    if cache_key in cache:
-                        if cache_key in access_order:
-                            access_order.remove(cache_key)
-                        access_order.append(cache_key)
-                        return cache[cache_key]
+                    existing = cache.get(cache_key, _MISSING)
+                    final_value: T
+                    if existing is not _MISSING:
+                        final_value = cast(T, existing)
+                    else:
+                        cache[cache_key] = awaited_result
+                        final_value = awaited_result
 
-                    cache[cache_key] = awaited_result
-                    access_order.append(cache_key)
+                    active = in_flight.pop(cache_key, None)
+                    if active is not None and not active.done():
+                        active.set_result(final_value)
 
-                    # Remove oldest if exceeding maxsize
-                    if maxsize is not None and len(cache) > maxsize:
-                        oldest = access_order.pop(0)
-                        del cache[oldest]
-
-                return awaited_result
+                return final_value
 
             def cache_clear() -> None:
-                nonlocal cache, access_order
                 with cache_lock:
                     cache.clear()
-                    access_order.clear()
 
             def cache_info() -> CacheInfo:
                 with cache_lock:
@@ -448,47 +492,33 @@ def lru_cache(
 
             @functools.wraps(func)
             def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                nonlocal cache, access_order, hits, misses
+                nonlocal hits, misses
 
                 cache_key = get_cache_key(args, kwargs)
                 if cache_key is None:
                     return cast(T, func(*args, **kwargs))
 
                 with cache_lock:
-                    if cache_key in cache:
-                        # Move to end (most recently used)
-                        if cache_key in access_order:
-                            access_order.remove(cache_key)
-                        access_order.append(cache_key)
+                    cached = cache.get(cache_key, _MISSING)
+                    if cached is not _MISSING:
                         hits += 1
-                        return cache[cache_key]
+                        return cast(T, cached)
 
                     misses += 1
 
                 result = cast(T, func(*args, **kwargs))
 
                 with cache_lock:
-                    if cache_key in cache:
-                        if cache_key in access_order:
-                            access_order.remove(cache_key)
-                        access_order.append(cache_key)
-                        return cache[cache_key]
-
+                    existing = cache.get(cache_key, _MISSING)
+                    if existing is not _MISSING:
+                        return cast(T, existing)
                     cache[cache_key] = result
-                    access_order.append(cache_key)
-
-                    # Remove oldest if exceeding maxsize
-                    if maxsize is not None and len(cache) > maxsize:
-                        oldest = access_order.pop(0)
-                        del cache[oldest]
 
                 return result
 
             def cache_clear() -> None:
-                nonlocal cache, access_order
                 with cache_lock:
                     cache.clear()
-                    access_order.clear()
 
             def cache_info() -> CacheInfo:
                 with cache_lock:
@@ -575,77 +605,37 @@ def file_cache(
     ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
         """Inner decorator function."""
         func_name = str(getattr(func, "__name__", "unknown_function"))
-        (resolved_cache_dir / func_name).mkdir(parents=True, exist_ok=True)
+        func_cache_dir = resolved_cache_dir / func_name
+        func_cache_dir.mkdir(parents=True, exist_ok=True)
+        disk_cache = DiskCache(str(func_cache_dir))
         stats_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
+        in_flight: dict[Any, asyncio.Future[T]] = {}
         hits = 0
         misses = 0
 
-        def get_cache_path(cache_key: Any) -> Path:
-            """Generate a cache file path based on the function name and arguments."""
+        def get_store_key(cache_key: Any) -> str:
+            """Generate a stable string key for disk cache lookup."""
             try:
                 key_str = str(cache_key)
             except Exception:
                 key_str = repr(cache_key)
-            key_hash = hashlib.md5(key_str.encode()).hexdigest()
-            return resolved_cache_dir / func_name / f"{func_name}_{key_hash}.cache"
-
-        def load_from_cache(cache_path: Path) -> tuple[bool, Any]:
-            """Load cached value if valid. Returns (success, value)."""
-            if cache_path.exists() and (
-                ttl is None or (time.time() - cache_path.stat().st_mtime < ttl)
-            ):
-                try:
-                    with open(cache_path, "rb") as f:
-                        return True, pickle.load(f)
-                except (pickle.PickleError, EOFError, Exception):
-                    pass
-            return False, None
-
-        def save_to_cache(cache_path: Path, result: Any) -> None:
-            """Save result to cache file."""
-            try:
-                with cache_path.open("wb") as f:
-                    pickle.dump(result, f)
-            except (pickle.PickleError, TypeError, Exception):
-                pass  # Can't pickle result - don't cache
+            return hashlib.md5(key_str.encode()).hexdigest()
 
         def cache_clear() -> None:
-            """Clear all cache files for this function."""
-            try:
-                func_cache_dir = resolved_cache_dir / func_name
-                with stats_lock:
-                    for filename in func_cache_dir.iterdir():
-                        if filename.name.endswith(".cache"):
-                            filename.unlink()
-                    with contextlib.suppress(OSError):
-                        func_cache_dir.rmdir()
-            except FileNotFoundError:
-                pass
+            """Clear all cache entries for this function."""
+            with stats_lock:
+                disk_cache.clear()
 
         def cache_info() -> CacheInfo:
             with stats_lock:
                 hits_snapshot = hits
                 misses_snapshot = misses
-                func_cache_dir = resolved_cache_dir / func_name
-                with contextlib.suppress(FileNotFoundError):
-                    currsize = sum(
-                        1
-                        for filename in func_cache_dir.iterdir()
-                        if filename.name.endswith(".cache")
-                    )
-                    return CacheInfo(
-                        hits=hits_snapshot,
-                        misses=misses_snapshot,
-                        maxsize=None,
-                        currsize=currsize,
-                        ttl=ttl,
-                    )
             return CacheInfo(
                 hits=hits_snapshot,
                 misses=misses_snapshot,
                 maxsize=None,
-                currsize=0,
+                currsize=len(disk_cache),
                 ttl=ttl,
             )
 
@@ -668,21 +658,57 @@ def file_cache(
                     result = func(*args, **kwargs)
                     return await cast(Awaitable[T], result)
 
-                cache_path = get_cache_path(cache_key)
+                store_key = get_store_key(cache_key)
+                should_compute = False
+                pending: asyncio.Future[T]
                 with stats_lock:
-                    success, cached_value = load_from_cache(cache_path)
-                if success:
-                    with stats_lock:
+                    cached_value = disk_cache.get(
+                        store_key, default=_MISSING, retry=True
+                    )
+                    if cached_value is not _MISSING:
                         hits += 1
-                    return cast(T, cached_value)
+                        return cast(T, cached_value)
+
+                    pending = in_flight.get(store_key)  # type: ignore[assignment]
+                    if pending is None:
+                        pending = asyncio.get_running_loop().create_future()
+                        in_flight[store_key] = pending
+                        misses += 1
+                        should_compute = True
+
+                if not should_compute:
+                    return await asyncio.shield(pending)
+
+                try:
+                    result = func(*args, **kwargs)
+                    awaited_result = await cast(Awaitable[T], result)
+                except Exception as exc:
+                    with stats_lock:
+                        active = in_flight.pop(store_key, None)
+                        if active is not None and not active.done():
+                            active.set_exception(exc)
+                    raise
 
                 with stats_lock:
-                    misses += 1
-                result = func(*args, **kwargs)
-                awaited_result = await cast(Awaitable[T], result)
-                with stats_lock:
-                    save_to_cache(cache_path, awaited_result)
-                return awaited_result
+                    current = disk_cache.get(store_key, default=_MISSING, retry=True)
+                    final_value: T
+                    if current is not _MISSING:
+                        final_value = cast(T, current)
+                    else:
+                        final_value = awaited_result
+                        with contextlib.suppress(Exception):
+                            disk_cache.set(
+                                store_key,
+                                awaited_result,
+                                expire=ttl,
+                                retry=True,
+                            )
+
+                    active = in_flight.pop(store_key, None)
+                    if active is not None and not active.done():
+                        active.set_result(final_value)
+
+                return final_value
 
             async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
             async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
@@ -695,10 +721,10 @@ def file_cache(
             if cache_key is None:
                 return cast(T, func(*args, **kwargs))
 
-            cache_path = get_cache_path(cache_key)
+            store_key = get_store_key(cache_key)
             with stats_lock:
-                success, cached_value = load_from_cache(cache_path)
-            if success:
+                cached_value = disk_cache.get(store_key, default=_MISSING, retry=True)
+            if cached_value is not _MISSING:
                 with stats_lock:
                     hits += 1
                 return cast(T, cached_value)
@@ -706,8 +732,8 @@ def file_cache(
             with stats_lock:
                 misses += 1
             result = cast(T, func(*args, **kwargs))
-            with stats_lock:
-                save_to_cache(cache_path, result)
+            with stats_lock, contextlib.suppress(Exception):
+                disk_cache.set(store_key, result, expire=ttl, retry=True)
             return result
 
         sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
@@ -729,7 +755,7 @@ def cache[**P, T](
 ) -> CachedAsyncFunction[P, T]: ...
 
 
-def cache(
+def cache[**P, T](
     func: Callable[P, T] | Callable[P, Awaitable[T]],
 ) -> CachedFunction[P, T] | CachedAsyncFunction[P, T]:
     """Generic cache decorator that applies an LRU cache with cache size of 1.
@@ -751,4 +777,6 @@ def cache(
                 async with session.get(url) as response:
                     return await response.text()
     """
-    return lru_cache(maxsize=1)(func)
+    return cast(
+        CachedFunction[P, T] | CachedAsyncFunction[P, T], lru_cache(maxsize=1)(func)
+    )

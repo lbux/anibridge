@@ -122,3 +122,43 @@ async def test_file_cache_async_caches(tmp_path) -> None:
     assert calls["count"] == 1
 
     fetch.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_lru_cache_async_single_flight() -> None:
+    """Concurrent async calls with the same key should compute once."""
+    calls = {"count": 0}
+
+    @lru_cache(maxsize=16)
+    async def compute(x: int) -> int:
+        calls["count"] += 1
+        await asyncio.sleep(0.01)
+        return x * 2
+
+    results = await asyncio.gather(
+        compute(7),
+        compute(7),
+        compute(7),
+    )
+    assert results == [14, 14, 14]
+    assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ttl_cache_async_single_flight() -> None:
+    """Concurrent async calls with the same key should compute once."""
+    calls = {"count": 0}
+
+    @ttl_cache(ttl=60)
+    async def compute(x: int) -> int:
+        calls["count"] += 1
+        await asyncio.sleep(0.01)
+        return x + 1
+
+    results = await asyncio.gather(
+        compute(9),
+        compute(9),
+        compute(9),
+    )
+    assert results == [10, 10, 10]
+    assert calls["count"] == 1
