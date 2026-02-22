@@ -231,8 +231,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             (episode.view_count for episode in grandchild_items if episode.view_count),
             default=0,
         )
-        on_watching = item.on_watching and any(
-            episode.on_watching for episode in grandchild_items
+        on_watching = (
+            item.on_watching
+            or child_item.on_watching
+            or any(episode.on_watching for episode in grandchild_items)
         )
         is_finished = len(grandchild_items) == watched_count
         _total_units = entry.media().total_units
