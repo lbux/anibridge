@@ -1,15 +1,15 @@
 """Shared pytest configuration and fixtures for the test suite."""
 
 import atexit
+import importlib
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
-
-from src.utils.limiter import Limiter
 
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="ab-tests-"))
 os.environ["AB_DATA_PATH"] = str(_TEST_DATA_DIR)
@@ -32,12 +32,24 @@ _TEST_CONFIG_FILE.write_text(
     encoding="utf-8",
 )
 
-Limiter.DISABLED = True
-
 from src.config import settings as settings_module  # noqa: E402
+from src.config.database import db as db_factory  # noqa: E402
+from src.utils import logging as logging_module  # noqa: E402
+from src.utils.limiter import Limiter  # noqa: E402
 from src.web.state import get_app_state  # noqa: E402
 
 settings_module.get_config.cache_clear()
+logging_module.get_logger.cache_clear()
+db_factory.cache_clear()
+
+src_module = sys.modules.get("src")
+if src_module is None:
+    src_module = importlib.import_module("src")
+
+src_module.config = settings_module.get_config()  # type: ignore
+src_module.log = logging_module.get_logger()  # type: ignore
+
+Limiter.DISABLED = True
 
 
 def pytest_sessionstart() -> None:
