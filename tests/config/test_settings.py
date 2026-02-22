@@ -147,3 +147,41 @@ def test_sync_fields_rejects_unknown_operator() -> None:
     """Unknown sync field operators should fail validation."""
     with pytest.raises(ValueError):
         AniBridgeProfileConfig(sync_fields={SyncField.STATUS: {"_between": False}})
+
+
+def test_sync_fields_inherit_from_global_profile() -> None:
+    """Global sync_fields should be inherited when a profile omits sync_fields."""
+    config = AniBridgeConfig.model_validate(
+        {
+            "global_config": {
+                "library_provider": "plex",
+                "sync_fields": {"review": False, "status": False},
+            },
+            "profiles": {
+                "anilist": {
+                    "list_provider": "anilist",
+                    "list_provider_config": {"anilist": {"token": "token"}},
+                }
+            },
+        }
+    )
+
+    profile = config.get_profile("anilist")
+
+    assert profile.sync_fields[SyncField.REVIEW] is False
+    assert profile.sync_fields[SyncField.STATUS] is False
+
+
+def test_sync_fields_status_rules_are_case_insensitive() -> None:
+    """Status rule keys should normalize to ListStatus values."""
+    profile = AniBridgeProfileConfig(
+        sync_fields={
+            SyncField.STATUS: {"dropped": False, "PAUSED": False, "pLaNNing": False}
+        }
+    )
+
+    status_rules = profile.sync_fields[SyncField.STATUS]
+    assert isinstance(status_rules, dict)
+    assert status_rules["dropped"] is False
+    assert status_rules["paused"] is False
+    assert status_rules["planning"] is False

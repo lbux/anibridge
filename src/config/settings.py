@@ -1,11 +1,13 @@
 """AniBridge Configuration Settings."""
 
 import os
+from collections.abc import Mapping
 from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from anibridge.list import ListStatus
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -96,12 +98,7 @@ class LogLevel(BaseStrEnum):
 
 
 class SyncField(BaseStrEnum):
-    """Enumeration of AniList fields that can be synchronized with Plex.
-
-    These fields represent the data that can be synchronized between Plex
-    and AniList for each media entry. Each enum value corresponds to an
-    AniList API field name in snake_case format.
-    """
+    """Enumeration of list fields that can be synchronized with Plex."""
 
     STATUS = "status"  # Watch status (watching, completed, etc.)
     PROGRESS = "progress"  # Number of episodes/movies watched
@@ -267,18 +264,26 @@ class AniBridgeProfileConfig(BaseModel):
                 setattr(self, field, global_value)
         return self
 
-    @model_validator(mode="after")
-    def normalize_sync_fields(self) -> AniBridgeProfileConfig:
-        """Normalize/validate `sync_fields` and absorb deprecated exclusions.
+    @field_validator("sync_fields", mode="before")
+    @classmethod
+    def normalize_sync_fields(
+        cls,
+        value: Mapping[SyncField | str, bool | Mapping[str, bool]] | None,
+    ) -> Mapping[str, bool | dict[str, bool]] | None:
+        """Normalize and validate per-field sync rules."""
+        if value is None:
+            return value
 
-        Returns:
-            AniBridgeProfileConfig: Self with normalized `sync_fields`.
-        """
-        normalized: dict[SyncField, bool | dict[str, bool]] = {}
+        if not isinstance(value, Mapping):
+            raise ValueError("sync_fields must be a mapping")
+
+        normalized: dict[str, bool | dict[str, bool]] = {}
         allowed_fields = {field.value for field in SyncField}
         allowed_ops = {"_lt", "_lte", "_gt", "_gte", "_eq", "_ne"}
+        allowed_statuses = {status.value for status in ListStatus}
 
-        for field, raw_rules in self.sync_fields.items():
+        for raw_field, raw_rules in value.items():
+            field = str(raw_field)
             if field not in allowed_fields:
                 raise ValueError(f"sync_fields contains unknown field: '{field}'")
 
@@ -286,25 +291,35 @@ class AniBridgeProfileConfig(BaseModel):
                 normalized[field] = raw_rules
                 continue
 
-            if not isinstance(raw_rules, dict):
+            if not isinstance(raw_rules, Mapping):
                 raise ValueError(
                     "sync_fields entries must be either booleans or mappings"
                 )
 
             field_rules: dict[str, bool] = {}
-            for rule_key, rule_value in raw_rules.items():
+            for raw_rule_key, rule_value in raw_rules.items():
                 if not isinstance(rule_value, bool):
                     raise ValueError("sync_fields nested rules must be booleans")
+
+                rule_key = str(raw_rule_key)
                 if rule_key.startswith("_") and rule_key not in allowed_ops:
                     raise ValueError(
                         f"sync_fields.{field} contains unknown operator: '{rule_key}'"
                     )
-                field_rules[str(rule_key)] = rule_value
+
+                if field == SyncField.STATUS.value and not rule_key.startswith("_"):
+                    rule_key = rule_key.lower()
+                    if rule_key not in allowed_statuses:
+                        raise ValueError(
+                            f"sync_fields.{field} contains unknown status: "
+                            f"'{raw_rule_key}'"
+                        )
+
+                field_rules[rule_key] = rule_value
 
             normalized[field] = field_rules
 
-        self.sync_fields = normalized
-        return self
+        return normalized
 
     _parent: AniBridgeConfig | None = None
 
