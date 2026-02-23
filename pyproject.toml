@@ -35,6 +35,7 @@ dependencies = [
     "aiohttp>=3.13.3",
     "alembic>=1.18.3",
     "anibridge-anilist-provider>=0.2.0b4,<0.3.0",
+    "anibridge-jellyfin-provider>=0.2.0b2,<0.3.0",
     "anibridge-library-base>=0.2.0b2",
     "anibridge-list-base>=0.2.0b3",
     "anibridge-mal-provider>=0.2.0b3,<0.3.0",

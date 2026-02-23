@@ -18,6 +18,7 @@ __all__ = [
 ]
 
 _DEFAULT_LIBRARY_PROVIDER_MODULES: tuple[str, ...] = (
+    "anibridge_jellyfin_provider.library",
     "anibridge_plex_provider.library",
 )
 _DEFAULT_LIST_PROVIDER_MODULES: tuple[str, ...] = (
