@@ -263,7 +263,7 @@ class AniListClient:
                 for item in media:
                     try:
                         aid = int(item["id"])
-                    except (KeyError, TypeError, ValueError):
+                    except KeyError, TypeError, ValueError:
                         continue
                     if aid not in seen:
                         result.append(aid)
@@ -339,7 +339,7 @@ class AniListClient:
                     }}
                 }}
             }}
-            """
+            """  # ty:ignore[missing-argument]
 
             variables = {"ids": batch_ids}
             response = await self._make_request(query, variables)
@@ -437,7 +437,7 @@ class AniListClient:
 
                 return await response.json()
 
-        except (TimeoutError, aiohttp.ClientError):
+        except TimeoutError, aiohttp.ClientError:
             log.warning(
                 "Connection error while making request to AniList API, retrying"
             )

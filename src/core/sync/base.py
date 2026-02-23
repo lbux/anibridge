@@ -841,6 +841,12 @@ class BaseSyncClient[
                     if update.after.media_key in updated_list_keys
                     else SyncOutcome.FAILED,
                 )
+            log.success(
+                "[%s] Batch sync completed for %s items with %s failures",
+                self.profile_name,
+                len(self._pending_updates),
+                len(self._pending_updates) - len(updated_list_keys),
+            )
         except Exception as exc:
             log.error("Batch sync failed: %s", exc)
             log.exception("Batch sync error details")

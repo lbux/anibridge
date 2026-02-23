@@ -98,7 +98,7 @@ class LogLevel(BaseStrEnum):
 
 
 class SyncField(BaseStrEnum):
-    """Enumeration of list fields that can be synchronized with Plex."""
+    """Enumeration of list fields that can be synchronized with the list provider."""
 
     STATUS = "status"  # Watch status (watching, completed, etc.)
     PROGRESS = "progress"  # Number of episodes/movies watched

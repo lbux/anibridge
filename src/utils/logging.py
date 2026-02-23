@@ -178,7 +178,7 @@ class Logger(logging.Logger):
 
             if class_name and isinstance(msg, str):
                 msg = f"{class_name}: {msg}"
-        except (ValueError, KeyError, AttributeError):
+        except ValueError, KeyError, AttributeError:
             pass
 
         # Add 1 to stacklevel to account for this wrapper method
@@ -223,7 +223,7 @@ class Logger(logging.Logger):
                 else:
                     colorama.init()
                 has_color_support = True
-        except (AttributeError, ImportError, OSError):
+        except AttributeError, ImportError, OSError:
             has_color_support = False
 
         if log_level == "SUCCESS":
@@ -311,7 +311,7 @@ def get_logger() -> Logger:
     config = get_config()
 
     return _get_logger(
-        log_name="AniBridge",
+        log_name="anibridge",
         log_level=config.log_level,
         log_dir=config.data_path / "logs",
     )
