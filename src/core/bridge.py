@@ -170,6 +170,12 @@ class BridgeClient:
 
     async def _backup_list(self) -> None:
         """Persist an initial list backup when supported by the provider."""
+        if self.profile_config.backup_retention_days == -1:
+            log.debug(
+                "[%s] List backup creation is disabled by configuration; skipping",
+                self.profile_name,
+            )
+            return
         try:
             payload = await self.list_provider.backup_list()
         except NotImplementedError:

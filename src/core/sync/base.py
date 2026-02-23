@@ -99,7 +99,7 @@ class BaseSyncClient[
         batch_requests: bool,
         dry_run: bool,
         profile_name: str,
-        sync_fields: Mapping[str, bool | Mapping[str, bool]] | None = None,
+        sync_fields: Mapping[SyncField, bool | Mapping[str, bool]] | None = None,
     ) -> None:
         """Initialize the base synchronisation client."""
         self.library_provider: LibraryProvider = library_provider

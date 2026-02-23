@@ -212,8 +212,11 @@ class AniBridgeProfileConfig(BaseModel):
     )
     backup_retention_days: int = Field(
         default=30,
-        ge=0,
-        description=("Days to retain list backups before cleanup (0 disables cleanup)"),
+        ge=-1,
+        description=(
+            "Days to retain list backups before cleanup (0 retains indefinitely; "
+            "-1 disables backup creation)"
+        ),
     )
 
     @property
