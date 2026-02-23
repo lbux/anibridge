@@ -35,7 +35,7 @@ async def sync_all(poll: bool = Query(False)) -> OkResponse:
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
     schedule_task(
-        scheduler.trigger_sync(poll=poll),
+        scheduler.trigger_all_profiles_sync(poll=poll, source="api:sync_all"),
         name="sync_all_profiles",
     )
     return OkResponse(ok=True)
@@ -55,7 +55,7 @@ async def sync_database() -> OkResponse:
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
     schedule_task(
-        scheduler.shared_animap_client.sync_db(),
+        scheduler.trigger_database_sync(source="api:sync_database"),
         name="sync_database",
     )
     return OkResponse(ok=True)
@@ -85,7 +85,12 @@ async def sync_profile(
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
     schedule_task(
-        scheduler.trigger_sync(profile, poll=poll, library_keys=library_keys),
+        scheduler.trigger_profile_sync(
+            profile,
+            poll=poll,
+            library_keys=library_keys,
+            source="api:sync_profile",
+        ),
         name=f"sync_profile:{profile}",
     )
     return OkResponse(ok=True)

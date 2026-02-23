@@ -48,10 +48,11 @@ async def provider_webhook(
                 library_keys,
             )
             schedule_task(
-                scheduler.trigger_sync(
-                    profile_name=profile_name,
+                scheduler.trigger_profile_sync(
+                    profile_name,
                     poll=False,
                     library_keys=library_keys,
+                    source="webhook:provider",
                 ),
                 name=f"webhook_sync:{profile_name}",
             )

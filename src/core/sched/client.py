@@ -10,173 +10,12 @@ from src import log
 from src.config.settings import AniBridgeConfig, ScanMode
 from src.core.animap import AnimapClient
 from src.core.bridge import BridgeClient
+from src.core.sched.coord import GlobalSyncCoordinator
+from src.core.sched.profile import ProfileScheduler
 from src.exceptions import ProfileNotFoundError
 from src.utils.cache import lru_cache
 
 __all__ = ["SchedulerClient"]
-
-
-class ProfileScheduler:
-    """Individual profile scheduler for managing sync operations.
-
-    Handles the scheduling logic for a single profile, including periodic
-    sync, polling mode, and single-run mode.
-    """
-
-    def __init__(
-        self,
-        profile_name: str,
-        bridge_client: BridgeClient,
-        scan_interval: int,
-        scan_modes: list[ScanMode],
-        poll_interval: int = 30,
-        stop_event: asyncio.Event | None = None,
-    ):
-        """Initialize a profile scheduler.
-
-        Args:
-            profile_name: Name of the profile
-            bridge_client: Bridge client for this profile
-            scan_interval: Sync interval in seconds
-            scan_modes: List of sync modes enabled for this profile
-            poll_interval: Polling interval in seconds
-            stop_event: Event to signal shutdown
-        """
-        self.profile_name = profile_name
-        self.bridge_client = bridge_client
-        self.scan_interval = scan_interval
-        self.scan_modes = scan_modes
-        self.poll_interval = poll_interval
-        self.stop_event = stop_event or asyncio.Event()
-
-        self._running = False
-        self._sync_lock = asyncio.Lock()
-        self._current_task: asyncio.Task | None = None
-        self._tasks: set[asyncio.Task] = set()  # Prevents early GC
-
-    async def sync(
-        self, poll: bool = False, library_keys: Sequence[str] | None = None
-    ) -> None:
-        """Execute a single synchronization cycle with error handling.
-
-        Args:
-            poll (bool): Flag to enable polling-based sync.
-            library_keys (Sequence[str] | None): Sequence of library media keys to
-                restrict the sync scope.
-        """
-        async with self._sync_lock:
-            try:
-                self._current_task = asyncio.create_task(
-                    self.bridge_client.sync(poll=poll, library_keys=library_keys)
-                )
-                await self._current_task
-            except asyncio.CancelledError:
-                if self._current_task and not self._current_task.done():
-                    log.info(
-                        "[%s] Cancelling sync task...",
-                        self.profile_name,
-                    )
-                    self._current_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await self._current_task
-                raise
-            except Exception:
-                log.error("[%s] Sync error", self.profile_name)
-                log.exception(
-                    "[%s] Sync error details",
-                    self.profile_name,
-                )
-            finally:
-                self._current_task = None
-
-    async def start(self) -> None:
-        """Start the profile scheduler."""
-        if self._running:
-            return
-
-        self._running = True
-        if ScanMode.PERIODIC in self.scan_modes:
-            self._spawn_loop(
-                name="periodic",
-                interval=self.scan_interval,
-                poll=False,
-            )
-
-        if ScanMode.POLL in self.scan_modes:
-            self._spawn_loop(
-                name="poll",
-                interval=self.poll_interval,
-                poll=True,
-            )
-
-    async def stop(self) -> None:
-        """Stop the profile scheduler."""
-        self._running = False
-        self.stop_event.set()
-
-        for task in list(self._tasks):
-            if not task.done():
-                task.cancel()
-
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-
-        current_task = self._current_task
-        if current_task and not current_task.done():
-            current_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await current_task
-
-    def _spawn_loop(self, *, name: str, interval: int, poll: bool) -> None:
-        """Create and track a looping sync task."""
-        log.debug(
-            "[%s] Starting %s sync every %ss",
-            self.profile_name,
-            name,
-            interval,
-        )
-        task = asyncio.create_task(
-            self._run_loop(name=name, interval=interval, poll=poll)
-        )
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-
-    async def _run_loop(self, *, name: str, interval: int, poll: bool) -> None:
-        """Handle periodic or polling synchronization loops."""
-        while self._running and not self.stop_event.is_set():
-            try:
-                await self.sync(poll=poll)
-
-                if not poll:
-                    next_sync = datetime.now(UTC) + timedelta(seconds=interval)
-                    log.info(
-                        "[%s] Next %s sync scheduled for: %s",
-                        self.profile_name,
-                        name,
-                        next_sync.astimezone(),
-                    )
-
-                with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(self.stop_event.wait(), interval)
-            except asyncio.CancelledError:
-                log.debug(
-                    "[%s] %s sync cancelled",
-                    self.profile_name,
-                    name,
-                )
-                break
-            except Exception:
-                log.error(
-                    "[%s] %s sync error",
-                    self.profile_name,
-                    name,
-                )
-                log.exception(
-                    "[%s] %s sync error details",
-                    self.profile_name,
-                    name,
-                )
-                await asyncio.sleep(10)
 
 
 class SchedulerClient:
@@ -198,6 +37,7 @@ class SchedulerClient:
         )
         self.bridge_clients: dict[str, BridgeClient] = {}
         self.profile_schedulers: dict[str, ProfileScheduler] = {}
+        self._sync_coordinator = GlobalSyncCoordinator()
         self.stop_event = asyncio.Event()
         self._running = False
         self._daily_sync_task: asyncio.Task | None = None
@@ -209,11 +49,16 @@ class SchedulerClient:
 
     @property
     def is_running(self) -> bool:
-        """Return whether the scheduler main loop is currently running."""
+        """Return hether the scheduler main loop is currently running."""
         return self._running
 
     def get_next_database_sync_at(self) -> datetime | None:
-        """Return the next scheduled database sync time in UTC."""
+        """Get the next scheduled database sync time in UTC.
+
+        Returns:
+            datetime | None: The next scheduled database sync time in UTC, or None if
+                the scheduler is not running.
+        """
         if not self._running:
             return None
         now = datetime.now(UTC)
@@ -227,27 +72,34 @@ class SchedulerClient:
         await self.shared_animap_client.initialize()
         log.success("Anime mapping database ready")
 
-        for profile_name, profile_config in self.global_config.profiles.items():
-            log.info("[%s] Setting up bridge client", profile_name)
-
+        async def init_bridge(profile_name: str, profile_config: Any) -> None:
             try:
+                log.info("[%s] Setting up bridge client", profile_name)
                 bridge_client = BridgeClient(
                     profile_name=profile_name,
                     profile_config=profile_config,
                     global_config=self.global_config,
                     shared_animap_client=self.shared_animap_client,
                 )
-
                 await bridge_client.initialize()
                 self.bridge_clients[profile_name] = bridge_client
-
-                log.info("[%s] Bridge client ready", profile_name)
+                log.info("[%s] Bridge client initialized", profile_name)
             except Exception:
                 log.error("[%s] Bridge client setup failed", profile_name)
                 log.exception(
                     "[%s] Bridge setup error details",
                     profile_name,
                 )
+
+        initialize_tasks: list[asyncio.Task] = []
+        for profile_name, profile_config in self.global_config.profiles.items():
+            initialize_tasks.append(
+                asyncio.create_task(init_bridge(profile_name, profile_config))
+            )
+        if initialize_tasks:
+            await asyncio.gather(*initialize_tasks)
+
+        self.get_profiles_for_library_provider.cache_clear()
 
         log.info(
             "Application scheduler initialized with %s profile(s)",
@@ -258,6 +110,9 @@ class SchedulerClient:
         """Start all profile schedulers and global tasks."""
         if self._running:
             return
+
+        if self.stop_event.is_set():
+            self.stop_event = asyncio.Event()
 
         self._running = True
 
@@ -284,6 +139,8 @@ class SchedulerClient:
                 scan_interval=profile_config.scan_interval,
                 scan_modes=profile_config.scan_modes,
                 poll_interval=30,
+                before_sync=self._sync_coordinator.acquire_profile_slot,
+                after_sync=self._sync_coordinator.release_profile_slot,
                 stop_event=self.stop_event,
             )
 
@@ -360,6 +217,7 @@ class SchedulerClient:
 
         self.profile_schedulers.clear()
         self.bridge_clients.clear()
+        self.get_profiles_for_library_provider.cache_clear()
 
         log.info("Application scheduler stopped")
 
@@ -374,46 +232,88 @@ class SchedulerClient:
             log.info("Application scheduler wait interrupted")
             raise
 
-    async def trigger_sync(
+    async def trigger_profile_sync(
         self,
-        profile_name: str | None = None,
+        profile_name: str,
         poll: bool = False,
         library_keys: Sequence[str] | None = None,
+        source: str = "manual",
     ) -> None:
-        """Manually trigger a sync for one or all profiles.
+        """Trigger a sync for a single profile.
 
         Args:
-            profile_name (str | None): Specific profile to sync, or None for all.
+            profile_name (str): Specific profile to sync.
             poll (bool): Whether to use polling mode for the sync.
-            library_keys (Sequence[str] | None): Optional list of library media keys to.
-                restrict the sync scope for each profile.
+            library_keys (Sequence[str] | None): Optional library media keys to scope.
+            source (str): Origin of the trigger request.
 
         Raises:
-            KeyError: If the specified profile doesn't exist
+            ProfileNotFoundError: If the specified profile does not exist.
         """
-        if profile_name is not None:
-            if profile_name not in self.bridge_clients:
-                raise ProfileNotFoundError(f"Profile '{profile_name}' not found")
+        if profile_name not in self.bridge_clients:
+            raise ProfileNotFoundError(f"Profile '{profile_name}' not found")
 
-            log.info(
-                "[%s] Manually triggering sync (poll=%s)",
-                profile_name,
-                poll,
+        log.info(
+            "[%s] Triggering sync (poll=%s, source=%s)",
+            profile_name,
+            poll,
+            source,
+        )
+        scheduler = self.profile_schedulers.get(profile_name)
+        if scheduler is None:
+            await self._sync_profile_once(
+                profile_name=profile_name,
+                poll=poll,
+                library_keys=library_keys,
             )
-            scheduler = self.profile_schedulers[profile_name]
-            await scheduler.sync(poll=poll, library_keys=library_keys)
-        else:
-            log.info(
-                "Manually triggering sync for all profiles (poll=%s)",
-                poll,
-            )
-            sync_tasks = []
-            for name, scheduler in self.profile_schedulers.items():
-                log.info("[%s] Triggering sync", name)
-                sync_tasks.append(scheduler.sync(poll=poll, library_keys=library_keys))
+            return
 
-            if sync_tasks:
-                await asyncio.gather(*sync_tasks, return_exceptions=True)
+        await scheduler.sync(poll=poll, library_keys=library_keys, source=source)
+
+    async def trigger_all_profiles_sync(
+        self,
+        poll: bool = False,
+        library_keys: Sequence[str] | None = None,
+        source: str = "manual",
+    ) -> None:
+        """Trigger a sync for all profiles."""
+        log.info(
+            "Triggering sync for all profiles (poll=%s, source=%s)",
+            poll,
+            source,
+        )
+        profile_names = list(self.bridge_clients.keys())
+        if not profile_names:
+            log.warning("No profiles available to sync")
+            return
+
+        sync_tasks = []
+        for name in profile_names:
+            log.info("[%s] Triggering sync", name)
+            sync_tasks.append(
+                self.trigger_profile_sync(
+                    profile_name=name,
+                    poll=poll,
+                    library_keys=library_keys,
+                    source=source,
+                )
+            )
+
+        if sync_tasks:
+            results = await asyncio.gather(*sync_tasks, return_exceptions=True)
+            exceptions: list[Exception] = []
+            for profile_name, result in zip(profile_names, results, strict=False):
+                if isinstance(result, Exception):
+                    log.error(
+                        "[%s] Profile sync trigger failed: %s", profile_name, result
+                    )
+                    exceptions.append(result)
+
+            if exceptions:
+                raise ExceptionGroup(
+                    "One or more profile sync triggers failed",
+                    exceptions,
+                )
 
     async def get_status(self) -> dict[str, dict[str, Any]]:
         """Get the status of all profiles.
@@ -468,10 +368,63 @@ class SchedulerClient:
                         if bridge_client and bridge_client.current_sync is not None
                         else None
                     ),
+                    "scheduler": await scheduler.get_runtime_metrics()
+                    if scheduler is not None
+                    else None,
                 },
             }
 
         return status
+
+    async def get_runtime_metrics(self) -> dict[str, Any]:
+        """Return scheduler-level runtime metrics and coordinator state."""
+        return {
+            "running": self._running,
+            "profile_count": len(self.profile_schedulers),
+            "bridge_count": len(self.bridge_clients),
+            "daily_sync_active": self._daily_sync_task is not None
+            and not self._daily_sync_task.done(),
+            "coordinator": await self._sync_coordinator.get_metrics(),
+        }
+
+    async def trigger_database_sync(self, source: str = "manual:database") -> None:
+        """Trigger a globally coordinated database sync and provider refresh."""
+
+        async def _sync_and_refresh() -> None:
+            await self.shared_animap_client.sync_db()
+            log.success("Database sync completed (source=%s)", source)
+
+            log.info("Reinitializing all list providers")
+            refresh_tasks = []
+            profile_names = []
+            for profile_name, bridge_client in self.bridge_clients.items():
+                refresh_tasks.append(
+                    self._refresh_profile_provider_cache(bridge_client)
+                )
+                profile_names.append(profile_name)
+
+            if not refresh_tasks:
+                return
+
+            results = await asyncio.gather(*refresh_tasks, return_exceptions=True)
+            exceptions: list[Exception] = []
+            for profile_name, result in zip(profile_names, results, strict=False):
+                if isinstance(result, Exception):
+                    log.error(
+                        "[%s] Provider refresh failed after database sync: %s",
+                        profile_name,
+                        result,
+                    )
+                    exceptions.append(result)
+
+            if exceptions:
+                raise ExceptionGroup(
+                    "One or more provider refreshes failed",
+                    exceptions,
+                )
+
+        log.info("Starting database sync (source=%s)", source)
+        await self._sync_coordinator.run_maintenance(_sync_and_refresh)
 
     def _get_next_1am_utc(self, now: datetime) -> datetime:
         """Calculate the next 1:00 AM UTC, handling DST transitions properly.
@@ -515,13 +468,7 @@ class SchedulerClient:
 
                 log.info("Starting daily database sync")
                 try:
-                    await self.shared_animap_client.sync_db()
-                    log.success("Daily database sync completed")
-
-                    log.info("Reinitializing all list providers")
-                    for bridge_client in self.bridge_clients.values():
-                        await bridge_client.list_provider.clear_cache()
-                        await bridge_client._backup_list()
+                    await self.trigger_database_sync(source="loop:daily_db")
                 except Exception as e:
                     log.error("Daily database sync failed: %s", e)
                     log.exception("Daily database sync error details")
@@ -565,6 +512,30 @@ class SchedulerClient:
             )
 
         return profiles
+
+    async def _sync_profile_once(
+        self,
+        profile_name: str,
+        poll: bool,
+        library_keys: Sequence[str] | None,
+    ) -> None:
+        """Execute a one-off profile sync when no profile scheduler is active."""
+        bridge_client = self.bridge_clients.get(profile_name)
+        if bridge_client is None:
+            raise ProfileNotFoundError(f"Profile '{profile_name}' not found")
+
+        await self._sync_coordinator.acquire_profile_slot(profile_name)
+        try:
+            await bridge_client.sync(poll=poll, library_keys=library_keys)
+        finally:
+            await self._sync_coordinator.release_profile_slot(profile_name)
+
+    async def _refresh_profile_provider_cache(
+        self, bridge_client: BridgeClient
+    ) -> None:
+        """Refresh list provider cache and persist a backup snapshot."""
+        await bridge_client.list_provider.clear_cache()
+        await bridge_client._backup_list()
 
     async def __aenter__(self):
         """Async context manager entry."""
