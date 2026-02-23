@@ -1,5 +1,6 @@
 """Tests for provider loader helpers."""
 
+from logging import Logger
 from types import SimpleNamespace
 from typing import cast
 
@@ -64,7 +65,7 @@ def test_build_library_provider_raises_when_missing(
         parent=DummyConfig(provider_modules=[]),
     )
 
-    def fake_create(_namespace: str, config=None):
+    def fake_create(_namespace: str, logger: Logger, config=None):
         raise LookupError("missing")
 
     monkeypatch.setattr(providers_module.library_registry, "create", fake_create)
@@ -85,7 +86,7 @@ def test_build_list_provider_raises_when_missing(
         parent=DummyConfig(provider_modules=[]),
     )
 
-    def fake_create(_namespace: str, config=None):
+    def fake_create(_namespace: str, logger: Logger, config=None):
         raise LookupError("missing")
 
     monkeypatch.setattr(providers_module.list_registry, "create", fake_create)

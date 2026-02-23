@@ -175,7 +175,7 @@ dev = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b5"
+version = "0.2.0b6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -184,48 +184,48 @@ dependencies = [
     { name = "limiter" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/1f/ff120f0730c89f7f64996a4a2965f87ee71569104105450e9535a7fd4916/anibridge_anilist_provider-0.2.0b5.tar.gz", hash = "sha256:bc3a73e527a87990f0598ea45d634baaa30c7d777addc9742243612c55bc5be5", size = 13990, upload-time = "2026-02-21T00:28:01.209Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/fd/1b768f5fc797152f0e2b88888166b433d444bef5e50f60a5caf8712ed73d/anibridge_anilist_provider-0.2.0b6.tar.gz", hash = "sha256:7491351e69a1667e74e7f102a3bc8092c90bced0977195af0360633e0beddf8b", size = 14350, upload-time = "2026-02-23T15:18:19.771Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/35/b3/7532405a09992ad9db058089494ae576477353f4f6982d33dd27ebf666d3/anibridge_anilist_provider-0.2.0b5-py3-none-any.whl", hash = "sha256:8ab42a0b266144eb327ac9baf44e8099464647ba4fb05a771bc6f59a98a89449", size = 15992, upload-time = "2026-02-21T00:28:02.011Z" },
+    { url = "https://files.pythonhosted.org/packages/02/29/87ceb54a29c587a93ed2d50a80f23a3419f54a84713d9e2f4102b3fe0a1e/anibridge_anilist_provider-0.2.0b6-py3-none-any.whl", hash = "sha256:835c952cda60bafd42e8def2fa1a565da1c71486d8848446df72201e5882e82d", size = 16406, upload-time = "2026-02-23T15:18:21.967Z" },
 ]
 
 [[package]]
 name = "anibridge-jellyfin-provider"
-version = "0.2.0b2"
+version = "0.2.0b3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "jellyfin-sdk" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/8f/36c2246ff440a693bc0b2eab398a586927999cf4c5a74b830799ad522d36/anibridge_jellyfin_provider-0.2.0b2.tar.gz", hash = "sha256:afb4027c08c46d9bcc09c259778d1be87aa8667dc22c83e633c13b4bf7a01d34", size = 10373, upload-time = "2026-02-23T05:53:38.109Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/71/0c99adb882b15ed9fed57a5b883a2cd5a363774b0c9cb64a1e556394fb03/anibridge_jellyfin_provider-0.2.0b3.tar.gz", hash = "sha256:4459d2a22aa90a05d20410319d2047f80a8ef8de81cdefce72bdf1a8fdeb08bb", size = 10527, upload-time = "2026-02-23T15:18:45.598Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/7e/1277e11ddbae9bb6c913dd4f7d97e43d716412628a1b1f17bb477c01b6a1/anibridge_jellyfin_provider-0.2.0b2-py3-none-any.whl", hash = "sha256:488394650f2b08043dc439c262b3bac4a442b6317efee5b3297da1bbd99213b7", size = 12786, upload-time = "2026-02-23T05:53:37.173Z" },
+    { url = "https://files.pythonhosted.org/packages/78/bf/767a7b70cf38f5e408cae123d8d73bc4a183e4cde06fcbdfdc28b2eaf702/anibridge_jellyfin_provider-0.2.0b3-py3-none-any.whl", hash = "sha256:86425cbcfa853073d8305603cf7c3d09acb3c33a4925da6690eda27118b1aaba", size = 12924, upload-time = "2026-02-23T15:18:43.491Z" },
 ]
 
 [[package]]
 name = "anibridge-library-base"
-version = "0.2.0b2"
+version = "0.2.0b3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "starlette" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/17/c7/f9ef1375d6bfd591a9a0294d776be60532005bfcb662c69e602bd5b1e4cd/anibridge_library_base-0.2.0b2.tar.gz", hash = "sha256:fc8ec282b0562c51a99bdf6c7ad5c43a95205c28c3a7f6077d2043a0b53ece35", size = 6495, upload-time = "2026-01-26T20:24:18.966Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/cc/5ce442cdf52cb455987629aea3e2f15c017458a369b82cdf6eb9997d2a64/anibridge_library_base-0.2.0b3.tar.gz", hash = "sha256:0d62a0e0b37b416fe858999f2f2713ea60b8c78469598a64adf0269f881ca777", size = 6640, upload-time = "2026-02-23T14:57:41.233Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/2a/2a16379cd1805f418f15769f97e237b3bdfc5c3a68fa6ce333ec25cbe8d7/anibridge_library_base-0.2.0b2-py3-none-any.whl", hash = "sha256:1ffb586236ffa99e1d4edf8194415f6db87d63ad98f2b121fb82ec9f0bf10f63", size = 8276, upload-time = "2026-01-26T20:24:17.986Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/fb/a59c711a08afaa9e82ad811879787164f02bf967d20723a2b4dbc416f7f8/anibridge_library_base-0.2.0b3-py3-none-any.whl", hash = "sha256:18838ad7c8e75498f0ac789d7aa52840ef07fed7668b57eacad62794dd5a8bbd", size = 8445, upload-time = "2026-02-23T14:57:40.488Z" },
 ]
 
 [[package]]
 name = "anibridge-list-base"
-version = "0.2.0b3"
+version = "0.2.0b4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ca/e2/f6d053abf04d513d658ab0ee065ec69641b019bf636335f1e4c26cab9415/anibridge_list_base-0.2.0b3.tar.gz", hash = "sha256:3a80c984267c17d39bc34c58a9362a6b5e491f2b0478e7a0629e443a36a9ab27", size = 7226, upload-time = "2026-01-26T20:24:00.688Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/97/2d4b29aacd44859b11ddf5ad061efcf36712c295ab4a02498e89cdf62c1c/anibridge_list_base-0.2.0b4.tar.gz", hash = "sha256:08ab501b9bf4c57cab37f3894d8f74dc27ca10c19625400e80d5d729b1b9d1a9", size = 7411, upload-time = "2026-02-23T14:57:54.716Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/15/2e3402b0d1bdbd443e4a0acef469d99261cee2415ee8475c8659f202b121/anibridge_list_base-0.2.0b3-py3-none-any.whl", hash = "sha256:7fe35d2a3d62580a343789db60d515fe0dd6ba99768d176cfed3971a74c08ed5", size = 8735, upload-time = "2026-01-26T20:23:59.613Z" },
+    { url = "https://files.pythonhosted.org/packages/06/22/1f576344ad010e71398b08ce937eeda4b001755df15ca80ab5b1184dbc25/anibridge_list_base-0.2.0b4-py3-none-any.whl", hash = "sha256:79b3fcc2c1f0a2ad0a14c7f7eb46c2b5513c3467edec0bdc1818b08e1d41d10c", size = 8939, upload-time = "2026-02-23T14:57:53.739Z" },
 ]
 
 [[package]]
 name = "anibridge-mal-provider"
-version = "0.2.0b4"
+version = "0.2.0b5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -233,14 +233,14 @@ dependencies = [
     { name = "limiter" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/d4/16692fe64d6d4f71ccc02e855ab7b758de980fcfc638aca919ec74ca4f53/anibridge_mal_provider-0.2.0b4.tar.gz", hash = "sha256:94bc926e4cc7964edbf42aee47c3ab2ecef343e71d4432c8d89e92f1ec2e869d", size = 8589, upload-time = "2026-02-21T00:28:19.947Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ea/09/8a18e8804ba825b0d38aeec41c6f1b793a9cb18360c022ba99faaf3ea48c/anibridge_mal_provider-0.2.0b5.tar.gz", hash = "sha256:cfa1e29f94b841fb3340188983e49afec1d06c37c0c727bf131cd97aedffda38", size = 8932, upload-time = "2026-02-23T15:18:36.456Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/33/2e/8a0c30a44be735a07f21eed120cc08c175c4ed02291e3186c3203951a9e0/anibridge_mal_provider-0.2.0b4-py3-none-any.whl", hash = "sha256:43b7475fa03f040ee4f049c5262d0fa58352374f983d2d2ae659a2924868bf3c", size = 10640, upload-time = "2026-02-21T00:28:19.205Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/6c/d27db1c6926434a2059855351ecc840da918a857dd0b1bc2cabae7f4c10e/anibridge_mal_provider-0.2.0b5-py3-none-any.whl", hash = "sha256:20495ef45d8b7e67b9703b90aceaec8d7d89e12077270e87653fac697187489b", size = 10990, upload-time = "2026-02-23T15:18:35.714Z" },
 ]
 
 [[package]]
 name = "anibridge-plex-provider"
-version = "0.2.0b4"
+version = "0.2.0b5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -250,9 +250,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "tzlocal" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/2c/a903938be9b1801e400c989c7d111c720e4c19a4a2c81b420602d94a1dda/anibridge_plex_provider-0.2.0b4.tar.gz", hash = "sha256:47ac70805a72b0ada1a2ea08a5d3952edf4ab04b6f70a3e255acf84ef6fc826a", size = 14729, upload-time = "2026-02-21T01:11:59.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/8a/1f5f85541c9372c641a97483be304adcf82be3fcf601ba16d578d06131ed/anibridge_plex_provider-0.2.0b5.tar.gz", hash = "sha256:ed6de28b6daf03c5ce2720f596d7aae043e2d21181cf8391f3726c1ab911d69c", size = 14904, upload-time = "2026-02-23T15:19:06.442Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/aa/a90fd60bb18d844217ef2c53c08a0ab7423d079d11c32822b8fdf7d2f586/anibridge_plex_provider-0.2.0b4-py3-none-any.whl", hash = "sha256:46a872c3a6668e9d7b1dead433dca1f0f099f34d52bac7873604c5a5e95142cb", size = 17435, upload-time = "2026-02-21T01:11:58.914Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/58/86526be42aa2ff2d9a8c899cc4c7ecc1c30653d6cde709e563ef6699ca37/anibridge_plex_provider-0.2.0b5-py3-none-any.whl", hash = "sha256:c7af49a06c7fb7bc8d784720023f4414e0fe549cb14421769d62750c6d086a03", size = 17629, upload-time = "2026-02-23T15:19:07.422Z" },
 ]
 
 [[package]]

@@ -70,7 +70,7 @@ def build_library_provider(profile: AniBridgeProfileConfig) -> LibraryProvider:
     config = profile.library_provider_config.get(namespace)
 
     try:
-        return library_registry.create(namespace, config=config)
+        return library_registry.create(namespace, logger=log, config=config)
     except LookupError as exc:
         raise ProfileConfigError(
             f"No library provider registered for namespace '{namespace}'. "
@@ -94,7 +94,7 @@ def build_list_provider(profile: AniBridgeProfileConfig) -> ListProvider:
     config = profile.list_provider_config.get(namespace)
 
     try:
-        return list_registry.create(namespace, config=config)
+        return list_registry.create(namespace, logger=log, config=config)
     except LookupError as exc:
         raise ProfileConfigError(
             f"No list provider registered for namespace '{namespace}'. "
