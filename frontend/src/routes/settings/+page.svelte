@@ -22,13 +22,14 @@
         setAniListTitleLang,
         type TitleLanguage,
     } from "$lib/utils/anilist";
-    import { apiJson } from "$lib/utils/api";
+    import { apiFetch, apiJson } from "$lib/utils/api";
     import { toast } from "$lib/utils/notify";
 
     let loading = $state(true);
     let saving = $state(false);
     let loadError: string | null = $state(null);
     let saveError: string | null = $state(null);
+    let configAccessBlocked = $state(false);
     let configPath = $state("");
     let fileExists = $state(false);
     let editorValue = $state("");
@@ -44,14 +45,32 @@
         loading = true;
         loadError = null;
         saveError = null;
+        configAccessBlocked = false;
         try {
-            const payload = await apiJson<ConfigDocumentResponse>("/api/config");
-            configPath = payload.config_path;
-            fileExists = payload.file_exists;
-            editorValue = payload.content ?? "";
+            const response = await apiFetch("/api/config", undefined, {
+                silent: true,
+            });
+            const payload = await response.json();
+
+            if (!response.ok) {
+                if (response.status === 403) {
+                    configAccessBlocked = true;
+                    loadError =
+                        "Config API access is disabled because web authentication " +
+                        "is not configured.";
+                } else {
+                    loadError = formatApiError(payload, response.status);
+                }
+                return;
+            }
+
+            const configPayload = payload as ConfigDocumentResponse;
+            configPath = configPayload.config_path;
+            fileExists = configPayload.file_exists;
+            editorValue = configPayload.content ?? "";
             initialValue = editorValue;
-            configSchema = payload.schema ?? null;
-            mtime = payload.mtime ?? null;
+            configSchema = configPayload.schema ?? null;
+            mtime = configPayload.mtime ?? null;
         } catch (error) {
             loadError = formatError(error);
         } finally {
@@ -60,7 +79,7 @@
     }
 
     async function saveConfig() {
-        if (saving || loading) return;
+        if (saving || loading || configAccessBlocked) return;
         saveError = null;
 
         const payload: ConfigDocumentUpdateRequest = {
@@ -98,6 +117,24 @@
         return "Unexpected error";
     }
 
+    function formatApiError(payload: unknown, statusCode: number): string {
+        if (
+            payload &&
+            typeof payload === "object" &&
+            "detail" in payload &&
+            typeof payload.detail === "string"
+        ) {
+            return payload.detail;
+        }
+        if (payload && typeof payload === "object" && "error" in payload) {
+            const err = payload.error;
+            if (typeof err === "string" && err.trim()) {
+                return err;
+            }
+        }
+        return `Request failed (${statusCode})`;
+    }
+
     const LANG_OPTS: TitleLanguage[] = ["romaji", "english", "native"];
 
     function setLang(v: TitleLanguage) {
@@ -106,7 +143,7 @@
     }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2 text-slate-200">
             <SettingsIcon class="h-5 w-5 text-slate-400" />
@@ -136,14 +173,14 @@
                 type="button"
                 class="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-3 py-1 text-slate-100 hover:bg-slate-800/60 disabled:opacity-50"
                 onclick={revertChanges}
-                disabled={loading || saving || !hasChanges}>
+                disabled={loading || saving || configAccessBlocked || !hasChanges}>
                 Revert
             </button>
             <button
                 type="button"
                 class="inline-flex items-center gap-1 rounded border border-blue-500 bg-blue-600 px-4 py-1 font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
                 onclick={saveConfig}
-                disabled={loading || saving || !hasChanges}>
+                disabled={loading || saving || configAccessBlocked || !hasChanges}>
                 <Save class="h-3.5 w-3.5" />
                 {saving ? "Saving…" : "Save"}
             </button>
@@ -172,6 +209,20 @@
         <div
             class="flex items-center gap-2 rounded border border-rose-900/60 bg-rose-950/60 px-3 py-2 text-xs text-rose-100">
             <TriangleAlert class="h-3.5 w-3.5" /> Failed to load configuration: {loadError}
+        </div>
+    {/if}
+
+    {#if configAccessBlocked}
+        <div
+            class="rounded border border-amber-900/70 bg-amber-950/50 px-3 py-2 text-xs text-amber-100">
+            <p class="font-medium">Configuration editor is blocked.</p>
+            <p class="mt-1 text-amber-200/90">
+                Configure <code class="rounded bg-amber-900/40 px-1">web.basic_auth</code>
+                or explicitly set
+                <code class="rounded bg-amber-900/40 px-1"
+                    >web.allow_config_without_auth: true</code>
+                to allow unauthenticated access.
+            </p>
         </div>
     {/if}
 
@@ -205,7 +256,7 @@
                         bind:value={editorValue}
                         theme="dark"
                         fontSize="13px"
-                        readOnly={saving}
+                        readOnly={saving || configAccessBlocked}
                         schemaObject={configSchema ?? undefined}
                         fileUri={configPath ? `file://${configPath}` : undefined} />
                 </div>

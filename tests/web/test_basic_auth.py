@@ -127,16 +127,17 @@ def test_create_app_registers_basic_auth_middleware_when_configured(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     """create_app should attach BasicAuthMiddleware when credentials are configured."""
-    test_config = SimpleNamespace(
-        web=SimpleNamespace(
-            basic_auth=SimpleNamespace(
-                username="admin",
-                password=SecretStr("secret"),
-                htpasswd_path=None,
-                realm="Realm",
-            )
-        )
+    basic_auth_ns = SimpleNamespace(
+        username="admin",
+        password=SecretStr("secret"),
+        htpasswd_path=None,
+        realm="Realm",
     )
+    web_ns = SimpleNamespace(
+        basic_auth=basic_auth_ns,
+        has_auth=True,
+    )
+    test_config = SimpleNamespace(web=web_ns)
     monkeypatch.setattr(app_module, "config", test_config, raising=False)
 
     # Ensure the SPA assets check passes
@@ -154,16 +155,17 @@ def test_create_app_skips_basic_auth_without_complete_credentials(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     """create_app should skip BasicAuthMiddleware if either credential is missing."""
-    incomplete_config = SimpleNamespace(
-        web=SimpleNamespace(
-            basic_auth=SimpleNamespace(
-                username="admin",
-                password=None,
-                htpasswd_path=None,
-                realm="Realm",
-            )
-        )
+    basic_auth_ns = SimpleNamespace(
+        username="admin",
+        password=None,
+        htpasswd_path=None,
+        realm="Realm",
     )
+    web_ns = SimpleNamespace(
+        basic_auth=basic_auth_ns,
+        has_auth=True,
+    )
+    incomplete_config = SimpleNamespace(web=web_ns)
     monkeypatch.setattr(app_module, "config", incomplete_config, raising=False)
 
     index_file = tmp_path / "index.html"
@@ -186,16 +188,17 @@ def test_create_app_registers_basic_auth_middleware_with_htpasswd(
         encoding="utf-8",
     )  # bcrypt hash for "test"
 
-    test_config = SimpleNamespace(
-        web=SimpleNamespace(
-            basic_auth=SimpleNamespace(
-                username=None,
-                password=None,
-                htpasswd_path=htpasswd_file,
-                realm="Realm",
-            )
-        )
+    basic_auth_ns = SimpleNamespace(
+        username=None,
+        password=None,
+        htpasswd_path=htpasswd_file,
+        realm="Realm",
     )
+    web_ns = SimpleNamespace(
+        basic_auth=basic_auth_ns,
+        has_auth=True,
+    )
+    test_config = SimpleNamespace(web=web_ns)
     monkeypatch.setattr(app_module, "config", test_config, raising=False)
 
     # Ensure the SPA assets check passes

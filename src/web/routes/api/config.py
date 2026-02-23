@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError
 
-from src.config.settings import AniBridgeConfig
-from src.web.services.configuration_service import ConfigurationService
+from src.config.settings import AniBridgeConfig, get_config
+from src.web.services.configuration_service import get_configuration_service
 
 __all__ = ["router"]
 
@@ -31,9 +31,29 @@ class ConfigUpdateResponse(BaseModel):
     mtime: int | None = None
 
 
-router = APIRouter()
+def require_config_api_access() -> None:
+    """Ensure configuration API access is not exposed without explicit opt-in."""
+    # Use runtime_config if present (for test overrides), else get_config()
+    from src.web.routes.api import config as config_api_module
+    web_config = None
+    if hasattr(config_api_module, "runtime_config"):
+        web_config = getattr(config_api_module.runtime_config, "web", None)
+    if web_config is None:
+        web_config = get_config().web
+    if web_config.has_auth or web_config.allow_config_without_auth:
+        return
 
-_config_service = ConfigurationService()
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            "Configuration API is disabled when web authentication is not configured. "
+            "Configure web.basic_auth or set "
+            "web.allow_config_without_auth=true to override."
+        ),
+    )
+
+
+router = APIRouter(dependencies=[Depends(require_config_api_access)])
 
 
 @router.get("", response_model=ConfigDocumentResponse)
@@ -44,7 +64,7 @@ def get_configuration() -> ConfigDocumentResponse:
         ConfigDocumentResponse: The configuration document details.
     """
     try:
-        payload = _config_service.load_document_text()
+        payload = get_configuration_service().load_document_text()
     except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -73,7 +93,7 @@ async def update_configuration(
         ConfigUpdateResponse: The result of the update operation.
     """
     try:
-        config, mtime = await _config_service.save_document_text(
+        config, mtime = await get_configuration_service().save_document_text(
             request.content,
             expected_mtime=request.expected_mtime,
         )

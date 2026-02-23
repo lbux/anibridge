@@ -9,8 +9,9 @@ import yaml
 
 from src import log
 from src.config.settings import AniBridgeConfig, find_yaml_config_file
+from src.utils.cache import cache
 
-__all__ = ["ConfigurationService"]
+__all__ = ["ConfigurationService", "get_configuration_service"]
 
 
 class ConfigurationService:
@@ -93,3 +94,13 @@ class ConfigurationService:
             )
 
             return config, self._get_mtime_ms()
+
+
+@cache
+def get_configuration_service() -> ConfigurationService:
+    """Get the singleton ConfigurationService instance.
+
+    Returns:
+        ConfigurationService: The configuration service instance.
+    """
+    return ConfigurationService()

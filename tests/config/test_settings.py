@@ -8,7 +8,9 @@ from pydantic import SecretStr
 from src.config.settings import (
     AniBridgeConfig,
     AniBridgeProfileConfig,
+    BasicAuthConfig,
     SyncField,
+    WebConfig,
     find_yaml_config_file,
 )
 from src.exceptions import (
@@ -185,3 +187,19 @@ def test_sync_fields_status_rules_are_case_insensitive() -> None:
     assert status_rules["dropped"] is False
     assert status_rules["paused"] is False
     assert status_rules["planning"] is False
+
+
+def test_web_config_reports_auth_configuration_state(tmp_path: Path) -> None:
+    """WebConfig should correctly report whether authentication is configured."""
+    default = WebConfig()
+    assert default.has_auth is False
+
+    with_credentials = WebConfig(
+        basic_auth=BasicAuthConfig(username="admin", password=SecretStr("secret"))
+    )
+    assert with_credentials.has_auth is True
+
+    htpasswd = tmp_path / "htpasswd"
+    htpasswd.write_text("user:$apr1$hash", encoding="utf-8")
+    with_htpasswd = WebConfig(basic_auth=BasicAuthConfig(htpasswd_path=htpasswd))
+    assert with_htpasswd.has_auth is True
