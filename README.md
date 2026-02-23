@@ -9,7 +9,10 @@ The smart way to keep your anime lists perfectly synchronized.
 
 AniBridge is a media synchronization tool designed to keep your activity synchronized across different media viewing and tracking platforms. With its [mappings database](https://github.com/anibridge/anibridge-mappings) of over 60K entries tailored specifically for anime titles, AniBridge is particularly focused on anime content, however can be expanded to support more with [custom mappings](https://anibridge.eliasbenb.dev/mappings/custom-mappings).
 
-AniBridge has built-in support for popular platforms like [Plex](https://anibridge.eliasbenb.dev/providers/library/plex), [Jellyfin](https://anibridge.eliasbenb.dev/providers/library/jellyfin), [AniList](https://anibridge.eliasbenb.dev/providers/list/anilist), [MyAnimeList](https://anibridge.eliasbenb.dev/providers/list/mal), and can be extended to support additional providers through [third-party plugins](https://anibridge.eliasbenb.dev/providers/third-party/developers-guide)
+[![Jellyfin](https://img.shields.io/badge/Jellyfin-00A4DC?style=for-the-badge&logo=jellyfin&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/jellyfin)
+[![Plex](https://img.shields.io/badge/Plex-F5A623?style=for-the-badge&logo=plex&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/plex)
+[![AniList](https://img.shields.io/badge/AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/anilist)
+[![MyAnimeList](https://img.shields.io/badge/MyAnimeList-2E51A2?style=for-the-badge&logo=myanimelist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/mal)
 
 ## Key Features
 
