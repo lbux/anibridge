@@ -154,32 +154,36 @@ class Logger(logging.Logger):
     ):
         """Override _log to automatically prefix messages with class name.
 
+        Only used for the debug level.
+
         Inspects the call stack to determine if the log call originated from
         within a class method. If so, prefixes the message with the class name.
         """
-        try:
-            # From _log's perspective, the call stack is:
-            # Frame 0: _log itself
-            # Frame 1: The logging method (info, debug, success, etc.)
-            # Frame 2: User's code (the actual caller we want)
-            # We always inspect frame 2 to get the user's class context
-            frame = sys._getframe(2)
-            class_name = None
-            if "self" in frame.f_locals:
-                obj = frame.f_locals["self"]
-                # Make sure it's not the Logger instance itself
-                if not isinstance(obj, logging.Logger):
-                    class_name = obj.__class__.__name__
+        #
+        if self.level <= logging.DEBUG:
+            try:
+                # From _log's perspective, the call stack is:
+                # Frame 0: _log itself
+                # Frame 1: The logging method (info, debug, success, etc.)
+                # Frame 2: User's code (the actual caller we want)
+                # We always inspect frame 2 to get the user's class context
+                frame = sys._getframe(2)
+                class_name = None
+                if "self" in frame.f_locals:
+                    obj = frame.f_locals["self"]
+                    # Make sure it's not the Logger instance itself
+                    if not isinstance(obj, logging.Logger):
+                        class_name = obj.__class__.__name__
 
-            elif "cls" in frame.f_locals:
-                cls = frame.f_locals["cls"]
-                if isinstance(cls, type):
-                    class_name = cls.__name__
+                elif "cls" in frame.f_locals:
+                    cls = frame.f_locals["cls"]
+                    if isinstance(cls, type):
+                        class_name = cls.__name__
 
-            if class_name and isinstance(msg, str):
-                msg = f"{class_name}: {msg}"
-        except ValueError, KeyError, AttributeError:
-            pass
+                if class_name and isinstance(msg, str):
+                    msg = f"{class_name} - {msg}"
+            except ValueError, KeyError, AttributeError:
+                pass
 
         # Add 1 to stacklevel to account for this wrapper method
         super()._log(
@@ -237,10 +241,10 @@ class Logger(logging.Logger):
             self.removeHandler(handler)
 
         log_format = (
-            "%(asctime)s - %(name)s - %(levelname)s\t%(filename)s:%(lineno)d\t"
+            "%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - "
             "%(message)s"
             if log_level_literal <= logging.DEBUG
-            else "%(asctime)s - %(name)s - %(levelname)s\t%(message)s"
+            else "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
         )
 
         file_formatter = CleanFormatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
