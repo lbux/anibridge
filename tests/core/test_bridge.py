@@ -217,6 +217,7 @@ def _make_profile_config(**overrides: Any) -> SimpleNamespace:
         "destructive_sync": False,
         "search_fallback_threshold": -1,
         "batch_requests": False,
+        "backup_retention_days": -1,
         "dry_run": False,
     }
     defaults.update(overrides)
@@ -303,11 +304,13 @@ def test_backup_list_writes_payload(
     monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
     monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
 
+    # Default config disables backups, so override to enable for this test
+    config = _make_profile_config()
+    config.backup_retention_days = 0
+
     client = BridgeClient(
         profile_name="default",
-        profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
-        ),
+        profile_config=cast("bridge_module.AniBridgeProfileConfig", config),
         global_config=cast(
             "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
         ),
