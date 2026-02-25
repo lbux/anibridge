@@ -758,6 +758,45 @@ async def test_sync_media_updates_entry_and_history(
         history = ctx.session.query(SyncHistory).all()
         assert len(history) == 1
         assert history[0].outcome == SyncOutcome.SYNCED
+        assert history[0].info is not None
+        assert history[0].info.get("operation") == "update_entry"
+        assert history[0].info.get("mode") == "single"
+
+
+@pytest.mark.asyncio
+async def test_sync_media_info_reports_rule_and_status_blocks(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Sync diagnostics should include blocked fields and rule metadata."""
+    stub_client.sync_fields = {"progress": {"_gt": False}, "review": False}
+    movie = make_movie(view_count=2, user_rating=80)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.progress = 0
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert result is SyncOutcome.SYNCED
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert "progress(_gt)" in (record.info.get("sync_rules_blocked") or "")
+        assert "review" in (record.info.get("sync_fields_disabled") or "")
+        assert "user_rating(requires_completed)" in (
+            record.info.get("status_gate_blocked") or ""
+        )
 
 
 @pytest.mark.asyncio
@@ -943,6 +982,10 @@ async def test_process_media_marks_not_found(
     with sync_db as ctx:
         record = ctx.session.query(SyncHistory).one()
         assert record.outcome == SyncOutcome.NOT_FOUND
+        assert record.info is not None
+        assert record.info.get("operation") == "resolve_target"
+        assert record.info.get("reason") == "no_matching_list_entry"
+        assert record.info.get("grandchild_count") is None
 
 
 @pytest.mark.asyncio
