@@ -214,6 +214,7 @@ def _make_profile_config(**overrides: Any) -> SimpleNamespace:
         "list_provider_config": {},
         "sync_fields": {},
         "full_scan": False,
+        "empty_sync": False,
         "destructive_sync": False,
         "search_fallback_threshold": -1,
         "batch_requests": False,

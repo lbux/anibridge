@@ -361,6 +361,31 @@ async def test_calculate_status_paused_and_dropped(
 
 
 @pytest.mark.asyncio
+async def test_calculate_status_empty_sync_marks_idle_as_planning(
+    show_client: ShowSyncClient,
+) -> None:
+    """empty_sync should classify idle shows as planning."""
+    show_client.empty_sync = True
+    show, season, episodes = build_show(view_counts=[0, 0])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=len(episodes),
+    )
+
+    status = await show_client._calculate_status(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+    )
+
+    assert status == ListStatus.PLANNING
+
+
+@pytest.mark.asyncio
 async def test_calculate_review_prefers_episode_for_singletons(
     show_client: ShowSyncClient,
 ) -> None:
