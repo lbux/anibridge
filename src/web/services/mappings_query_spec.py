@@ -7,6 +7,7 @@ from typing import Any
 
 from src.models.db.animap import AnimapEntry
 from src.models.schemas.anilist import MediaFormat, MediaStatus
+from src.utils.cache import cache
 
 __all__ = [
     "QueryFieldKind",
@@ -255,13 +256,14 @@ for spec in _QUERY_FIELDS:
         _FIELD_MAP[alias.lower()] = spec
 
 
-def get_query_field_specs() -> tuple[QueryFieldSpec, ...]:
-    """Return the immutable collection of query field specifications.
+@cache
+def get_query_field_specs() -> list[QueryFieldSpec]:
+    """Return the query field specifications.
 
     Returns:
-        tuple[QueryFieldSpec, ...]: All available query field specifications.
+        list[QueryFieldSpec]: All available query field specifications.
     """
-    return _QUERY_FIELDS
+    return list(_QUERY_FIELDS)
 
 
 def get_query_field_map() -> Mapping[str, QueryFieldSpec]:

@@ -20,7 +20,7 @@ from src.models.schemas.anilist import Media
 from src.web.services.mapping_overrides_service import (
     get_mapping_overrides_service,
 )
-from src.web.services.mappings_query_spec import QueryFieldSpec, get_query_field_specs
+from src.web.services.mappings_query_spec import get_query_field_specs
 from src.web.services.mappings_service import get_mappings_service
 
 __all__ = ["router"]
@@ -120,10 +120,6 @@ class MappingDetailModel(BaseModel):
     targets: list[MappingTargetViewModel] = Field(default_factory=list)
 
 
-def get_query_capabilities() -> list[QueryFieldSpec]:
-    return list(get_query_field_specs())
-
-
 class FieldCapabilityModel(BaseModel):
     key: str
     aliases: list[str] = Field(default_factory=list)
@@ -188,7 +184,7 @@ async def list_mappings(
 
 @router.get("/query-capabilities", response_model=QueryCapabilitiesResponse)
 def query_capabilities() -> QueryCapabilitiesResponse:
-    specs = get_query_capabilities()
+    specs = get_query_field_specs()
     fields = [
         FieldCapabilityModel(
             key=spec.key,
