@@ -110,6 +110,8 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
             return ListStatus.PLANNING
         if has_history:
             return ListStatus.DROPPED
+        if self.empty_sync:
+            return ListStatus.PLANNING
         return None
 
     async def _calculate_user_rating(

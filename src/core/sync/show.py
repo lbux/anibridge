@@ -265,6 +265,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         if item.on_watchlist or child_item.on_watchlist:
             return ListStatus.PLANNING
 
+        if self.empty_sync:
+            return ListStatus.PLANNING
+
         # No activity; leave it untracked
         return None
 

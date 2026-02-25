@@ -95,6 +95,7 @@ class BaseSyncClient[
         animap_client: AnimapClient,
         full_scan: bool,
         destructive_sync: bool,
+        empty_sync: bool = False,
         search_fallback_threshold: int,
         batch_requests: bool,
         dry_run: bool,
@@ -115,6 +116,7 @@ class BaseSyncClient[
         }
         self.full_scan: bool = full_scan
         self.destructive_sync: bool = destructive_sync
+        self.empty_sync: bool = empty_sync
         self.search_fallback_threshold: int = search_fallback_threshold
         self.batch_requests: bool = batch_requests
         self.dry_run: bool = dry_run
