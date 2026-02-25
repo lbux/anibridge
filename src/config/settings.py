@@ -212,6 +212,13 @@ class AniBridgeProfileConfig(BaseModel):
     full_scan: bool = Field(
         default=False, description="Perform full library scans, even on unwatched items"
     )
+    empty_sync: bool = Field(
+        default=False,
+        description=(
+            "When enabled, entries with no watch activity/history are synced as "
+            "planning instead of being skipped"
+        ),
+    )
     destructive_sync: bool = Field(
         default=False,
         description="Allow decreasing watch progress and removing list entries",
