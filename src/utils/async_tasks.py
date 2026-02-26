@@ -21,7 +21,7 @@ async def _run_task(coro: Coroutine[Any, Any, Any], *, name: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception:
-        log.exception("Web: Background task '%s' failed", name)
+        log.exception("Web - Background task '%s' failed", name)
 
 
 def schedule_task(coro: Coroutine[Any, Any, Any], *, name: str) -> None:

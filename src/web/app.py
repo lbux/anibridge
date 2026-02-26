@@ -40,18 +40,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     """
     scheduler: SchedulerClient | None = app.extra.get("scheduler")
     if scheduler is None:
-        log.info("Web: No scheduler passed; external lifecycle management expected")
+        log.info("Web - No scheduler passed; external lifecycle management expected")
     else:
         get_app_state().set_scheduler(scheduler)
         if not scheduler._running:
             await scheduler.initialize()
             await scheduler.start()
-            log.success("Web: Scheduler started for web UI")
+            log.success("Web - Scheduler started for web UI")
 
     try:
         await get_app_state().ensure_public_anilist()
     except Exception:
-        log.debug("Web: Failed to initialize public AniList client at startup")
+        log.debug("Web - Failed to initialize public AniList client at startup")
 
     root_logger = log
     log_ws_handler = get_log_ws_handler()
@@ -87,7 +87,7 @@ def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
     # Add request logging middleware if in debug mode
     if log.level <= DEBUG:
         app.add_middleware(cast(Any, RequestLoggingMiddleware))
-        log.debug("Web: Request logging enabled (debug mode)")
+        log.debug("Web - Request logging enabled (debug mode)")
 
     # Add basic auth middleware if configured
     if config.web.has_auth:
@@ -100,18 +100,18 @@ def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
             htpasswd_path=config.web.basic_auth.htpasswd_path,
             realm=config.web.basic_auth.realm,
         )
-        log.info("Web: HTTP Basic Authentication enabled for web UI")
+        log.info("Web - HTTP Basic Authentication enabled for web UI")
 
     app.include_router(router)
 
     index_file = FRONTEND_BUILD_DIR / "index.html"
     if not FRONTEND_BUILD_DIR.exists():
         log.warning(
-            "Web: Frontend build directory does not exist, no SPA will be served"
+            "Web - Frontend build directory does not exist, no SPA will be served"
         )
         return app
     if not index_file.exists():
-        log.error("Web: Frontend index file does not exist, no SPA will be served")
+        log.error("Web - Frontend index file does not exist, no SPA will be served")
         return app
 
     app.mount("/", StaticFiles(directory=FRONTEND_BUILD_DIR, html=True), name="spa")

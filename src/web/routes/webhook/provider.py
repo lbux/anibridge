@@ -30,7 +30,7 @@ async def provider_webhook(
     )
     scheduler = get_app_state().scheduler
     if not scheduler:
-        log.warning("Webhook: Scheduler not available")
+        log.warning("Webhook - Scheduler not available")
         raise SchedulerNotInitializedError("Scheduler not available")
 
     candidates = scheduler.get_profiles_for_library_provider(provider_namespace)
