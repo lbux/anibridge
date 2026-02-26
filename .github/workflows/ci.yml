@@ -20,6 +20,29 @@ env:
     IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+    lint:
+        name: Lint
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref }}
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v7
+
+            - name: Sync dependencies
+              run: uv sync --group dev --frozen
+
+            - name: Run linters
+              run: uv run ab-lint
+
     tests:
         name: Tests
         runs-on: ubuntu-latest
@@ -45,7 +68,7 @@ jobs:
 
     publish:
         name: Build and Publish Docker Image
-        needs: tests
+        needs: [lint, tests]
         if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/develop') || startsWith(github.ref, 'refs/heads/experimental') || startsWith(github.ref, 'refs/tags/v'))
         runs-on: ubuntu-latest
 
