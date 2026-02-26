@@ -31,6 +31,12 @@ router = APIRouter()
 
 LOG_DIR: Path = (config.data_path / "logs").resolve()
 
+
+def _is_log_filename(name: str) -> bool:
+    lower_name = name.lower()
+    return lower_name.startswith("anibridge.") and ".log" in lower_name
+
+
 LINE_RE = re.compile(
     r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "
     r"(?P<logger>[^ ]+?) - (?P<level>[A-Z]+)\t(?P<message>.*)$"
@@ -41,11 +47,13 @@ def _list_log_files() -> list[Path]:
     if not LOG_DIR.exists():
         return []
     # Include the active log file and rotated backups.
-    return sorted(
-        [p for p in LOG_DIR.glob("AniBridge.*.log*") if p.is_file()],
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+    files = {
+        path.name: path
+        for path in LOG_DIR.iterdir()
+        if path.is_file() and _is_log_filename(path.name)
+    }
+
+    return sorted(files.values(), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 @router.get(
@@ -61,9 +69,9 @@ def list_log_files() -> list[LogFileModel]:
     res: list[LogFileModel] = []
 
     # Determine current effective log level to identify active file.
-    root_logger = logging.getLogger("AniBridge")
+    root_logger = logging.getLogger("anibridge")
     current_level_name = logging.getLevelName(root_logger.getEffectiveLevel())
-    active_filename = f"AniBridge.{current_level_name}.log"
+    active_basename = f"anibridge.{current_level_name}.log"
 
     for f in files:
         st = f.stat()
@@ -72,8 +80,8 @@ def list_log_files() -> list[LogFileModel]:
                 name=f.name,
                 size=st.st_size,
                 mtime=int(st.st_mtime * 1000),
-                # Active file is the one matching the current log level base file
-                current=f.name == active_filename,
+                # Active file must exactly match the lowercase logger filename
+                current=f.name == active_basename,
             )
         )
 
