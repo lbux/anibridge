@@ -190,7 +190,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 if any(r.contains(episode.index) for r in mapping.ranges):
                     matched.add(episode.key)
                     filtered.append(episode)
-        return filtered or list(episodes)
+        return filtered
 
     async def _get_all_trackable_items(
         self, item: LibraryShow

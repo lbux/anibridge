@@ -260,6 +260,25 @@ def test_filter_episodes_by_ranges(show_client: ShowSyncClient) -> None:
     assert [ep.index for ep in filtered] == [2]
 
 
+def test_filter_episodes_by_ranges_returns_empty_when_no_range_matches(
+    show_client: ShowSyncClient,
+) -> None:
+    """Non-overlapping source ranges should not fall back to all episodes."""
+    _show, season, episodes = build_show(view_counts=[0] * 12)
+    mapping = SourceRangeMapping(
+        descriptor=("anilist", "2", None),
+        ranges=(SourceRange(start=13, end=24, ratio=None),),
+    )
+
+    filtered = show_client._filter_episodes_by_ranges(
+        episodes,
+        season.index,
+        [mapping],
+    )
+
+    assert filtered == []
+
+
 @pytest.mark.asyncio
 async def test_collect_prefetch_keys_sorted(show_client: ShowSyncClient) -> None:
     """Prefetch keys should be sorted and unique."""
