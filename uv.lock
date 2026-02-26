@@ -175,7 +175,7 @@ dev = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b6"
+version = "0.2.0b7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -184,9 +184,9 @@ dependencies = [
     { name = "limiter" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/fd/1b768f5fc797152f0e2b88888166b433d444bef5e50f60a5caf8712ed73d/anibridge_anilist_provider-0.2.0b6.tar.gz", hash = "sha256:7491351e69a1667e74e7f102a3bc8092c90bced0977195af0360633e0beddf8b", size = 14350, upload-time = "2026-02-23T15:18:19.771Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/cc/89edc2d26313e6cfe94840ed5f503ce82c402d495977be3a10de7da6106f/anibridge_anilist_provider-0.2.0b7.tar.gz", hash = "sha256:033792cfb6e8d52531e1b3584c89168ed5f1a4ceef279e4baaeb7d1b443ff706", size = 14431, upload-time = "2026-02-26T04:43:57.548Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/29/87ceb54a29c587a93ed2d50a80f23a3419f54a84713d9e2f4102b3fe0a1e/anibridge_anilist_provider-0.2.0b6-py3-none-any.whl", hash = "sha256:835c952cda60bafd42e8def2fa1a565da1c71486d8848446df72201e5882e82d", size = 16406, upload-time = "2026-02-23T15:18:21.967Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/fc/fbc8ec1e8a4943123e45952c28a2c8ce8e4f7418e05f9489f015f0fffece/anibridge_anilist_provider-0.2.0b7-py3-none-any.whl", hash = "sha256:36d8a655ea3ee7f335174bf49bc322bfaca1185b9df2f24bda62a080a301ea10", size = 16495, upload-time = "2026-02-26T04:43:58.246Z" },
 ]
 
 [[package]]
