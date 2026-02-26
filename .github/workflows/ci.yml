@@ -39,8 +39,6 @@ jobs:
 
             - name: Set up pnpm
               uses: pnpm/action-setup@v4
-              with:
-                  cache: true
 
             - name: Sync dependencies
               run: uv sync --group dev --frozen && pnpm install -C frontend --frozen-lockfile
