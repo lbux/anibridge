@@ -1,6 +1,6 @@
 [project]
 name = "AniBridge"
-version = "2.1.0b1"
+version = "2.1.0b2"
 description = "The smart way to keep your anime lists perfectly synchronized."
 readme = "README.md"
 requires-python = ">=3.14"
