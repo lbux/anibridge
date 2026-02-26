@@ -422,10 +422,15 @@ class AnimapClient:
 
         with db() as ctx:
             existing_entries = {
-                descriptor_key(
-                    (entry.provider, entry.entry_id, entry.entry_scope)
-                ): entry
-                for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
+                descriptor_key((provider, entry_id, entry_scope)): entry_id_db
+                for entry_id_db, provider, entry_id, entry_scope in ctx.session.execute(
+                    select(
+                        AnimapEntry.id,
+                        AnimapEntry.provider,
+                        AnimapEntry.entry_id,
+                        AnimapEntry.entry_scope,
+                    )
+                )
             }
 
             new_entry_keys = set(descriptors.keys())
@@ -442,7 +447,7 @@ class AnimapClient:
 
             if to_delete_entries:
                 for chunk in batched(
-                    [existing_entries[k].id for k in to_delete_entries],
+                    [existing_entries[k] for k in to_delete_entries],
                     self._SQLITE_SAFE_VARIABLES,
                     strict=False,
                 ):
@@ -475,38 +480,55 @@ class AnimapClient:
 
             # Refresh entry map after inserts
             existing_entries = {
-                descriptor_key(
-                    (entry.provider, entry.entry_id, entry.entry_scope)
-                ): entry
-                for entry in ctx.session.execute(select(AnimapEntry)).scalars().all()
+                descriptor_key((provider, entry_id, entry_scope)): entry_id_db
+                for entry_id_db, provider, entry_id, entry_scope in ctx.session.execute(
+                    select(
+                        AnimapEntry.id,
+                        AnimapEntry.provider,
+                        AnimapEntry.entry_id,
+                        AnimapEntry.entry_scope,
+                    )
+                )
             }
 
             # Translate edge keys to entry-id keyed tuples
-            edge_key_to_ids: dict[tuple[int, int, str, str | None], AnimapEdge] = {}
+            edge_id_keys: set[tuple[int, int, str, str | None]] = set()
             provenance_by_id_key: dict[tuple[int, int, str, str | None], list[str]] = {}
-            for key, edge in edges.items():
+            for key in edges:
                 src_key, dst_key, source_range, destination_range = key
-                src_entry = existing_entries.get(src_key)
-                dst_entry = existing_entries.get(dst_key)
-                if not src_entry or not dst_entry:
+                src_entry_id = existing_entries.get(src_key)
+                dst_entry_id = existing_entries.get(dst_key)
+                if src_entry_id is None or dst_entry_id is None:
                     continue
-                id_key = (src_entry.id, dst_entry.id, source_range, destination_range)
-                edge_key_to_ids[id_key] = edge
+                id_key = (src_entry_id, dst_entry_id, source_range, destination_range)
+                edge_id_keys.add(id_key)
                 provenance_by_id_key[id_key] = provenance.get(key, [])
 
-            existing_mappings: dict[tuple[int, int, str, str | None], AnimapMapping] = {
+            existing_mappings: dict[tuple[int, int, str, str | None], int] = {
                 (
-                    mapping.source_entry_id,
-                    mapping.destination_entry_id,
-                    mapping.source_range,
-                    mapping.destination_range,
-                ): mapping
-                for mapping in ctx.session.execute(select(AnimapMapping))
-                .scalars()
-                .all()
+                    source_entry_id,
+                    destination_entry_id,
+                    source_range,
+                    destination_range,
+                ): mapping_id
+                for (
+                    mapping_id,
+                    source_entry_id,
+                    destination_entry_id,
+                    source_range,
+                    destination_range,
+                ) in ctx.session.execute(
+                    select(
+                        AnimapMapping.id,
+                        AnimapMapping.source_entry_id,
+                        AnimapMapping.destination_entry_id,
+                        AnimapMapping.source_range,
+                        AnimapMapping.destination_range,
+                    )
+                )
             }
 
-            new_keys = set(edge_key_to_ids.keys())
+            new_keys = edge_id_keys
             existing_keys = set(existing_mappings.keys())
 
             to_delete_mappings = existing_keys - new_keys
@@ -568,21 +590,33 @@ class AnimapClient:
             # Refresh mapping map to include newly inserted rows (ids now populated)
             existing_mappings = {
                 (
-                    mapping.source_entry_id,
-                    mapping.destination_entry_id,
-                    mapping.source_range,
-                    mapping.destination_range,
-                ): mapping
-                for mapping in ctx.session.execute(select(AnimapMapping))
-                .scalars()
-                .all()
+                    source_entry_id,
+                    destination_entry_id,
+                    source_range,
+                    destination_range,
+                ): mapping_id
+                for (
+                    mapping_id,
+                    source_entry_id,
+                    destination_entry_id,
+                    source_range,
+                    destination_range,
+                ) in ctx.session.execute(
+                    select(
+                        AnimapMapping.id,
+                        AnimapMapping.source_entry_id,
+                        AnimapMapping.destination_entry_id,
+                        AnimapMapping.source_range,
+                        AnimapMapping.destination_range,
+                    )
+                )
             }
 
             desired_provenance: dict[int, list[str]] = {}
             for key, sources in provenance_by_id_key.items():
-                mapping = existing_mappings.get(key)
-                if mapping:
-                    desired_provenance[mapping.id] = sources
+                mapping_id = existing_mappings.get(key)
+                if mapping_id is not None:
+                    desired_provenance[mapping_id] = sources
 
             self._sync_provenance_rows(ctx.session, desired_provenance)
 
