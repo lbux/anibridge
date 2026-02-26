@@ -37,8 +37,14 @@ jobs:
             - name: Install uv
               uses: astral-sh/setup-uv@v7
 
+            - name: Set up Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 25
+                  cache: pnpm
+
             - name: Sync dependencies
-              run: uv sync --group dev --frozen
+              run: uv sync --group dev --frozen && pnpm install -C frontend --frozen-lockfile
 
             - name: Run linters
               run: uv run ab-lint
