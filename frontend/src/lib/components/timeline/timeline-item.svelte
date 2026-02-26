@@ -424,7 +424,9 @@
                         class="mb-1 text-[10px] font-semibold tracking-[0.08em] text-slate-400 uppercase">
                         {formatInfoKey(key)}
                     </dt>
-                    <dd class="leading-relaxed wrap-break-word text-slate-100">{value}</dd>
+                    <dd class="leading-relaxed wrap-break-word text-slate-100">
+                        {value}
+                    </dd>
                 </div>
             {/each}
         </dl>
