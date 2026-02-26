@@ -1,11 +1,13 @@
 """Caching decorators for LRU, TTL, and file-based caching. Supports async functions."""
 
 import asyncio
+import atexit
 import contextlib
 import functools
 import hashlib
 import inspect
 import threading
+import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +26,8 @@ T = TypeVar("T")
 _DEFAULT_CACHE_DIR: Path | None = None
 _UNBOUNDED_MAXSIZE = 2**31 - 1
 _MISSING = object()
+_DISK_CACHES: set[DiskCache] = set()
+_DISK_CACHES_LOCK = threading.RLock()
 
 
 def _resolve_default_cache_dir() -> Path:
@@ -34,6 +38,27 @@ def _resolve_default_cache_dir() -> Path:
 
         _DEFAULT_CACHE_DIR = get_config().data_path / ".cache"
     return _DEFAULT_CACHE_DIR
+
+
+def _close_disk_cache(cache: DiskCache) -> None:
+    with contextlib.suppress(Exception):
+        cache.close()
+
+
+def _close_all_disk_caches() -> None:
+    with _DISK_CACHES_LOCK:
+        caches = tuple(_DISK_CACHES)
+        _DISK_CACHES.clear()
+    for cache in caches:
+        _close_disk_cache(cache)
+
+
+atexit.register(_close_all_disk_caches)
+
+
+def _register_disk_cache(cache: DiskCache) -> None:
+    with _DISK_CACHES_LOCK:
+        _DISK_CACHES.add(cache)
 
 
 class CachedFunction(Protocol[P, T]):
@@ -608,11 +633,17 @@ def file_cache(
         func_cache_dir = resolved_cache_dir / func_name
         func_cache_dir.mkdir(parents=True, exist_ok=True)
         disk_cache = DiskCache(str(func_cache_dir))
+        _register_disk_cache(disk_cache)
         stats_lock = threading.RLock()
         is_async = inspect.iscoroutinefunction(func)
         in_flight: dict[Any, asyncio.Future[T]] = {}
         hits = 0
         misses = 0
+
+        def close_cache() -> None:
+            with _DISK_CACHES_LOCK:
+                _DISK_CACHES.discard(disk_cache)
+            _close_disk_cache(disk_cache)
 
         def get_store_key(cache_key: Any) -> str:
             """Generate a stable string key for disk cache lookup."""
@@ -712,6 +743,7 @@ def file_cache(
 
             async_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
             async_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+            weakref.finalize(async_wrapper, close_cache)
             return cast(CachedAsyncFunction[P, T], async_wrapper)
 
         @functools.wraps(func)
@@ -738,6 +770,7 @@ def file_cache(
 
         sync_wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
         sync_wrapper.cache_info = cache_info  # type: ignore[attr-defined]
+        weakref.finalize(sync_wrapper, close_cache)
         return cast(CachedFunction[P, T], sync_wrapper)
 
     return decorator
