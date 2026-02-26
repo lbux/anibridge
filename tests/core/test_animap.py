@@ -328,6 +328,27 @@ def test_sync_db_refreshes_provenance_when_hash_matches(
     assert [row.n for row in provenance_rows] == [0, 1]
 
 
+def test_sync_db_skips_work_when_hashes_match(
+    animap_client: AnimapClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unchanged mappings/provenance should skip expensive rebuild checks."""
+    base_mappings = {"anilist:1": {"tmdb:1": {"1": None}}}
+    fake_client = FakeMappingsClient(
+        mappings=base_mappings,
+        provenance={"anilist:1": ["/same.json"]},
+    )
+    animap_client.mappings_client = cast(MappingsClient, fake_client)
+    asyncio.run(animap_client.sync_db())
+
+    def _should_not_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("_build_edges should not run when hashes match")
+
+    monkeypatch.setattr(animap_client, "_build_edges", _should_not_build)
+
+    asyncio.run(animap_client.sync_db())
+
+
 def test_sync_db_skips_invalid_range_strings(
     animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
 ) -> None:

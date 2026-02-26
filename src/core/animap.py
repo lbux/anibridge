@@ -63,6 +63,8 @@ class AnimapClient:
     """Client for managing Animap data using the v3 range-based schema."""
 
     _SQLITE_SAFE_VARIABLES = 900
+    _MAPPINGS_HASH_KEY = "animap_mappings_hash"
+    _PROVENANCE_HASH_KEY = "animap_provenance_hash"
 
     def __init__(self, data_path: Path, upstream_url: str | None) -> None:
         """Create a new Animap client."""
@@ -403,6 +405,29 @@ class AnimapClient:
         mappings = await self.mappings_client.load_mappings()
         provenance_by_descriptor = self.mappings_client.get_provenance()
 
+        curr_mappings_hash = md5(
+            json.dumps(mappings, sort_keys=True).encode()
+        ).hexdigest()
+        curr_provenance_hash = md5(
+            json.dumps(provenance_by_descriptor, sort_keys=True).encode()
+        ).hexdigest()
+
+        with db() as ctx:
+            stored_mappings_hash = ctx.session.get(
+                Housekeeping, self._MAPPINGS_HASH_KEY
+            )
+            stored_provenance_hash = ctx.session.get(
+                Housekeeping, self._PROVENANCE_HASH_KEY
+            )
+            if (
+                stored_mappings_hash is not None
+                and stored_mappings_hash.value == curr_mappings_hash
+                and stored_provenance_hash is not None
+                and stored_provenance_hash.value == curr_provenance_hash
+            ):
+                log.debug("Mappings and provenance unchanged; skipping sync")
+                return
+
         descriptors, edges, provenance, invalid_count = self._build_edges(
             mappings, provenance_by_descriptor
         )
@@ -416,10 +441,6 @@ class AnimapClient:
                 "Skipped %s invalid mapping entries during parse",
                 invalid_count,
             )
-        curr_mappings_hash = md5(
-            json.dumps(mappings, sort_keys=True).encode()
-        ).hexdigest()
-
         with db() as ctx:
             existing_entries = {
                 descriptor_key((provider, entry_id, entry_scope)): entry_id_db
@@ -621,7 +642,13 @@ class AnimapClient:
             self._sync_provenance_rows(ctx.session, desired_provenance)
 
             ctx.session.merge(
-                Housekeeping(key="animap_mappings_hash", value=curr_mappings_hash)
+                Housekeeping(key=self._MAPPINGS_HASH_KEY, value=curr_mappings_hash)
+            )
+            ctx.session.merge(
+                Housekeeping(
+                    key=self._PROVENANCE_HASH_KEY,
+                    value=curr_provenance_hash,
+                )
             )
 
             ctx.session.commit()
