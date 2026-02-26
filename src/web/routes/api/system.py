@@ -12,11 +12,13 @@ try:
 except ImportError:  # Windows does not have resource module
     resource = None  # ty:ignore[invalid-assignment]
 
+from fastapi import Depends
 from fastapi.routing import APIRouter
 from pydantic import BaseModel
 
 from src import __git_hash__, __version__
 from src.exceptions import AniBridgeError, SchedulerUnavailableError
+from src.web.routes.api.config import require_config_api_access
 from src.web.routes.api.status import (
     ProfileConfigModel,
     ProfileRuntimeStatusModel,
@@ -79,6 +81,11 @@ class AboutResponse(BaseModel):
 class MetaResponse(BaseModel):
     version: str
     git_hash: str
+
+
+class RestartResponse(BaseModel):
+    ok: bool
+    message: str
 
 
 router = APIRouter()
@@ -269,3 +276,35 @@ def meta() -> MetaResponse:
         dict[str, str]: The application metadata.
     """
     return MetaResponse(version=__version__, git_hash=__git_hash__)
+
+
+@router.post(
+    "/restart",
+    summary="Request graceful server restart",
+    dependencies=[Depends(require_config_api_access)],
+    response_model=RestartResponse,
+    status_code=202,
+)
+def api_restart() -> RestartResponse:
+    """Request a graceful scheduler shutdown and process restart.
+
+    Returns:
+        RestartResponse: Accepted restart request status.
+
+    Raises:
+        SchedulerUnavailableError: If scheduler is unavailable.
+    """
+    app_state = get_app_state()
+    scheduler = app_state.scheduler
+    if not scheduler:
+        raise SchedulerUnavailableError(
+            "Scheduler not available; restart unsupported in this mode"
+        )
+
+    app_state.request_restart()
+    scheduler.request_shutdown()
+
+    return RestartResponse(
+        ok=True,
+        message="Restart requested. AniBridge will restart shortly.",
+    )
