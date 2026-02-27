@@ -34,12 +34,12 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.13.3",
     "alembic>=1.18.3",
-    "anibridge-anilist-provider>=0.2.0b4,<0.3.0",
-    "anibridge-jellyfin-provider>=0.2.0b2,<0.3.0",
-    "anibridge-library-base>=0.2.0b2",
-    "anibridge-list-base>=0.2.0b3",
-    "anibridge-mal-provider>=0.2.0b3,<0.3.0",
-    "anibridge-plex-provider>=0.2.0b1,<0.3.0",
+    "anibridge-anilist-provider>=0.2.0b8,<0.3.0",
+    "anibridge-jellyfin-provider>=0.2.0b5,<0.3.0",
+    "anibridge-library-base>=0.2.0b5",
+    "anibridge-list-base>=0.2.0b6",
+    "anibridge-mal-provider>=0.2.0b6,<0.3.0",
+    "anibridge-plex-provider>=0.2.0b6,<0.3.0",
     "bcrypt>=5.0.0",
     "cachetools>=5.5.2",
     "colorama>=0.4.6",
@@ -51,20 +51,19 @@ dependencies = [
     "pyparsing>=3.3.2",
     "rapidfuzz>=3.14.3",
     "sqlalchemy>=2.0.46",
-    "zstandard>=0.25.0",
 ]
 
 [project.scripts]
-ab-build = "scripts.dev:build"
-ab-bump-version = "scripts.dev:bump_version"
-ab-clean = "scripts.dev:clean"
-ab-deps-install = "scripts.dev:deps_install"
-ab-deps-upgrade = "scripts.dev:deps_upgrade"
-ab-dev = "scripts.dev:dev"
-ab-format = "scripts.dev:format"
-ab-lint = "scripts.dev:lint"
-ab-start = "scripts.dev:start"
-ab-test = "scripts.dev:test"
+ab-build = "anibridge.scripts.dev:build"
+ab-bump-version = "anibridge.scripts.dev:bump_version"
+ab-clean = "anibridge.scripts.dev:clean"
+ab-deps-install = "anibridge.scripts.dev:deps_install"
+ab-deps-upgrade = "anibridge.scripts.dev:deps_upgrade"
+ab-dev = "anibridge.scripts.dev:dev"
+ab-format = "anibridge.scripts.dev:format"
+ab-lint = "anibridge.scripts.dev:lint"
+ab-start = "anibridge.scripts.dev:start"
+ab-test = "anibridge.scripts.dev:test"
 
 [project.urls]
 Documentation = "https://anibridge.eliasbenb.dev"
@@ -111,8 +110,8 @@ addopts = "--cov=src"
 filterwarnings = []
 
 [tool.uv.build-backend]
-module-name = "scripts"
-module-root = ""
+module-name = "anibridge"
+namespace = true
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
@@ -125,6 +124,6 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "pytest>=9.0.2",
-    "ruff>=0.14.14",
-    "ty>=0.0.14",
+    "ruff>=0.15.4",
+    "ty>=0.0.19",
 ]

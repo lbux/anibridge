@@ -1,4 +1,4 @@
-"""Tests covering helper utilities on `src.core.sync.base`."""
+"""Tests covering helper utilities on `anibridge.app.core.sync.base`."""
 
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
@@ -6,20 +6,15 @@ from typing import Any, cast
 
 import pytest
 from anibridge.library import MediaKind
-from anibridge.list import (
-    ListEntry as ListEntryProtocol,
-)
-from anibridge.list import (
-    ListMediaType,
-    ListStatus,
-)
+from anibridge.list import ListEntry as ListEntryProtocol
+from anibridge.list import ListMediaType, ListStatus
 
-from src.config.settings import SyncField
-from src.core.sync.base import BaseSyncClient, SyncTarget, diff_snapshots
-from src.core.sync.stats import BatchUpdate, EntrySnapshot, ItemIdentifier
-from src.models.db.pin import Pin
-from src.models.db.sync_history import SyncHistory, SyncOutcome
-from src.utils.terminal import ARROW
+from anibridge.app.config.settings import SyncField
+from anibridge.app.core.sync.base import BaseSyncClient, SyncTarget, diff_snapshots
+from anibridge.app.core.sync.stats import BatchUpdate, EntrySnapshot, ItemIdentifier
+from anibridge.app.models.db.pin import Pin
+from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
+from anibridge.app.utils.terminal import ARROW
 from tests.core.sync.fakes import (
     FakeAnimapClient,
     FakeLibraryMovie,

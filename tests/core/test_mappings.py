@@ -1,15 +1,15 @@
 """Tests for the core mappings client (descriptor graph)."""
 
 import json
+from compression import zstd
 from pathlib import Path
 from typing import Any, cast
 
 import aiohttp
 import pytest
-import zstandard
 
-import src.core.mappings as mappings_module
-from src.core.mappings import MappingsClient
+import anibridge.app.core.mappings as mappings_module
+from anibridge.app.core.mappings import MappingsClient
 
 
 def _make_client(tmp_path: Path) -> MappingsClient:
@@ -134,7 +134,7 @@ async def test_finalize_mappings_with_invalid_includes(tmp_path: Path) -> None:
     mappings = {"$includes": "bad", "anilist:1": {"tmdb:2": {"1": None}}}
 
     merged = await client._finalize_mappings(
-        "source.json", cast("mappings_module.AnimapDict", mappings), set()
+        "source.json", cast(mappings_module.AnimapDict, mappings), set()
     )
 
     assert "anilist:1" in merged
@@ -238,7 +238,7 @@ async def test_load_mappings_url_retries(
         return None
 
     monkeypatch.setattr(client, "_get_session", _get_session)
-    monkeypatch.setattr("src.core.mappings.asyncio.sleep", _fast_sleep)
+    monkeypatch.setattr("anibridge.app.core.mappings.asyncio.sleep", _fast_sleep)
 
     result = await client._load_mappings_url("http://example", set())
 
@@ -269,7 +269,7 @@ def test_decode_mappings_zstd_payload(tmp_path: Path) -> None:
     """Zstandard-compressed payloads should be decoded."""
     client = _make_client(tmp_path)
     raw = b'{"anilist:1": {"tmdb:2": {"1": null}}}'
-    compressed = zstandard.ZstdCompressor().compress(raw)
+    compressed = zstd.compress(raw)
 
     result = client._decode_mappings(compressed, "mappings.json.zst")
 
