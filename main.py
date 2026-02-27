@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from anibridge.app import ANIBDRIGE_HEADER, log
 from anibridge.app.config.settings import get_config
 from anibridge.app.core.sched import SchedulerClient
+from anibridge.app.utils.terminal import supports_color
 from anibridge.app.web.app import create_app
 from anibridge.app.web.state import get_app_state
 
@@ -144,6 +145,8 @@ async def run() -> int:
             log.success(
                 "AniBridge - Web UI started at "
                 f"\033[92mhttp://{config.web.host}:{config.web.port} "
+                if supports_color()
+                else f"http://{config.web.host}:{config.web.port} "
                 "(ctrl+c to stop)\033[0m"
             )
 
