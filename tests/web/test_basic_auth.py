@@ -123,6 +123,33 @@ def test_basic_auth_middleware_plain_and_htpasswd(
     assert success_htpasswd.json() == {"ok": True}
 
 
+def test_basic_auth_middleware_bypasses_healthz() -> None:
+    """BasicAuthMiddleware should not challenge healthz endpoint."""
+    test_app = FastAPI()
+    test_app.add_middleware(
+        BasicAuthMiddleware,  # type: ignore[arg-type]
+        username="admin",
+        password="secret",
+        realm="Realm",
+    )
+
+    @test_app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @test_app.get("/protected")
+    async def protected() -> dict[str, bool]:
+        return {"ok": True}
+
+    client = TestClient(test_app)
+
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+
+    assert client.get("/protected").status_code == 401
+
+
 def test_create_app_registers_basic_auth_middleware_when_configured(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

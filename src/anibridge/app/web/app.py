@@ -102,6 +102,11 @@ def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
         )
         log.info("Web - HTTP Basic Authentication enabled for web UI")
 
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Health check endpoint."""
+        return {"status": "ok"}
+
     app.include_router(router)
 
     index_file = FRONTEND_BUILD_DIR / "index.html"
