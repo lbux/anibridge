@@ -1,6 +1,6 @@
 """Version Utilities Module."""
 
-import tomllib
+import importlib.metadata
 from pathlib import Path
 
 from anibridge.app import __file__ as src_file
@@ -22,27 +22,9 @@ def get_pyproject_version() -> str:
     Returns:
         str: AniBridge's version
     """
-    if src_file is None:
-        return "unknown"
-
     try:
-        project_root = _get_project_root()
-        if project_root is None:
-            return "unknown"
-
-        toml_file = project_root / "pyproject.toml"
-
-        if not toml_file.exists() or not toml_file.is_file():
-            return "unknown"
-
-        with toml_file.open("rb") as f:
-            toml_data = tomllib.load(f)
-
-        project_data = toml_data.get("project") or {}
-        if isinstance(project_data, dict) and "version" in project_data:
-            return project_data["version"]
-        return "unknown"
-    except Exception:
+        return importlib.metadata.version("anibridge")
+    except importlib.metadata.PackageNotFoundError:
         return "unknown"
 
 
