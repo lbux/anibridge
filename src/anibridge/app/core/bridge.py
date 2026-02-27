@@ -262,6 +262,7 @@ class BridgeClient:
             search_fallback_threshold=self.profile_config.search_fallback_threshold,
             batch_requests=self.profile_config.batch_requests,
             dry_run=self.profile_config.dry_run,
+            promote_rewatch=self.profile_config.promote_rewatch,
             profile_name=self.profile_name,
         )
         show_sync = ShowSyncClient(
@@ -275,6 +276,7 @@ class BridgeClient:
             search_fallback_threshold=self.profile_config.search_fallback_threshold,
             batch_requests=self.profile_config.batch_requests,
             dry_run=self.profile_config.dry_run,
+            promote_rewatch=self.profile_config.promote_rewatch,
             profile_name=self.profile_name,
         )
 

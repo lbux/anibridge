@@ -993,3 +993,192 @@ async def test_process_media_skips_untrackable_items(
     await stub_client.process_media(movie)
 
     assert stub_client.sync_stats.skipped == 1
+
+
+@pytest.mark.asyncio
+async def test_promote_rewatch_promotes_current_to_repeating_when_completed(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """promote_rewatch=True changes CURRENT to REPEATING if COMPLETED."""
+    stub_client.promote_rewatch = True
+    stub_client._status_override = ListStatus.CURRENT
+
+    provider = cast(Any, stub_client.list_provider)
+    movie = make_movie()
+    entry = FakeListEntry(
+        provider=provider,
+        key="m1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = ListStatus.COMPLETED
+
+    stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
+    stub_client._map_results = [
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+    ]
+    provider.entries["m1"] = entry
+
+    outcome = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=entry,
+        list_media_key="m1",
+    )
+
+    assert outcome == SyncOutcome.SYNCED
+    assert entry.status == ListStatus.REPEATING
+
+
+@pytest.mark.asyncio
+async def test_promote_rewatch_preserves_repeating_when_already_repeating(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """promote_rewatch=True should keep REPEATING when entry is already REPEATING."""
+    stub_client.promote_rewatch = True
+    stub_client._status_override = ListStatus.CURRENT
+    stub_client._progress_override = 3
+
+    provider = cast(Any, stub_client.list_provider)
+    movie = make_movie()
+    entry = FakeListEntry(
+        provider=provider,
+        key="m1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = ListStatus.REPEATING
+    entry.progress = 1
+
+    stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
+    stub_client._map_results = [
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+    ]
+    provider.entries["m1"] = entry
+
+    outcome = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=entry,
+        list_media_key="m1",
+    )
+
+    assert outcome == SyncOutcome.SYNCED
+    assert entry.status == ListStatus.REPEATING
+    assert entry.progress == 3
+
+
+@pytest.mark.asyncio
+async def test_promote_rewatch_disabled_does_not_change_current(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """promote_rewatch=False should not promote CURRENT to REPEATING."""
+    stub_client.promote_rewatch = False
+    stub_client._status_override = ListStatus.CURRENT
+
+    provider = cast(Any, stub_client.list_provider)
+    movie = make_movie()
+    entry = FakeListEntry(
+        provider=provider,
+        key="m1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = ListStatus.COMPLETED
+
+    stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
+    stub_client._map_results = [
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+    ]
+    provider.entries["m1"] = entry
+
+    outcome = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=entry,
+        list_media_key="m1",
+    )
+
+    assert outcome == SyncOutcome.SYNCED
+    assert entry.status == ListStatus.CURRENT
+
+
+@pytest.mark.asyncio
+async def test_promote_rewatch_respects_sync_fields_repeating_disabled(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """sync_fields.status.repeating=False should block promote_rewatch promotion."""
+    stub_client.promote_rewatch = True
+    stub_client.sync_fields = {"status": {"repeating": False}}
+    stub_client._status_override = ListStatus.CURRENT
+
+    provider = cast(Any, stub_client.list_provider)
+    movie = make_movie()
+    entry = FakeListEntry(
+        provider=provider,
+        key="m1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = ListStatus.COMPLETED
+
+    stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
+    stub_client._map_results = [
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+    ]
+    provider.entries["m1"] = entry
+
+    await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=entry,
+        list_media_key="m1",
+    )
+
+    # Promotion to REPEATING is blocked by sync_fields, so status stays COMPLETED
+    # Other fields may still sync, so outcome can be SYNCED
+    assert entry.status == ListStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "initial_status",
+    [ListStatus.PLANNING, ListStatus.DROPPED, ListStatus.PAUSED],
+)
+async def test_promote_rewatch_does_not_affect_non_completed_statuses(
+    stub_client: StubSyncClient, sync_db, initial_status: ListStatus
+) -> None:
+    """promote_rewatch should only apply when entry was COMPLETED or REPEATING."""
+    stub_client.promote_rewatch = True
+    stub_client._status_override = ListStatus.CURRENT
+
+    provider = cast(Any, stub_client.list_provider)
+    movie = make_movie()
+    entry = FakeListEntry(
+        provider=provider,
+        key="m1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = initial_status
+
+    stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
+    stub_client._map_results = [
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+    ]
+    provider.entries["m1"] = entry
+
+    outcome = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=entry,
+        list_media_key="m1",
+    )
+
+    assert outcome == SyncOutcome.SYNCED
+    assert entry.status == ListStatus.CURRENT
