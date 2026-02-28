@@ -19,6 +19,7 @@ __all__ = [
 _ROOT_LIBRARY_PACKAGE = "anibridge.providers.library"
 _ROOT_LIST_PACKAGE = "anibridge.providers.list"
 _DEFAULT_LIBRARY_PROVIDER_CLASSES: tuple[str, ...] = (
+    f"{_ROOT_LIBRARY_PACKAGE}.emby.EmbyLibraryProvider",
     f"{_ROOT_LIBRARY_PACKAGE}.jellyfin.JellyfinLibraryProvider",
     f"{_ROOT_LIBRARY_PACKAGE}.plex.PlexLibraryProvider",
 )

@@ -108,6 +108,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "alembic" },
     { name = "anibridge-anilist-provider" },
+    { name = "anibridge-emby-provider" },
     { name = "anibridge-jellyfin-provider" },
     { name = "anibridge-library-base" },
     { name = "anibridge-list-base" },
@@ -140,6 +141,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "alembic", specifier = ">=1.18.4" },
     { name = "anibridge-anilist-provider", specifier = ">=0.2.0b8,<0.3.0" },
+    { name = "anibridge-emby-provider", git = "https://github.com/anibridge/anibridge-emby-provider.git" },
     { name = "anibridge-jellyfin-provider", specifier = ">=0.2.0b5,<0.3.0" },
     { name = "anibridge-library-base", specifier = ">=0.2.0b5" },
     { name = "anibridge-list-base", specifier = ">=0.2.0b6" },
@@ -179,6 +181,16 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/db/c1/7eba71d1841c96cf81a58515ecf75ed7c320441aff95dcf6404f25a7c224/anibridge_anilist_provider-0.2.0b8.tar.gz", hash = "sha256:f06cd053366b4a9236fce78265620686f7a31f7f15ea752c0ee971fdf97e84ca", size = 14491, upload-time = "2026-02-27T06:22:18.899Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/45/6fafaffce085ddf9636f0c4902b7368a6f33cbcfafe0a95b67aebf0f2716/anibridge_anilist_provider-0.2.0b8-py3-none-any.whl", hash = "sha256:8864a0cc2dca6a05744c892bc24947ebfe6def89080f8c31670bf95b85e8975d", size = 16907, upload-time = "2026-02-27T06:22:17.768Z" },
+]
+
+[[package]]
+name = "anibridge-emby-provider"
+version = "0.2.0b1"
+source = { git = "https://github.com/anibridge/anibridge-emby-provider.git#1e345f125c921e448815f227663dddc44f916fba" }
+dependencies = [
+    { name = "anibridge-library-base" },
+    { name = "embyclient" },
+    { name = "requests" },
 ]
 
 [[package]]
@@ -492,6 +504,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
+]
+
+[[package]]
+name = "embyclient"
+version = "4.9.0.33"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "python-dateutil" },
+    { name = "six" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/da/e94f3d8751c536259fa3b60cc53276e3672d2d2d88fd67137c6897607a42/embyclient-4.9.0.33.tar.gz", hash = "sha256:5b04ce152ae4c60f3b9a78531c0daecf6150f2de7fdd7e9fb410d757d8b7632a", size = 440830, upload-time = "2024-12-14T00:05:36.71Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/ae/5081cc18bfe1182fc53fb6ea33087af47f39e5135b83c02933c346e98c9e/embyclient-4.9.0.33-py3-none-any.whl", hash = "sha256:f8dc6d49ee5aeb3835ba3433becd6d8905833292f7c8e87e1b2f6400fc3a9018", size = 831569, upload-time = "2024-12-14T00:05:34.325Z" },
 ]
 
 [[package]]
