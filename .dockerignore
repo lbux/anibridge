@@ -14,20 +14,6 @@
 # Pytest
 tests/
 
-# Virtual environments
-.venv/
-venv/
-
-########################################################
-# ANYTHING BELOW THIS LINE IS A COPY OF THE .GITIGNORE #
-########################################################
-
-# Data
-data/
-
-# Development packages
-packages/
-
 ##################################################################
 # https://github.com/github/gitignore/blob/main/Python.gitignore #
 ##################################################################
@@ -254,12 +240,23 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+#############################
+# Custom ignores start here #
+#############################
+
+# Data
+data/
+
+# Development packages
+packages/
+
 # Profilers
 *.pyspy
 *.memray
 *profile.bin
 
-# Node
+# Frontend
 node_modules/
 .pnpm-store/
 .svelte-kit/
+!frontend/src/lib/
