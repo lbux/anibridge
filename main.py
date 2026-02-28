@@ -111,6 +111,7 @@ async def run() -> int:
     """
     app_scheduler: SchedulerClient | None = None
     server_task: asyncio.Task | None = None
+    server: uvicorn.Server | None = None
     config = get_config()
 
     ret = 0
@@ -120,14 +121,8 @@ async def run() -> int:
         if not validate_configuration():
             return 1
 
-        app_scheduler = SchedulerClient(config)
-        await app_scheduler.initialize()
-        await app_scheduler.start()
-
-        _setup_signal_handlers_for_scheduler(app_scheduler)
-
         if config.web.enabled:
-            app = create_app(app_scheduler)
+            app = create_app()
             uv_config = uvicorn.Config(
                 app,
                 host=config.web.host,
@@ -150,13 +145,22 @@ async def run() -> int:
                 "(ctrl+c to stop)\033[0m"
             )
 
-            await app_scheduler.wait_for_completion()
+        app_scheduler = SchedulerClient(config)
+        await app_scheduler.initialize()
+        await app_scheduler.start()
+        get_app_state().set_scheduler(app_scheduler)
 
-            # Signal uvicorn server to stop and wait for it
+        if config.web.enabled:
+            app.extra["scheduler"] = app_scheduler
+
+        _setup_signal_handlers_for_scheduler(app_scheduler)
+
+        await app_scheduler.wait_for_completion()
+
+        # Signal uvicorn server to stop and wait for it
+        if server and server_task:
             server.should_exit = True
             await server_task
-        else:
-            await app_scheduler.wait_for_completion()
     except KeyboardInterrupt:
         log.info("AniBridge - Keyboard interrupt received, shutting down...")
     except ValidationError as e:
@@ -175,6 +179,10 @@ async def run() -> int:
         log.error(f"AniBridge - Unexpected application error: {e}", exc_info=True)
         return 1
     finally:
+        if server and server_task and not server_task.done():
+            server.should_exit = True
+            await server_task
+
         if app_scheduler:
             log.info("AniBridge - Shutting down application...")
             try:
