@@ -53,13 +53,13 @@ dependencies = [
 
 [project.scripts]
 ab-build = "anibridge.scripts.dev:build"
-ab-bump-version = "anibridge.scripts.dev:bump_version"
 ab-clean = "anibridge.scripts.dev:clean"
 ab-deps-install = "anibridge.scripts.dev:deps_install"
 ab-deps-upgrade = "anibridge.scripts.dev:deps_upgrade"
 ab-dev = "anibridge.scripts.dev:dev"
 ab-format = "anibridge.scripts.dev:format"
 ab-lint = "anibridge.scripts.dev:lint"
+ab-meta-setup = "anibridge.scripts.dev:meta_setup"
 ab-start = "anibridge.scripts.dev:start"
 ab-test = "anibridge.scripts.dev:test"
 

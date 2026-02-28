@@ -71,18 +71,6 @@ def print_info(message: str) -> None:
     )
 
 
-def parse_version_args(argv=None) -> str:
-    """Parse command line arguments for version bumping."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "part",
-        choices=["major", "minor", "patch"],
-        help="Part of the version to bump: major, minor, or patch",
-    )
-    args = parser.parse_args(argv)
-    return args.part
-
-
 def parse_target_args(argv=None) -> str:
     """Parse command line arguments for target selection."""
     parser = argparse.ArgumentParser()
@@ -118,26 +106,6 @@ def build() -> None:
         except FileNotFoundError:
             print_error("pnpm not found! Please install pnpm first.")
             raise
-
-
-def bump_version() -> None:
-    """Bump the application version."""
-    print_task("Bumping application version...")
-
-    try:
-        part = parse_version_args()
-        print_info(f"Bumping {part} version...")
-        subprocess.run(["uv", "version", "--bump", part], cwd=ROOT_DIR, check=True)
-
-        print_info("Updating dependencies with new version...")
-        subprocess.run(
-            ["uv", "sync", "--all-extras", "--all-groups", "--all-packages"],
-            cwd=ROOT_DIR,
-            check=True,
-        )
-    except subprocess.CalledProcessError:
-        print_error("Version bump failed!")
-        raise
 
 
 def clean() -> None:
@@ -348,6 +316,72 @@ def lint() -> None:
         sys.exit(1)
 
 
+def meta_setup() -> None:
+    """Setup the meta-repo.
+
+    Clones/updates all AniBridge repos into ./packages and installs them editable into
+    the current environment.
+    """
+    parser = argparse.ArgumentParser(description="Setup AniBridge meta-repo workspace.")
+    parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Clone/update repos but skip editable installs.",
+    )
+    args, _ = parser.parse_known_args()
+
+    packages_dir = ROOT_DIR / "packages"
+    packages_dir.mkdir(parents=True, exist_ok=True)
+
+    repos: dict[str, str] = {
+        "anibridge-anilist-provider": "https://github.com/anibridge/anibridge-anilist-provider",
+        "anibridge-jellyfin-provider": "https://github.com/anibridge/anibridge-jellyfin-provider",
+        "anibridge-library-base": "https://github.com/anibridge/anibridge-library-base",
+        "anibridge-list-base": "https://github.com/anibridge/anibridge-list-base",
+        "anibridge-mal-provider": "https://github.com/anibridge/anibridge-mal-provider",
+        "anibridge-plex-provider": "https://github.com/anibridge/anibridge-plex-provider",
+        "anibridge-utils": "https://github.com/anibridge/anibridge-utils",
+    }
+
+    print_task(f"Setting up meta workspace in {packages_dir} ...")
+
+    def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
+        try:
+            subprocess.run(cmd, cwd=cwd or ROOT_DIR, check=True)
+        except subprocess.CalledProcessError as e:
+            print_error(f"Command failed: {' '.join(cmd)}")
+            raise e
+
+    for name, url in repos.items():
+        dest = packages_dir / name
+
+        if (dest / ".git").exists():
+            print_info(f"Updating {name}...")
+            _run(["git", "fetch", "--all", "--prune"], cwd=dest)
+            _run(["git", "pull", "--ff-only"], cwd=dest)
+        else:
+            print_info(f"Cloning {name}...")
+            _run(["git", "clone", url, str(dest)], cwd=packages_dir)
+
+    print_success("Repos cloned/updated.")
+
+    if args.no_install:
+        print_info("Skipping editable installs (--no-install).")
+        return
+
+    print_task("Installing repos editable into current environment...")
+
+    for name in repos:
+        dest = packages_dir / name
+        if (dest / "pyproject.toml").exists():
+            print_info(f"uv pip install -e {dest} ...")
+            _run(["uv", "pip", "install", "-e", str(dest)], cwd=ROOT_DIR)
+        else:
+            print_info(f"Skipping {name}: no pyproject.toml found at repo root.")
+
+    print_success("Meta workspace is ready! All packages installed from local source.")
+
+
 def test() -> None:
     """Run the backend test suite."""
     target = parse_target_args()
@@ -474,6 +508,8 @@ def main() -> None:
             format()
         case "lint":
             lint()
+        case "meta-setup":
+            meta_setup()
         case "test":
             test()
         case "start":

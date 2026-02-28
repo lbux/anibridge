@@ -1,6 +1,9 @@
 # Data
 /data/
 
+# Development packages
+/packages/
+
 # Database
 *.db
 *.db-journal
