@@ -8,7 +8,7 @@ from anibridge.list import ListProvider
 from anibridge.utils.registry import ProviderRegistry
 
 from anibridge.app import log
-from anibridge.app.config.settings import AniBridgeConfig, AniBridgeProfileConfig
+from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.exceptions import ProfileConfigError
 
 __all__ = [
@@ -81,7 +81,7 @@ def _register_classes(class_paths: Iterable[str]) -> None:
         _LOADED_CLASSES.add(class_path)
 
 
-def _collect_class_overrides(config: AniBridgeConfig) -> set[str]:
+def _collect_class_overrides(config: AnibridgeConfig) -> set[str]:
     """Gather class paths requested globally and by the profile."""
     classes: set[str] = set(config.provider_classes or [])
     if not config.provider_classes:
@@ -90,11 +90,11 @@ def _collect_class_overrides(config: AniBridgeConfig) -> set[str]:
     return classes
 
 
-def build_library_provider(profile: AniBridgeProfileConfig) -> LibraryProvider:
+def build_library_provider(profile: AnibridgeProfileConfig) -> LibraryProvider:
     """Instantiate the configured library provider for the profile.
 
     Args:
-        profile (AniBridgeProfileConfig): The profile configuration.
+        profile (AnibridgeProfileConfig): The profile configuration.
 
     Returns:
         LibraryProvider: The instantiated library provider.
@@ -114,11 +114,11 @@ def build_library_provider(profile: AniBridgeProfileConfig) -> LibraryProvider:
         ) from exc
 
 
-def build_list_provider(profile: AniBridgeProfileConfig) -> ListProvider:
+def build_list_provider(profile: AnibridgeProfileConfig) -> ListProvider:
     """Instantiate the configured list provider for the profile.
 
     Args:
-        profile (AniBridgeProfileConfig): The profile configuration.
+        profile (AnibridgeProfileConfig): The profile configuration.
 
     Returns:
         ListProvider: The instantiated list provider.

@@ -22,7 +22,7 @@ from tests.core.sync.fakes import (
 )
 
 if TYPE_CHECKING:
-    from anibridge.app.config.database import AniBridgeDB
+    from anibridge.app.config.database import AnibridgeDb
 
 
 @pytest.fixture
@@ -268,7 +268,7 @@ async def test_map_media_returns_multiple_targets(
 
 @pytest.mark.asyncio
 async def test_process_media_syncs_movie_and_writes_history(
-    movie_client: MovieSyncClient, sync_db: AniBridgeDB
+    movie_client: MovieSyncClient, sync_db: AnibridgeDb
 ) -> None:
     """Processing a movie exercises BaseSyncClient's sync pipeline."""
     provider = cast(FakeListProvider, movie_client.list_provider)

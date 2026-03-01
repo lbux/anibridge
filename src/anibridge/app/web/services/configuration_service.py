@@ -9,7 +9,7 @@ import yaml
 from anibridge.utils.cache import cache
 
 from anibridge.app import log
-from anibridge.app.config.settings import AniBridgeConfig, find_yaml_config_file
+from anibridge.app.config.settings import AnibridgeConfig, find_yaml_config_file
 
 __all__ = ["ConfigurationService", "get_configuration_service"]
 
@@ -52,10 +52,10 @@ class ConfigurationService:
 
         return parsed
 
-    def _build_config_instance(self, payload: Mapping[str, Any]) -> AniBridgeConfig:
-        """Build and validate an AniBridgeConfig instance from the provided payload."""
+    def _build_config_instance(self, payload: Mapping[str, Any]) -> AnibridgeConfig:
+        """Build and validate an AnibridgeConfig instance from the provided payload."""
         try:
-            return AniBridgeConfig.model_validate(dict(payload))
+            return AnibridgeConfig.model_validate(dict(payload))
         except Exception as exc:
             raise ValueError(f"Unable to parse configuration: {exc}") from exc
 
@@ -72,7 +72,7 @@ class ConfigurationService:
 
     async def save_document_text(
         self, content: str, *, expected_mtime: int | None = None
-    ) -> tuple[AniBridgeConfig, int | None]:
+    ) -> tuple[AnibridgeConfig, int | None]:
         """Persist YAML text after validation and return the updated config."""
         async with self._lock:
             if expected_mtime is not None:

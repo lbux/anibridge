@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError
 
-from anibridge.app.config.settings import AniBridgeConfig, get_config
+from anibridge.app.config.settings import AnibridgeConfig, get_config
 from anibridge.app.web.services.configuration_service import get_configuration_service
 
 __all__ = ["router"]
@@ -77,7 +77,7 @@ def get_configuration() -> ConfigDocumentResponse:
             detail=str(exc),
         ) from exc
 
-    payload["schema"] = AniBridgeConfig.model_json_schema()
+    payload["schema"] = AnibridgeConfig.model_json_schema()
     return ConfigDocumentResponse(**payload)
 
 
@@ -129,4 +129,4 @@ def get_openapi_schema() -> dict:
     Returns:
         dict: OpenAPI schema
     """
-    return AniBridgeConfig.model_json_schema()
+    return AnibridgeConfig.model_json_schema()

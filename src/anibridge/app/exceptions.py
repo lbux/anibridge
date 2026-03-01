@@ -1,7 +1,7 @@
 """AniBridge exception classes."""
 
 
-class AniBridgeError(Exception):
+class AnibridgeError(Exception):
     """Base class for all AniBridge exceptions."""
 
     # Default HTTP status for API responses
@@ -9,7 +9,7 @@ class AniBridgeError(Exception):
 
 
 # Configuration errors
-class ConfigError(AniBridgeError):
+class ConfigError(AnibridgeError):
     """Base class for configuration-related errors."""
 
     status_code = 500
@@ -21,7 +21,7 @@ class ProfileConfigError(ConfigError, ValueError):
     status_code = 400
 
 
-class InvalidMappingsURLError(ConfigError, ValueError):
+class InvalidMappingsUrlError(ConfigError, ValueError):
     """The mappings_url configuration is not a supported HTTP(S) URL or file type."""
 
     status_code = 400
@@ -46,7 +46,7 @@ class DataPathError(ConfigError, ValueError):
 
 
 # Database errors
-class DatabaseError(AniBridgeError):
+class DatabaseError(AnibridgeError):
     """Base class for database-related errors."""
 
     status_code = 500
@@ -59,7 +59,7 @@ class UnsupportedModeError(DatabaseError, ValueError):
 
 
 # Media/model errors
-class MediaTypeError(AniBridgeError):
+class MediaTypeError(AnibridgeError):
     """Base class for media type related errors."""
 
     status_code = 400
@@ -72,7 +72,7 @@ class UnsupportedMediaTypeError(MediaTypeError, ValueError):
 
 
 # AniList client errors
-class AniListError(AniBridgeError):
+class AniListError(AnibridgeError):
     """Base class for AniList-related failures."""
 
     status_code = 500
@@ -97,7 +97,7 @@ class AniListSearchError(AniListQueryError):
 
 
 # Scheduler errors
-class SchedulerError(AniBridgeError):
+class SchedulerError(AnibridgeError):
     """Base class for scheduler-related failures."""
 
     status_code = 500
@@ -116,7 +116,7 @@ class SchedulerUnavailableError(SchedulerError):
 
 
 # Backup/restore errors
-class BackupError(AniBridgeError):
+class BackupError(AnibridgeError):
     """Base class for backup and restore failures."""
 
     status_code = 500
@@ -141,7 +141,7 @@ class BackupParseError(BackupError, ValueError):
 
 
 # History and actions errors
-class HistoryError(AniBridgeError):
+class HistoryError(AnibridgeError):
     """Base class for history-related failures."""
 
     status_code = 500
@@ -160,7 +160,7 @@ class HistoryPermissionError(HistoryError, PermissionError):
 
 
 # Mappings errors
-class MappingError(AniBridgeError):
+class MappingError(AnibridgeError):
     """Base class for mapping data source or parsing errors."""
 
     status_code = 500
@@ -215,7 +215,7 @@ class BooruQueryEvaluationError(BooruQueryError, RuntimeError):
 
 
 # Logs errors
-class LogsError(AniBridgeError):
+class LogsError(AnibridgeError):
     """Base class for logs-related failures."""
 
     status_code = 500
@@ -234,7 +234,7 @@ class LogFileNotFoundError(LogsError, FileNotFoundError):
 
 
 # Webhook errors
-class WebhookError(AniBridgeError):
+class WebhookError(AnibridgeError):
     """Base class for webhook-related errors."""
 
     status_code = 400

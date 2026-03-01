@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from pytest import MonkeyPatch
 
-from anibridge.app.config.settings import AniBridgeConfig, BasicAuthConfig, WebConfig
+from anibridge.app.config.settings import AnibridgeConfig, BasicAuthConfig, WebConfig
 from anibridge.app.web import app as app_module
 from anibridge.app.web.middlewares.basic_auth import BasicAuthMiddleware
 
@@ -162,7 +162,7 @@ def test_create_app_registers_basic_auth_middleware_when_configured(
             realm="Realm",
         )
     )
-    test_config = AniBridgeConfig(web=web_config)
+    test_config = AnibridgeConfig(web=web_config)
     monkeypatch.setattr(app_module, "config", test_config, raising=False)
 
     # Ensure the SPA assets check passes
@@ -188,7 +188,7 @@ def test_create_app_skips_basic_auth_without_complete_credentials(
             realm="Realm",
         )
     )
-    incomplete_config = AniBridgeConfig(web=web_config)
+    incomplete_config = AnibridgeConfig(web=web_config)
     monkeypatch.setattr(app_module, "config", incomplete_config, raising=False)
 
     index_file = tmp_path / "index.html"
@@ -219,7 +219,7 @@ def test_create_app_registers_basic_auth_middleware_with_htpasswd(
             realm="Realm",
         )
     )
-    test_config = AniBridgeConfig(web=web_config)
+    test_config = AnibridgeConfig(web=web_config)
     monkeypatch.setattr(app_module, "config", test_config, raising=False)
 
     # Ensure the SPA assets check passes

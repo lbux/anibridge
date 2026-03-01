@@ -17,7 +17,7 @@ from fastapi.routing import APIRouter
 from pydantic import BaseModel
 
 from anibridge.app import __git_hash__, __version__
-from anibridge.app.exceptions import AniBridgeError, SchedulerUnavailableError
+from anibridge.app.exceptions import AnibridgeError, SchedulerUnavailableError
 from anibridge.app.web.routes.api.config import require_config_api_access
 from anibridge.app.web.routes.api.status import (
     ProfileConfigModel,
@@ -130,7 +130,7 @@ async def api_about() -> AboutResponse:
 
     Raises:
         SchedulerUnavailableError: If scheduler status cannot be retrieved.
-        AniBridgeError: Any domain error raised by underlying components.
+        AnibridgeError: Any domain error raised by underlying components.
     """
     scheduler = get_app_state().scheduler
     status: dict[str, Any] = {}
@@ -146,7 +146,7 @@ async def api_about() -> AboutResponse:
             next_db_sync = scheduler.get_next_database_sync_at()
             if next_db_sync is not None:
                 next_db_sync_iso = next_db_sync.isoformat()
-        except AniBridgeError:
+        except AnibridgeError:
             raise
         except Exception as e:
             raise SchedulerUnavailableError(

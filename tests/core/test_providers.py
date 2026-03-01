@@ -23,7 +23,7 @@ def test_collect_class_overrides_returns_empty_for_none() -> None:
 
     assert (
         providers_module._collect_class_overrides(
-            cast("providers_module.AniBridgeConfig", config)
+            cast("providers_module.AnibridgeConfig", config)
         )
         == set()
     )
@@ -34,7 +34,7 @@ def test_collect_class_overrides_returns_set_for_values() -> None:
     config = DummyConfig(provider_classes=["pkg.a.A", "pkg.b.B"])
 
     assert providers_module._collect_class_overrides(
-        cast("providers_module.AniBridgeConfig", config)
+        cast("providers_module.AnibridgeConfig", config)
     ) == {"pkg.a.A", "pkg.b.B"}
 
 
@@ -90,7 +90,7 @@ def test_build_library_provider_raises_when_missing(
 
     with pytest.raises(ProfileConfigError):
         providers_module.build_library_provider(
-            cast("providers_module.AniBridgeProfileConfig", profile)
+            cast("providers_module.AnibridgeProfileConfig", profile)
         )
 
 
@@ -111,5 +111,5 @@ def test_build_list_provider_raises_when_missing(
 
     with pytest.raises(ProfileConfigError):
         providers_module.build_list_provider(
-            cast("providers_module.AniBridgeProfileConfig", profile)
+            cast("providers_module.AnibridgeProfileConfig", profile)
         )

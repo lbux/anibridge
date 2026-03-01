@@ -13,7 +13,7 @@ from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import select
 
-from anibridge.app.config.database import AniBridgeDB
+from anibridge.app.config.database import AnibridgeDb
 from anibridge.app.core.animap import AnimapClient, AnimapEdge
 from anibridge.app.core.mappings import MappingsClient
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
@@ -100,7 +100,7 @@ def in_memory_db(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def animap_client(
-    tmp_path: Path, in_memory_db: AniBridgeDB, request: pytest.FixtureRequest
+    tmp_path: Path, in_memory_db: AnibridgeDb, request: pytest.FixtureRequest
 ) -> AnimapClient:
     """Provide an AnimapClient instance for testing."""
     client = AnimapClient(data_path=tmp_path, upstream_url=None)
@@ -165,7 +165,7 @@ def test_parse_mapping_descriptor_rejects_invalid() -> None:
 
 
 def test_resolve_edges_and_grouping(
-    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AnibridgeDb
 ) -> None:
     """Resolved edges should honor target filters and grouping."""
     mapping_data = {
@@ -190,7 +190,7 @@ def test_resolve_edges_and_grouping(
 
 
 def test_select_entry_ids_returns_ids(
-    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AnibridgeDb
 ) -> None:
     """Entry lookup should return IDs for known descriptors."""
     mapping_data = {"anilist:1": {"tmdb:10": {"1": None}}}
@@ -227,7 +227,7 @@ def test_build_edges_handles_invalid_payloads(
 
 
 def test_sync_db_creates_entries_mappings_and_provenance(
-    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AnibridgeDb
 ) -> None:
     """Syncing the database creates entries, mappings, and provenance rows."""
     mapping_data = _mapping_data()
@@ -294,7 +294,7 @@ def test_sync_db_creates_entries_mappings_and_provenance(
 
 
 def test_sync_db_refreshes_provenance_when_hash_matches(
-    animap_client: AnimapClient, in_memory_db: AniBridgeDB
+    animap_client: AnimapClient, in_memory_db: AnibridgeDb
 ) -> None:
     """Syncing the database again with the same mappings refreshes provenance."""
     base_mappings = {"anilist:1": {"tmdb:1": {"1": None}}}
@@ -350,7 +350,7 @@ def test_sync_db_skips_work_when_hashes_match(
 
 
 def test_sync_db_skips_invalid_range_strings(
-    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AniBridgeDB
+    animap_client: AnimapClient, tmp_path: Path, in_memory_db: AnibridgeDb
 ) -> None:
     """Invalid source/destination ranges are ignored during sync."""
     mapping_data = {
@@ -379,7 +379,7 @@ def test_sync_db_skips_invalid_range_strings(
 
 def test_sync_db_logs_distinct_mapping_changes(
     animap_client: AnimapClient,
-    in_memory_db: AniBridgeDB,
+    in_memory_db: AnibridgeDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sync log summarizes distinct mapping changes by source/target."""

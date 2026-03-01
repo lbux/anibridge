@@ -286,7 +286,7 @@ async def test_scheduler_initialize_and_start(
     monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
     monkeypatch.setattr(sched_module, "BridgeClient", fake_bridge_client)
 
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     await scheduler.initialize()
 
     assert cast(FakeAnimapClient, scheduler.shared_animap_client).initialized is True
@@ -304,7 +304,7 @@ async def test_scheduler_start_and_stop(
 
     monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
 
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
     class StubScheduler:
@@ -339,7 +339,7 @@ async def test_scheduler_trigger_sync(
         "two": FakeProfileConfig(scan_modes=[]),
     }
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
     cast(dict[str, Any], scheduler.bridge_clients)["two"] = FakeBridgeClient("two")
@@ -383,7 +383,7 @@ async def test_scheduler_trigger_profile_sync_without_running_scheduler(
     """Manual trigger should fall back to a one-off bridge sync when not started."""
     profiles = {"one": FakeProfileConfig(scan_modes=[])}
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     bridge = FakeBridgeClient("one")
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = bridge
@@ -403,7 +403,7 @@ async def test_scheduler_trigger_all_profiles_sync_raises_on_failures(
         "bad": FakeProfileConfig(scan_modes=[]),
     }
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     class GoodBridge(FakeBridgeClient):
         async def sync(self, *, poll: bool = False, library_keys=None) -> None:
@@ -485,7 +485,7 @@ async def test_profile_scheduler_rejects_when_pending_waiters_full() -> None:
 def test_scheduler_get_next_database_sync_at(tmp_path: Path) -> None:
     """Next sync time should be None when not running."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     assert scheduler.get_next_database_sync_at() is None
 
@@ -499,7 +499,7 @@ async def test_scheduler_get_status(tmp_path: Path) -> None:
     """Status should include profile and runtime data."""
     profiles = {"one": FakeProfileConfig(scan_modes=[])}
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     bridge = FakeBridgeClient("one")
     bridge.last_synced = datetime(2025, 1, 1, tzinfo=UTC)
@@ -527,7 +527,7 @@ async def test_daily_db_sync_loop_runs(
 ) -> None:
     """Daily loop should invoke sync and backups."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler.shared_animap_client = FakeAnimapClient()
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
 
@@ -559,7 +559,7 @@ async def test_daily_db_sync_loop_runs(
 async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
     """Database sync entrypoint should sync mappings and refresh profile providers."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler.shared_animap_client = FakeAnimapClient()
 
     bridge = FakeBridgeClient("one")
@@ -576,7 +576,7 @@ async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
 async def test_scheduler_runtime_metrics_include_coordinator(tmp_path: Path) -> None:
     """Scheduler runtime metrics should include global coordinator counters."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     metrics = await scheduler.get_runtime_metrics()
 
@@ -594,7 +594,7 @@ async def test_scheduler_runtime_metrics_include_coordinator(tmp_path: Path) -> 
 def test_get_profiles_for_library_provider(tmp_path: Path) -> None:
     """Profiles should be grouped by library provider namespace."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
 
     scheduler.get_profiles_for_library_provider.cache_clear()
@@ -611,7 +611,7 @@ def test_get_profiles_for_library_provider(tmp_path: Path) -> None:
 def test_request_shutdown_sets_event(tmp_path: Path) -> None:
     """Request shutdown should set the stop event."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     scheduler.request_shutdown()
 
@@ -621,7 +621,7 @@ def test_request_shutdown_sets_event(tmp_path: Path) -> None:
 def test_get_next_1am_utc_rolls_over(tmp_path: Path) -> None:
     """Next 1AM UTC should roll over after 1AM."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     now = datetime(2025, 1, 1, 2, 0, tzinfo=UTC)
     next_time = scheduler._get_next_1am_utc(now)
@@ -634,7 +634,7 @@ def test_get_next_1am_utc_rolls_over(tmp_path: Path) -> None:
 async def test_wait_for_completion_returns_when_stopped(tmp_path: Path) -> None:
     """wait_for_completion should return when stop_event is set."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler._running = True
 
     scheduler.stop_event.set()
@@ -766,7 +766,7 @@ async def test_scheduler_start_with_scan_modes(
     monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
     monkeypatch.setattr(sched_module, "ProfileScheduler", StubScheduler)
 
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
     await scheduler.start()
@@ -780,7 +780,7 @@ async def test_scheduler_start_with_scan_modes(
 async def test_scheduler_start_without_profiles(tmp_path: Path) -> None:
     """Starting without profiles should leave schedulers empty."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     await scheduler.start()
 
@@ -793,7 +793,7 @@ async def test_scheduler_start_without_profiles(tmp_path: Path) -> None:
 async def test_scheduler_stop_returns_when_not_running(tmp_path: Path) -> None:
     """Stop should no-op when scheduler is not running."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     await scheduler.stop()
 
@@ -804,7 +804,7 @@ async def test_scheduler_stop_returns_when_not_running(tmp_path: Path) -> None:
 async def test_wait_for_completion_cancelled(tmp_path: Path) -> None:
     """Cancelling wait_for_completion should propagate the cancellation."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler._running = True
 
     task = asyncio.create_task(scheduler.wait_for_completion())
@@ -821,7 +821,7 @@ async def test_daily_db_sync_loop_breaks_on_stop(
 ) -> None:
     """Daily loop should break when stop event is signaled during wait."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler._running = True
 
     async def _wait_for(coro, *_args, **_kwargs):
@@ -839,7 +839,7 @@ async def test_daily_db_sync_loop_handles_sync_error(
 ) -> None:
     """Errors during sync_db should be handled and logged."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler.shared_animap_client = FakeAnimapClient()
     scheduler._running = True
 
@@ -867,7 +867,7 @@ async def test_daily_db_sync_loop_handles_loop_error(
 ) -> None:
     """Unexpected errors in the loop should trigger retry sleep."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler._running = True
 
     def _boom(_now: datetime) -> datetime:
@@ -886,7 +886,7 @@ async def test_daily_db_sync_loop_handles_loop_error(
 def test_get_profiles_for_library_provider_skips_none(tmp_path: Path) -> None:
     """None bridge clients should be ignored when grouping profiles."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     cast(dict[str, Any], scheduler.bridge_clients)["none"] = None
     cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
@@ -900,7 +900,7 @@ def test_get_profiles_for_library_provider_skips_none(tmp_path: Path) -> None:
 async def test_scheduler_context_manager_calls_stop(tmp_path: Path) -> None:
     """Async context manager should call stop on exit."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AniBridgeConfig", config))
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     called = {"stop": False}
 
     async def _stop() -> None:

@@ -23,8 +23,8 @@ from anibridge.app.exceptions import ProfileConfigError, ProfileNotFoundError
 from anibridge.app.utils.logging import _get_logger
 
 __all__ = [
-    "AniBridgeConfig",
-    "AniBridgeProfileConfig",
+    "AnibridgeConfig",
+    "AnibridgeProfileConfig",
     "LogLevel",
     "ScanMode",
     "SyncField",
@@ -163,7 +163,7 @@ class WebConfig(BaseModel):
         )
 
 
-class AniBridgeProfileConfig(BaseModel):
+class AnibridgeProfileConfig(BaseModel):
     """Configuration for a single AniBridge profile."""
 
     library_provider: str = Field(
@@ -248,11 +248,11 @@ class AniBridgeProfileConfig(BaseModel):
     )
 
     @property
-    def parent(self) -> AniBridgeConfig:
+    def parent(self) -> AnibridgeConfig:
         """Get the parent multi-config instance.
 
         Returns:
-            AniBridgeConfig: Parent configuration.
+            AnibridgeConfig: Parent configuration.
 
         Raises:
             ProfileConfigError: If this config is not part of a multi-config.
@@ -263,7 +263,7 @@ class AniBridgeProfileConfig(BaseModel):
             )
         return self._parent
 
-    def _merge_globals(self) -> AniBridgeProfileConfig:
+    def _merge_globals(self) -> AnibridgeProfileConfig:
         """Merge global settings from the parent config into this profile config."""
         if not self._parent:
             return self
@@ -352,10 +352,10 @@ class AniBridgeProfileConfig(BaseModel):
 
         return normalized
 
-    _parent: AniBridgeConfig | None = None
+    _parent: AnibridgeConfig | None = None
 
 
-class AniBridgeConfig(BaseSettings):
+class AnibridgeConfig(BaseSettings):
     """Multi-configuration manager for AniBridge application.
 
     Configuration is sourced from a YAML file (optionally combined with
@@ -363,11 +363,11 @@ class AniBridgeConfig(BaseSettings):
     all profiles, while profile-specific settings override those defaults.
     """
 
-    global_config: AniBridgeProfileConfig = Field(
-        default_factory=AniBridgeProfileConfig,
+    global_config: AnibridgeProfileConfig = Field(
+        default_factory=AnibridgeProfileConfig,
         description="Global configuration settings",
     )
-    profiles: dict[str, AniBridgeProfileConfig] = Field(
+    profiles: dict[str, AnibridgeProfileConfig] = Field(
         default_factory=dict, description="AniBridge profile configurations"
     )
     log_level: LogLevel = Field(
@@ -399,11 +399,11 @@ class AniBridgeConfig(BaseSettings):
         return Path(os.getenv("AB_DATA_PATH", "./data")).resolve()
 
     @model_validator(mode="after")
-    def validate_global_config(self) -> AniBridgeConfig:
+    def validate_global_config(self) -> AnibridgeConfig:
         """Validates global configuration settings.
 
         Returns:
-            AniBridgeConfig: Self with validated settings.
+            AnibridgeConfig: Self with validated settings.
 
         Raises:
             ValueError: If required global settings are missing or invalid.
@@ -448,14 +448,14 @@ class AniBridgeConfig(BaseSettings):
 
         return self
 
-    def get_profile(self, name: str) -> AniBridgeProfileConfig:
+    def get_profile(self, name: str) -> AnibridgeProfileConfig:
         """Get a specific profile configuration.
 
         Args:
             name: Profile name
 
         Returns:
-            AniBridgeProfileConfig: The profile configuration.
+            AnibridgeProfileConfig: The profile configuration.
 
         Raises:
             ProfileNotFoundError: If profile doesn't exist.
@@ -574,7 +574,7 @@ def _build_config_template_model(model_cls: type[BaseModel]) -> BaseModel:
 
 
 def _render_default_config_template() -> str:
-    template_model = _build_config_template_model(AniBridgeConfig)
+    template_model = _build_config_template_model(AnibridgeConfig)
 
     yaml_text = yaml.dump(
         template_model.model_dump(mode="python"),
@@ -610,17 +610,17 @@ def _ensure_default_config_file() -> Path:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(_render_default_config_template(), encoding="utf-8")
     _log.info(
-        "AniBridgeConfig: Created default configuration template at %s", config_path
+        "AnibridgeConfig: Created default configuration template at %s", config_path
     )
     return config_path
 
 
 @cache
-def get_config() -> AniBridgeConfig:
-    """Get the singleton instance of AniBridgeConfig.
+def get_config() -> AnibridgeConfig:
+    """Get the singleton instance of AnibridgeConfig.
 
     Returns:
-        AniBridgeConfig: The singleton configuration instance.
+        AnibridgeConfig: The singleton configuration instance.
     """
     _ensure_default_config_file()
-    return AniBridgeConfig()
+    return AnibridgeConfig()

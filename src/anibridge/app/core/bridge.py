@@ -16,7 +16,7 @@ from starlette.requests import Request
 
 from anibridge.app import log
 from anibridge.app.config.database import db
-from anibridge.app.config.settings import AniBridgeConfig, AniBridgeProfileConfig
+from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.providers import build_library_provider, build_list_provider
 from anibridge.app.core.sync import BaseSyncClient, MovieSyncClient, ShowSyncClient
@@ -35,16 +35,16 @@ class BridgeClient:
     def __init__(
         self,
         profile_name: str,
-        profile_config: AniBridgeProfileConfig,
-        global_config: AniBridgeConfig,
+        profile_config: AnibridgeProfileConfig,
+        global_config: AnibridgeConfig,
         shared_animap_client: AnimapClient,
     ) -> None:
         """Initialize the bridge client for a single profile.
 
         Args:
             profile_name (str): The name of the profile.
-            profile_config (AniBridgeProfileConfig): The profile-specific configuration.
-            global_config (AniBridgeConfig): The global application configuration.
+            profile_config (AnibridgeProfileConfig): The profile-specific configuration.
+            global_config (AnibridgeConfig): The global application configuration.
             shared_animap_client (AnimapClient): Shared Animap client instance.
         """
         self.profile_name = profile_name

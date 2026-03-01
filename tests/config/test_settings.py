@@ -6,8 +6,8 @@ import pytest
 from pydantic import SecretStr
 
 from anibridge.app.config.settings import (
-    AniBridgeConfig,
-    AniBridgeProfileConfig,
+    AnibridgeConfig,
+    AnibridgeProfileConfig,
     BasicAuthConfig,
     SyncField,
     WebConfig,
@@ -40,7 +40,7 @@ def test_find_yaml_config_file_prefers_data_path(
 
 def test_profile_parent_requires_assignment() -> None:
     """Test that accessing parent on unassigned profile raises ProfileConfigError."""
-    profile = AniBridgeProfileConfig(
+    profile = AnibridgeProfileConfig(
         library_provider_config={
             "plex": {
                 "token": SecretStr("plex-token"),
@@ -56,9 +56,9 @@ def test_profile_parent_requires_assignment() -> None:
 
 
 def test_config_creates_default_profile_from_globals() -> None:
-    """Test that AniBridgeConfig creates a default profile from global settings."""
-    config = AniBridgeConfig(
-        global_config=AniBridgeProfileConfig(
+    """Test that AnibridgeConfig creates a default profile from global settings."""
+    config = AnibridgeConfig(
+        global_config=AnibridgeProfileConfig(
             library_provider_config={
                 "plex": {
                     "token": "plex-token",
@@ -82,15 +82,15 @@ def test_config_creates_default_profile_from_globals() -> None:
 
 
 def test_config_profile_inherits_global_values() -> None:
-    """Test that a profile inherits global settings from AniBridgeConfig."""
-    config = AniBridgeConfig(
-        global_config=AniBridgeProfileConfig(
+    """Test that a profile inherits global settings from AnibridgeConfig."""
+    config = AnibridgeConfig(
+        global_config=AnibridgeProfileConfig(
             library_provider_config={
                 "plex": {"url": "http://global"},
             }
         ),
         profiles={
-            "primary": AniBridgeProfileConfig(
+            "primary": AnibridgeProfileConfig(
                 library_provider_config={
                     "anilist": {"token": "anilist-token"},
                 }
@@ -105,8 +105,8 @@ def test_config_profile_inherits_global_values() -> None:
 
 def test_provider_config_merges_one_level_per_namespace() -> None:
     """Test provider config merge keeps global keys and applies profile overrides."""
-    config = AniBridgeConfig(
-        global_config=AniBridgeProfileConfig(
+    config = AnibridgeConfig(
+        global_config=AnibridgeProfileConfig(
             library_provider_config={
                 "plex": {
                     "url": "http://global",
@@ -116,7 +116,7 @@ def test_provider_config_merges_one_level_per_namespace() -> None:
             }
         ),
         profiles={
-            "primary": AniBridgeProfileConfig(
+            "primary": AnibridgeProfileConfig(
                 library_provider_config={
                     "plex": {
                         "sections": ["Anime"],
@@ -139,7 +139,7 @@ def test_get_profile_raises_for_unknown_name(
     tmp_path: Path,
 ) -> None:
     """Test that get_profile raises ProfileNotFoundError for unknown profile names."""
-    config = AniBridgeConfig()
+    config = AnibridgeConfig()
 
     with pytest.raises(ProfileNotFoundError):
         config.get_profile("missing")
@@ -148,12 +148,12 @@ def test_get_profile_raises_for_unknown_name(
 def test_sync_fields_rejects_unknown_operator() -> None:
     """Unknown sync field operators should fail validation."""
     with pytest.raises(ValueError):
-        AniBridgeProfileConfig(sync_fields={SyncField.STATUS: {"_between": False}})
+        AnibridgeProfileConfig(sync_fields={SyncField.STATUS: {"_between": False}})
 
 
 def test_sync_fields_inherit_from_global_profile() -> None:
     """Global sync_fields should be inherited when a profile omits sync_fields."""
-    config = AniBridgeConfig.model_validate(
+    config = AnibridgeConfig.model_validate(
         {
             "global_config": {
                 "library_provider": "plex",
@@ -176,7 +176,7 @@ def test_sync_fields_inherit_from_global_profile() -> None:
 
 def test_sync_fields_status_rules_are_case_insensitive() -> None:
     """Status rule keys should normalize to ListStatus values."""
-    profile = AniBridgeProfileConfig(
+    profile = AnibridgeProfileConfig(
         sync_fields={
             SyncField.STATUS: {"dropped": False, "PAUSED": False, "pLaNNing": False}
         }
@@ -207,7 +207,7 @@ def test_web_config_reports_auth_configuration_state(tmp_path: Path) -> None:
 
 def test_unconfigured_config_allows_config_api_without_auth() -> None:
     """Default/unconfigured app should allow config API access without auth."""
-    config = AniBridgeConfig()
+    config = AnibridgeConfig()
 
     assert config.web.has_auth is False
     assert config.web.allow_config_without_auth is True

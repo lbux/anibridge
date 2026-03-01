@@ -33,7 +33,7 @@ from tests.core.sync.fakes import (
 )
 
 if TYPE_CHECKING:
-    from anibridge.app.config.database import AniBridgeDB
+    from anibridge.app.config.database import AnibridgeDb
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def build_multi_season_show() -> tuple[
 
 @pytest.mark.asyncio
 async def test_process_media_syncs_show_and_writes_history(
-    show_client: ShowSyncClient, sync_db: AniBridgeDB
+    show_client: ShowSyncClient, sync_db: AnibridgeDb
 ) -> None:
     """Processing a show syncs its episodes and writes history entries."""
     provider = cast(FakeListProvider, show_client.list_provider)

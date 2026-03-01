@@ -9,7 +9,7 @@ from typing import Any
 from anibridge.utils.cache import lru_cache
 
 from anibridge.app import log
-from anibridge.app.config.settings import AniBridgeConfig, ScanMode
+from anibridge.app.config.settings import AnibridgeConfig, ScanMode
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.core.sched.coord import GlobalSyncCoordinator
@@ -26,11 +26,11 @@ class SchedulerClient:
     the daily database sync. Provides centralized management and graceful shutdown.
     """
 
-    def __init__(self, global_config: AniBridgeConfig):
+    def __init__(self, global_config: AnibridgeConfig):
         """Initialize the application scheduler.
 
         Args:
-            global_config (AniBridgeConfig): Global application configuration.
+            global_config (AnibridgeConfig): Global application configuration.
         """
         self.global_config = global_config
         self.shared_animap_client = AnimapClient(

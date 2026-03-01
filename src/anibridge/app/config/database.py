@@ -13,7 +13,7 @@ from anibridge.app import config, log
 from anibridge.app.exceptions import DataPathError
 from anibridge.app.utils.paths import PROJECT_ROOT
 
-__all__ = ["AniBridgeDB", "db"]
+__all__ = ["AnibridgeDb", "db"]
 
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-class AniBridgeDB:
+class AnibridgeDb:
     """Database manager for AniBridge application.
 
     Handles the creation, initialization, and migration of the SQLite database,
@@ -142,7 +142,7 @@ class AniBridgeDB:
 
         Base.metadata.create_all(self.engine)
 
-    def __enter__(self) -> AniBridgeDB:
+    def __enter__(self) -> AnibridgeDb:
         """Enters the context manager, returning the database instance."""
         self._session = self._SessionLocal()
         return self
@@ -167,12 +167,12 @@ class AniBridgeDB:
 
 
 @cache
-def db() -> AniBridgeDB:
-    """Get the singleton instance of the AniBridgeDB.
+def db() -> AnibridgeDb:
+    """Get the singleton instance of the AnibridgeDb.
 
     Uses LRU caching to ensure only one instance is created and reused.
 
     Returns:
-        AniBridgeDB: The singleton database manager instance
+        AnibridgeDb: The singleton database manager instance
     """
-    return AniBridgeDB(config.data_path)
+    return AnibridgeDb(config.data_path)

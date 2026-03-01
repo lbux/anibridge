@@ -15,7 +15,7 @@ from starlette.requests import Request
 
 from anibridge.app import __version__, config, log
 from anibridge.app.core.sched import SchedulerClient
-from anibridge.app.exceptions import AniBridgeError
+from anibridge.app.exceptions import AnibridgeError
 from anibridge.app.utils.paths import PROJECT_ROOT
 from anibridge.app.web.middlewares.basic_auth import BasicAuthMiddleware
 from anibridge.app.web.middlewares.request_logging import RequestLoggingMiddleware
@@ -144,13 +144,13 @@ def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
             return FileResponse(index_file)
         return await http_exception_handler(request, exc)
 
-    @app.exception_handler(AniBridgeError)
-    def domain_exception_handler(request: Request, exc: AniBridgeError) -> JSONResponse:
+    @app.exception_handler(AnibridgeError)
+    def domain_exception_handler(request: Request, exc: AnibridgeError) -> JSONResponse:
         """Handle AniBridge errors with structured JSON responses.
 
         Args:
             request (Request): The incoming HTTP request.
-            exc (AniBridgeError): The exception instance.
+            exc (AnibridgeError): The exception instance.
 
         Returns:
             JSONResponse: Structured JSON response with error details.

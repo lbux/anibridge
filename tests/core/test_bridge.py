@@ -244,9 +244,9 @@ def test_last_synced_round_trip(
     profile_config = _make_profile_config()
     client = BridgeClient(
         profile_name="default",
-        profile_config=cast("bridge_module.AniBridgeProfileConfig", profile_config),
+        profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -258,9 +258,9 @@ def test_last_synced_round_trip(
 
     fresh = BridgeClient(
         profile_name="default",
-        profile_config=cast("bridge_module.AniBridgeProfileConfig", profile_config),
+        profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -282,10 +282,10 @@ def test_backup_list_skips_when_not_supported(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -312,9 +312,9 @@ def test_backup_list_writes_payload(
 
     client = BridgeClient(
         profile_name="default",
-        profile_config=cast("bridge_module.AniBridgeProfileConfig", config),
+        profile_config=cast("bridge_module.AnibridgeProfileConfig", config),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -340,10 +340,10 @@ async def test_parse_webhook_delegates(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -382,11 +382,11 @@ async def test_sync_section_batches_and_handles_errors(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig",
+            "bridge_module.AnibridgeProfileConfig",
             _make_profile_config(batch_requests=True),
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -423,10 +423,10 @@ async def test_sync_section_skips_unsupported_section(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -458,10 +458,10 @@ async def test_initialize_and_close_calls_providers(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -490,10 +490,10 @@ def test_backup_list_skips_empty_payload(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -516,10 +516,10 @@ def test_backup_list_handles_provider_error(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -547,10 +547,10 @@ def test_backup_list_handles_write_errors(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -576,10 +576,10 @@ async def test_sync_section_handles_show_items(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -620,10 +620,10 @@ async def test_sync_section_handles_item_errors(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -670,10 +670,10 @@ async def test_sync_updates_last_synced_and_progress(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
@@ -701,10 +701,10 @@ async def test_sync_failure_sets_completed_state(
     client = BridgeClient(
         profile_name="default",
         profile_config=cast(
-            "bridge_module.AniBridgeProfileConfig", _make_profile_config()
+            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
         ),
         global_config=cast(
-            "bridge_module.AniBridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
         ),
         shared_animap_client=cast(Any, object()),
     )
