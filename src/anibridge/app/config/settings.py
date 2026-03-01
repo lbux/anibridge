@@ -408,6 +408,14 @@ class AniBridgeConfig(BaseSettings):
         Raises:
             ValueError: If required global settings are missing or invalid.
         """
+        if (
+            not self.model_fields_set
+            and not self.profiles
+            and not self.global_config.model_fields_set
+            and not self.web.has_auth
+        ):
+            self.web.allow_config_without_auth = True
+
         # If there are no explicit profiles, attempt to bootstrap a default from globals
         if not self.profiles and self.global_config.model_fields_set:
             _log.info(

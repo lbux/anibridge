@@ -203,3 +203,11 @@ def test_web_config_reports_auth_configuration_state(tmp_path: Path) -> None:
     htpasswd.write_text("user:$apr1$hash", encoding="utf-8")
     with_htpasswd = WebConfig(basic_auth=BasicAuthConfig(htpasswd_path=htpasswd))
     assert with_htpasswd.has_auth is True
+
+
+def test_unconfigured_config_allows_config_api_without_auth() -> None:
+    """Default/unconfigured app should allow config API access without auth."""
+    config = AniBridgeConfig()
+
+    assert config.web.has_auth is False
+    assert config.web.allow_config_without_auth is True
