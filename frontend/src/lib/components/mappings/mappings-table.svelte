@@ -5,6 +5,7 @@
     import MappingCard from "$lib/components/mappings/mapping-card.svelte";
     import type { Mapping, MappingEdge } from "$lib/types/api";
     import { preferredTitle } from "$lib/utils/anilist";
+    import { externalProviderUrl } from "$lib/utils/provider-links";
 
     export interface Props {
         items: Mapping[];
@@ -70,33 +71,6 @@
 
     function providerFromColumn(columnId: string): string | null {
         return columnId.startsWith("provider:") ? columnId.slice(9) : null;
-    }
-
-    // scope doesn't need to be used for the known providers here
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    function externalUrl(provider: string, entryId: string, scope?: string | null) {
-        if (!entryId) return null;
-        switch (provider) {
-            case "anilist":
-                return `https://anilist.co/anime/${entryId}`;
-            case "anidb":
-                return `https://anidb.net/anime/${entryId}`;
-            case "imdb":
-                return `https://www.imdb.com/title/${entryId}`;
-            case "tmdb_movie":
-                return `https://www.themoviedb.org/movie/${entryId}`;
-            case "tmdb_show":
-                return `https://www.themoviedb.org/tv/${entryId}`;
-            case "tvdb_movie":
-                return `https://www.thetvdb.com/dereferrer/movie/${entryId}`;
-            case "tvdb_show":
-                return `https://www.thetvdb.com/dereferrer/series/${entryId}`;
-            case "mal":
-            case "myanimelist":
-                return `https://myanimelist.net/anime/${entryId}`;
-            default:
-                return null;
-        }
     }
 
     function edgeKey(edge: MappingEdge) {
@@ -241,7 +215,7 @@
                                             entryId={m.entry_id}
                                             scope={m.scope}
                                             label="Source"
-                                            url={externalUrl(
+                                            url={externalProviderUrl(
                                                 provider,
                                                 m.entry_id,
                                                 m.scope,
@@ -259,7 +233,7 @@
                                                 <MappingCard
                                                     entryId={edge.target_entry_id}
                                                     scope={edge.target_scope}
-                                                    url={externalUrl(
+                                                    url={externalProviderUrl(
                                                         edge.target_provider,
                                                         edge.target_entry_id,
                                                         edge.target_scope,

@@ -10,7 +10,8 @@ export function externalProviderUrl(
             return `https://anilist.co/anime/${entryId}`;
         case "anidb":
             return `https://anidb.net/anime/${entryId}`;
-        case "imdb":
+        case "imdb_movie":
+        case "imdb_show":
             return `https://www.imdb.com/title/${entryId}`;
         case "tmdb_movie":
             return `https://www.themoviedb.org/movie/${entryId}`;
@@ -21,7 +22,6 @@ export function externalProviderUrl(
         case "tvdb_show":
             return `https://www.thetvdb.com/dereferrer/series/${entryId}`;
         case "mal":
-        case "myanimelist":
             return `https://myanimelist.net/anime/${entryId}`;
         default:
             return null;
