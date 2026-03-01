@@ -61,6 +61,7 @@ body:
           label: Configuration
           description: |
               Paste your AniBridge configuration here. Make sure to redact any sensitive information. Generally, omitting the `list_provider_config`, `library_provider_config`, and `web.basic_auth` sections of your configuration is sufficient to redact sensitive information.
+          render: yaml
       validations:
           required: true
     - type: textarea
