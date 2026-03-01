@@ -6,9 +6,11 @@ from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 
+import yaml
 from anibridge.list import ListStatus
 from anibridge.utils.cache import cache
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic_core import PydanticUndefined
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -30,22 +32,6 @@ __all__ = [
 ]
 
 _log = _get_logger(__name__)
-
-
-def find_yaml_config_file() -> Path:
-    """Find the YAML configuration file in the data path.
-
-    Returns:
-        Path: The path to an existing YAML configuration file or the default location.
-    """
-    data_path = Path(os.getenv("AB_DATA_PATH", "./data")).resolve()
-
-    for ext in ("yaml", "yml"):
-        yaml_file = data_path / f"config.{ext}"
-        if yaml_file.exists():
-            _log.debug("Using YAML config file: %s", yaml_file.resolve())
-            return yaml_file.resolve()
-    return data_path / "config.yaml"
 
 
 class BaseStrEnum(StrEnum):
@@ -188,6 +174,65 @@ class AniBridgeProfileConfig(BaseModel):
         default="",
         description="Namespace of the list provider to use",
     )
+    scan_modes: list[ScanMode] = Field(
+        default_factory=lambda: [ScanMode.PERIODIC, ScanMode.POLL, ScanMode.WEBHOOK],
+        description="List of enabled scan modes (periodic, poll, webhook)",
+    )
+    scan_interval: int = Field(
+        default=86400, ge=0, description="Scan interval in seconds"
+    )
+    poll_interval: int = Field(
+        default=60, ge=0, description="Poll scan interval in seconds"
+    )
+    full_scan: bool = Field(
+        default=False, description="Perform full library scans, even on unwatched items"
+    )
+    destructive_sync: bool = Field(
+        default=False,
+        description="Allow decreasing watch progress and removing list entries",
+    )
+    empty_sync: bool = Field(
+        default=False,
+        description=(
+            "When enabled, entries with no watch activity/history are synced as "
+            "planning instead of being skipped"
+        ),
+    )
+    promote_rewatch: bool = Field(
+        default=False,
+        description=(
+            "When enabled, automatically set status to repeating on the list provider "
+            "if the entry is already marked as completed or repeating and new watch "
+            "activity is detected in the library"
+        ),
+    )
+    sync_fields: dict[SyncField, bool | dict[str, bool]] = Field(
+        default_factory=lambda: {
+            SyncField.REVIEW: False,
+            SyncField.USER_RATING: False,
+        },
+        description=(
+            "Per-field sync rules. Set a field to false to disable syncing it, "
+            "or define operator/value rules with a mapping."
+        ),
+    )
+    backup_retention_days: int = Field(
+        default=30,
+        ge=-1,
+        description=(
+            "Days to retain list backups before cleanup (0 retains indefinitely; "
+            "-1 disables backup creation)"
+        ),
+    )
+    batch_requests: bool = Field(
+        default=False, description="Batch API requests for better performance"
+    )
+    search_fallback_threshold: int = Field(
+        default=-1, ge=-1, le=100, description="Fuzzy search threshold"
+    )
+    dry_run: bool = Field(
+        default=False, description="Log changes without applying them"
+    )
 
     library_provider_config: dict[str, dict] = Field(
         default_factory=dict,
@@ -200,66 +245,6 @@ class AniBridgeProfileConfig(BaseModel):
         exclude=True,
         repr=False,
         description="List provider configuration by namespace",
-    )
-
-    scan_interval: int = Field(
-        default=86400, ge=0, description="Scan interval in seconds"
-    )
-    poll_interval: int = Field(
-        default=60, ge=0, description="Poll scan interval in seconds"
-    )
-    scan_modes: list[ScanMode] = Field(
-        default_factory=lambda: [ScanMode.PERIODIC, ScanMode.POLL, ScanMode.WEBHOOK],
-        description="List of enabled scan modes (periodic, poll, webhook)",
-    )
-    full_scan: bool = Field(
-        default=False, description="Perform full library scans, even on unwatched items"
-    )
-    empty_sync: bool = Field(
-        default=False,
-        description=(
-            "When enabled, entries with no watch activity/history are synced as "
-            "planning instead of being skipped"
-        ),
-    )
-    destructive_sync: bool = Field(
-        default=False,
-        description="Allow decreasing watch progress and removing list entries",
-    )
-    sync_fields: dict[SyncField, bool | dict[str, bool]] = Field(
-        default_factory=lambda: {
-            SyncField.REVIEW: False,
-            SyncField.USER_RATING: False,
-        },
-        description=(
-            "Per-field sync rules. Set a field to false to disable syncing it, "
-            "or define operator/value rules with a mapping."
-        ),
-    )
-    dry_run: bool = Field(
-        default=False, description="Log changes without applying them"
-    )
-    batch_requests: bool = Field(
-        default=False, description="Batch API requests for better performance"
-    )
-    search_fallback_threshold: int = Field(
-        default=-1, ge=-1, le=100, description="Fuzzy search threshold"
-    )
-    promote_rewatch: bool = Field(
-        default=False,
-        description=(
-            "When enabled, automatically set status to repeating on the list provider "
-            "if the entry is already marked as completed or repeating and new watch "
-            "activity is detected in the library"
-        ),
-    )
-    backup_retention_days: int = Field(
-        default=30,
-        ge=-1,
-        description=(
-            "Days to retain list backups before cleanup (0 retains indefinitely; "
-            "-1 disables backup creation)"
-        ),
     )
 
     @property
@@ -385,10 +370,6 @@ class AniBridgeConfig(BaseSettings):
     profiles: dict[str, AniBridgeProfileConfig] = Field(
         default_factory=dict, description="AniBridge profile configurations"
     )
-    provider_classes: list[str] = Field(
-        default_factory=list,
-        description="Additional class paths to register provider implementations from",
-    )
     log_level: LogLevel = Field(
         default=LogLevel.INFO, description="Logging level for the application"
     )
@@ -399,6 +380,10 @@ class AniBridgeConfig(BaseSettings):
             "Additionally accepts Zstandard compressed (.zst) files. "
             "If not set, no upstream mappings will be used."
         ),
+    )
+    provider_classes: list[str] = Field(
+        default_factory=list,
+        description="Additional class paths to register provider implementations from",
     )
     web: WebConfig = Field(
         default_factory=WebConfig, description="Embedded web server configuration"
@@ -512,6 +497,116 @@ class AniBridgeConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
 
+class _ConfigDumper(yaml.SafeDumper):
+    """Custom YAML dumper to control the formatting of the configuration file."""
+
+    _in_key = False
+
+    def represent_mapping(self, tag, mapping, flow_style=None):
+        node = yaml.nodes.MappingNode(tag, [], flow_style=flow_style)
+        for k, v in mapping.items():
+            self._in_key = True
+            k_node = self.represent_data(k)
+            self._in_key = False
+            v_node = self.represent_data(v)
+            node.value.append((k_node, v_node))
+        return node
+
+
+def _repr_flow_seq(
+    dumper: yaml.SafeDumper, data: list | tuple
+) -> yaml.nodes.SequenceNode:
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
+
+
+def _repr_str(dumper: _ConfigDumper, data: str) -> yaml.nodes.ScalarNode:
+    style = None if dumper._in_key else '"'
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+
+def _repr_enum(dumper: yaml.SafeDumper, data: BaseStrEnum) -> yaml.nodes.ScalarNode:
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data.value), style=None)
+
+
+_ConfigDumper.add_representer(list, _repr_flow_seq)
+_ConfigDumper.add_representer(tuple, _repr_flow_seq)
+_ConfigDumper.add_representer(str, _repr_str)
+_ConfigDumper.add_multi_representer(BaseStrEnum, _repr_enum)
+
+
+def find_yaml_config_file() -> Path:
+    """Find the YAML configuration file in the data path.
+
+    Returns:
+        Path: The path to an existing YAML configuration file or the default location.
+    """
+    data_path = Path(os.getenv("AB_DATA_PATH", "./data")).resolve()
+
+    for ext in ("yaml", "yml"):
+        yaml_file = data_path / f"config.{ext}"
+        if yaml_file.exists():
+            _log.debug("Using YAML config file: %s", yaml_file.resolve())
+            return yaml_file.resolve()
+
+    return data_path / "config.yaml"
+
+
+def _build_config_template_model(model_cls: type[BaseModel]) -> BaseModel:
+    """Recursively build a model with default values for required fields."""
+    payload: dict[str, object] = {}
+    for name, field in model_cls.model_fields.items():
+        if field.default is not PydanticUndefined:
+            value = field.default
+        elif field.default_factory is not None:
+            value = field.default_factory()
+        else:
+            value = "..."
+        payload[name] = value
+    return model_cls.model_construct(_fields_set=set(payload.keys()), **payload)
+
+
+def _render_default_config_template() -> str:
+    template_model = _build_config_template_model(AniBridgeConfig)
+
+    yaml_text = yaml.dump(
+        template_model.model_dump(mode="python"),
+        Dumper=_ConfigDumper,
+        sort_keys=False,
+        allow_unicode=False,
+        default_flow_style=False,
+    ).rstrip()
+
+    commented_lines = [
+        "############################################################################################################",
+        "# This is a template configuration file for AniBridge.                                                     #",  # noqa: E501
+        "# All optional coniguration fields  are commented out with their default values.                           #",  # noqa: E501
+        "# Required fields are uncommented and indicated by a placeholder `...`.                                    #",  # noqa: E501
+        "#                                                                                                          #",  # noqa: E501
+        "# Please refer to the documentation for more details: https://anibridge.eliasbenb.dev/configuration/       #",  # noqa: E501
+        "############################################################################################################",
+        "",
+    ]
+
+    for line in yaml_text.splitlines():
+        commented_lines.append("#" if not line.strip() else f"# {line}")
+
+    return "\n".join(commented_lines) + "\n"
+
+
+def _ensure_default_config_file() -> Path:
+    config_path = find_yaml_config_file()
+
+    if config_path.exists():
+        return config_path
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_render_default_config_template(), encoding="utf-8")
+    _log.info(
+        "AniBridgeConfig: Created default configuration template at %s", config_path
+    )
+    return config_path
+
+
 @cache
 def get_config() -> AniBridgeConfig:
     """Get the singleton instance of AniBridgeConfig.
@@ -519,4 +614,5 @@ def get_config() -> AniBridgeConfig:
     Returns:
         AniBridgeConfig: The singleton configuration instance.
     """
+    _ensure_default_config_file()
     return AniBridgeConfig()
