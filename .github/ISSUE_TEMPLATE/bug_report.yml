@@ -37,15 +37,13 @@ body:
           label: Environment
           description: |
               examples:
-                - **OS**: Ubuntu 24.04
                 - **AniBridge**: AniBridge 2.0.0
+                - **OS**: Ubuntu 24.04
                 - **Docker Install**: Yes
-                - **Database**: Sqlite 3.45.1
           value: |
-              - OS:
               - AniBridge:
+              - OS:
               - Docker Install:
-              - Database:
           render: markdown
       validations:
           required: true
@@ -60,11 +58,16 @@ body:
           required: true
     - type: textarea
       attributes:
+          label: Configuration
+          description: |
+              Paste your AniBridge configuration here. Make sure to redact any sensitive information. Generally, omitting the `list_provider_config`, `library_provider_config`, and `web.basic_auth` sections of your configuration is sufficient to redact sensitive information.
+      validations:
+          required: true
+    - type: textarea
+      attributes:
           label: Debug Logs?
           description: |
-              Debug Logs
-              ***Generally speaking, all bug reports must have debug logs provided.***
-              *** Info Logs are not debug logs. If the logs do not say debug and are not from a file like `*.DEBUG.log` they are not debug logs.***
+              Generally speaking, all bug reports must have debug logs provided (from a file like `*.DEBUG.log`). If you do not provide debug logs and the issue is not easily reproducible, your issue may be closed until you can provide debug logs.
       validations:
           required: true
     - type: textarea
