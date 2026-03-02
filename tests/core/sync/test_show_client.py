@@ -160,7 +160,9 @@ async def test_process_media_syncs_show_and_writes_history(
     assert provider.updated_entries and provider.updated_entries[0][0] == "400"
     assert show_client.sync_stats.synced >= 1
     with sync_db as ctx:
-        assert ctx.session.query(SyncHistory).count() == 1
+        records = ctx.session.query(SyncHistory).all()
+        assert len(records) == 1
+        assert records[0].library_media_key == show.key
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from anibridge.utils.cache import cache, lru_cache, ttl_cache
 from fastapi.param_functions import Query
@@ -23,9 +23,6 @@ from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state, get_bridge
-
-if TYPE_CHECKING:
-    from anibridge.library import LibrarySection
 
 __all__ = ["HistoryService", "get_history_service"]
 
@@ -217,41 +214,28 @@ class HistoryService:
     ) -> dict[str, ProviderMediaMetadata]:
         if not media_keys:
             return {}
+        if section_key is None:
+            return {}
         bridge = get_bridge(profile)
         if namespace != bridge.library_provider.NAMESPACE:
             return {}
 
         sections = await bridge.library_provider.get_sections()
-        target_sections: list[LibrarySection]
-        if section_key is None:
-            target_sections = list(sections)
-        else:
-            target_sections = [
-                section for section in sections if section.key == section_key
-            ]
-            if not target_sections:
-                return {}
+        section = next((s for s in sections if s.key == section_key), None)
+        if section is None:
+            return {}
 
-        remaining = set(media_keys)
         metadata: dict[str, ProviderMediaMetadata] = {}
-        for section in target_sections:
-            if not remaining:
-                break
-            items = await bridge.library_provider.list_items(
-                section, keys=list(remaining)
+        items = await bridge.library_provider.list_items(section, keys=list(media_keys))
+        for item in items:
+            key = str(item.key)
+            metadata[key] = ProviderMediaMetadata(
+                namespace=bridge.library_provider.NAMESPACE,
+                key=key,
+                title=item.title,
+                poster_url=item.media().poster_image,
+                external_url=item.media().external_url,
             )
-            for item in items:
-                key = str(item.key)
-                if key not in remaining:
-                    continue
-                remaining.discard(key)
-                metadata[key] = ProviderMediaMetadata(
-                    namespace=bridge.library_provider.NAMESPACE,
-                    key=key,
-                    title=item.title,
-                    poster_url=item.media().poster_image,
-                    external_url=item.media().external_url,
-                )
         return metadata
 
     @ttl_cache(ttl=60)

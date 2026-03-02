@@ -1071,12 +1071,11 @@ class BaseSyncClient[
                 else None
             )
 
-        library_target: LibraryEntry = child_item if child_item is not None else item
         library_namespace = self.library_provider.NAMESPACE
-        library_section_key = library_target.section().key
-        library_media_key = str(library_target.key)
+        library_section_key = item.section().key
+        library_media_key = str(item.key)
         list_namespace = self.list_provider.NAMESPACE
-        media_kind = library_target.media_kind
+        media_kind = item.media_kind
         mapping_target_descriptors = sorted(
             set(mapping_descriptors or ()),
             key=descriptor_key,
@@ -1256,9 +1255,8 @@ class BaseSyncClient[
         list_media_key: str | None = None,
     ) -> None:
         """Delete NOT_FOUND/FAILED history rows."""
-        library_target: LibraryEntry = child_item if child_item is not None else item
-        library_section_key = library_target.section().key
-        library_media_key = str(library_target.key)
+        library_section_key = item.section().key
+        library_media_key = str(item.key)
 
         if not library_media_key:
             return
