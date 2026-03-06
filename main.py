@@ -140,9 +140,9 @@ async def run() -> int:
             log.success(
                 "AniBridge - Web UI started at "
                 f"\033[92mhttp://{config.web.host}:{config.web.port} "
-                if supports_color()
-                else f"http://{config.web.host}:{config.web.port} "
                 "(ctrl+c to stop)\033[0m"
+                if supports_color()
+                else f"http://{config.web.host}:{config.web.port} (ctrl+c to stop)"
             )
 
         app_scheduler = SchedulerClient(config)
