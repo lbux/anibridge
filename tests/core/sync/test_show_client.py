@@ -17,8 +17,9 @@ from anibridge.library import (
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
 
-from anibridge.app.core.sync.base import ResolvedListTarget, SourceRangeMapping
+import anibridge.app.core.sync.show as show_module
 from anibridge.app.core.sync.show import ShowSyncClient
+from anibridge.app.core.sync.targeting import ResolvedListTarget, SourceRangeMapping
 from anibridge.app.models.db.sync_history import SyncHistory
 from anibridge.app.utils.mapping_ranges import SourceRange
 from tests.core.sync.fakes import (
@@ -282,18 +283,21 @@ def test_filter_episodes_by_ranges_returns_empty_when_no_range_matches(
 
 
 @pytest.mark.asyncio
-async def test_collect_prefetch_keys_sorted(show_client: ShowSyncClient) -> None:
+async def test_collect_prefetch_keys_sorted(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Prefetch keys should be sorted and unique."""
     show_client.full_scan = True
     show, _season, _episodes = build_show(view_counts=[0])
 
-    async def _resolve_batch(_payloads):
+    async def _resolve_batch(**_kwargs):
         return [
             [ResolvedListTarget("3", (), ())],
             [ResolvedListTarget("1", (), ())],
         ]
 
-    show_client._resolve_list_targets_batch = _resolve_batch  # type: ignore[method-assign]
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
 
     keys = await show_client._collect_prefetch_keys(cast(LibraryShowProtocol, show))
 
@@ -472,21 +476,24 @@ async def test_map_media_returns_empty_when_no_seasons(
 
 
 @pytest.mark.asyncio
-async def test_map_media_skips_missing_entries(show_client: ShowSyncClient) -> None:
+async def test_map_media_skips_missing_entries(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Missing cached entries should fall through without results."""
     show, _season, _episodes = build_show(view_counts=[1])
 
-    async def _resolve_batch(_payloads):
+    async def _resolve_batch(**_kwargs):
         return [[ResolvedListTarget("missing", (), ())]]
 
-    async def _get_entry_cached(_key: str):
+    async def _get_entry(_key: str):
         return None
 
     async def _search_media(*_args, **_kwargs):
         return None
 
-    show_client._resolve_list_targets_batch = _resolve_batch  # type: ignore[method-assign]
-    show_client._get_entry_cached = _get_entry_cached  # type: ignore[method-assign]
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
     show_client.search_media = _search_media  # type: ignore[method-assign]
 
     results = [
@@ -498,7 +505,10 @@ async def test_map_media_skips_missing_entries(show_client: ShowSyncClient) -> N
 
 
 @pytest.mark.asyncio
-async def test_map_media_uses_search_fallback(show_client: ShowSyncClient) -> None:
+async def test_map_media_uses_search_fallback(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Search fallback should cache and emit a target."""
     provider = cast(FakeListProvider, show_client.list_provider)
     show, _season, episodes = build_show(view_counts=[1, 1])
@@ -513,18 +523,18 @@ async def test_map_media_uses_search_fallback(show_client: ShowSyncClient) -> No
 
     cached = {"hit": False}
 
-    async def _resolve_batch(_payloads):
+    async def _resolve_batch(**_kwargs):
         return [[]]
 
     async def _search_media(*_args, **_kwargs):
         return entry
 
-    def _cache_list_entry(_entry: ListEntryProtocol) -> None:
+    def _cache_entry(_entry: ListEntryProtocol) -> None:
         cached["hit"] = True
 
-    show_client._resolve_list_targets_batch = _resolve_batch  # type: ignore[method-assign]
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
     show_client.search_media = _search_media  # type: ignore[method-assign]
-    show_client._cache_list_entry = _cache_list_entry  # type: ignore[method-assign]
+    monkeypatch.setattr(show_client._cache, "cache_entry", _cache_entry)
 
     results = [
         result
@@ -537,7 +547,10 @@ async def test_map_media_uses_search_fallback(show_client: ShowSyncClient) -> No
 
 
 @pytest.mark.asyncio
-async def test_map_media_filters_out_empty_ranges(show_client: ShowSyncClient) -> None:
+async def test_map_media_filters_out_empty_ranges(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Empty filtered episode sets should skip targets."""
     provider = cast(FakeListProvider, show_client.list_provider)
     show, _season, _episodes = build_show(view_counts=[1])
@@ -549,17 +562,17 @@ async def test_map_media_filters_out_empty_ranges(show_client: ShowSyncClient) -
         total_units=1,
     )
 
-    async def _resolve_batch(_payloads):
+    async def _resolve_batch(**_kwargs):
         return [[ResolvedListTarget("902", (), ())]]
 
-    async def _get_entry_cached(_key: str):
+    async def _get_entry(_key: str):
         return entry
 
     def _filter_episodes_by_ranges(*_args, **_kwargs):
         return []
 
-    show_client._resolve_list_targets_batch = _resolve_batch  # type: ignore[method-assign]
-    show_client._get_entry_cached = _get_entry_cached  # type: ignore[method-assign]
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
     show_client._filter_episodes_by_ranges = _filter_episodes_by_ranges  # type: ignore[method-assign]
 
     results = [
@@ -573,6 +586,7 @@ async def test_map_media_filters_out_empty_ranges(show_client: ShowSyncClient) -
 @pytest.mark.asyncio
 async def test_map_media_merges_groups_across_seasons(
     show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Targets for multiple seasons should merge into one group."""
     provider = cast(FakeListProvider, show_client.list_provider)
@@ -586,17 +600,17 @@ async def test_map_media_merges_groups_across_seasons(
     )
     provider.entries["903"] = entry
 
-    async def _resolve_batch(_payloads):
+    async def _resolve_batch(**_kwargs):
         return [
             [ResolvedListTarget("903", (("tmdb", "1", None),), ())],
             [ResolvedListTarget("903", (("tmdb", "2", None),), ())],
         ]
 
-    async def _get_entry_cached(_key: str):
+    async def _get_entry(_key: str):
         return entry
 
-    show_client._resolve_list_targets_batch = _resolve_batch  # type: ignore[method-assign]
-    show_client._get_entry_cached = _get_entry_cached  # type: ignore[method-assign]
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
 
     results = [
         result

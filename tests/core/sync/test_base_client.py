@@ -10,8 +10,14 @@ from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
 
 from anibridge.app.config.settings import SyncField
-from anibridge.app.core.sync.base import BaseSyncClient, SyncTarget, diff_snapshots
+from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import BatchUpdate, EntrySnapshot, ItemIdentifier
+from anibridge.app.core.sync.targeting import (
+    SyncTarget,
+    diff_snapshots,
+    find_best_search_result,
+    resolve_list_targets,
+)
 from anibridge.app.models.db.pin import Pin
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.utils.terminal import ARROW
@@ -167,13 +173,13 @@ def test_should_update_field_respects_comparison_rules(
     skip_fields = {SyncField.STATUS.value}
     stub_client.sync_fields = {"progress": {"_lt": False}}
 
-    assert not stub_client._should_apply_field(SyncField.STATUS, 5, 4, skip_fields)
+    assert not stub_client._should_apply_field(SyncField.STATUS, 5, 4, skip_fields)[0]
 
-    assert stub_client._should_apply_field(SyncField.PROGRESS, 5, 4, set())
-    assert not stub_client._should_apply_field(SyncField.PROGRESS, 3, 4, set())
+    assert stub_client._should_apply_field(SyncField.PROGRESS, 5, 4, set())[0]
+    assert not stub_client._should_apply_field(SyncField.PROGRESS, 3, 4, set())[0]
 
     stub_client.destructive_sync = True
-    assert stub_client._should_apply_field(SyncField.PROGRESS, 1, None, set())
+    assert stub_client._should_apply_field(SyncField.PROGRESS, 1, None, set())[0]
 
 
 def test_should_update_field_blocks_status_value_via_sync_fields(
@@ -187,7 +193,7 @@ def test_should_update_field_blocks_status_value_via_sync_fields(
         ListStatus.DROPPED,
         ListStatus.CURRENT,
         set(),
-    )
+    )[0]
 
 
 def test_should_update_field_blocks_operator_via_sync_fields(
@@ -201,7 +207,7 @@ def test_should_update_field_blocks_operator_via_sync_fields(
         datetime(2025, 1, 2, tzinfo=UTC),
         datetime(2025, 1, 1, tzinfo=UTC),
         set(),
-    )
+    )[0]
 
 
 @pytest.mark.parametrize(
@@ -227,7 +233,7 @@ def test_should_update_field_blocks_additional_operators(
         new_value,
         current_value,
         set(),
-    )
+    )[0]
 
 
 def test_should_update_field_respects_boolean_field_disable(
@@ -241,7 +247,7 @@ def test_should_update_field_respects_boolean_field_disable(
         10,
         2,
         set(),
-    )
+    )[0]
 
 
 def test_should_update_field_operator_checks_ignore_none_comparisons(
@@ -255,7 +261,7 @@ def test_should_update_field_operator_checks_ignore_none_comparisons(
         1,
         None,
         set(),
-    )
+    )[0]
 
 
 def test_should_update_field_blocks_nulling_when_not_destructive(
@@ -268,7 +274,7 @@ def test_should_update_field_blocks_nulling_when_not_destructive(
         None,
         "existing review",
         set(),
-    )
+    )[0]
 
     stub_client.destructive_sync = True
     assert stub_client._should_apply_field(
@@ -276,7 +282,7 @@ def test_should_update_field_blocks_nulling_when_not_destructive(
         None,
         "existing review",
         set(),
-    )
+    )[0]
 
 
 def test_get_pinned_fields_uses_cache(stub_client: StubSyncClient, sync_db) -> None:
@@ -671,12 +677,20 @@ def test_best_search_result_applies_threshold(stub_client: StubSyncClient) -> No
 
     stub_client.search_fallback_threshold = 80
     entries = [cast(ListEntryProtocol, exact), cast(ListEntryProtocol, off)]
-    pick = stub_client._best_search_result("Perfect Match", entries)
+    pick = find_best_search_result(
+        "Perfect Match",
+        entries,
+        stub_client.search_fallback_threshold,
+    )
     assert pick is exact
 
     stub_client.search_fallback_threshold = 95
     assert (
-        stub_client._best_search_result("Perfect Match", [cast(ListEntryProtocol, off)])
+        find_best_search_result(
+            "Perfect Match",
+            [cast(ListEntryProtocol, off)],
+            stub_client.search_fallback_threshold,
+        )
         is None
     )
 
@@ -691,7 +705,11 @@ async def test_resolve_list_targets_supports_one_to_many(
     provider.resolved_targets = {descriptor: ["100", "101"]}
     movie = make_movie(mapping_descriptors=[descriptor])
 
-    targets = await stub_client._resolve_list_targets(movie)
+    targets = await resolve_list_targets(
+        animap_client=stub_client.animap_client,
+        list_provider=stub_client.list_provider,
+        media_items=(movie,),
+    )
     keys = {target.list_media_key for target in targets}
 
     assert keys == {"100", "101"}
@@ -956,7 +974,9 @@ def test_flush_failure_history_cleanup_batched_removal(
         )
         ctx.session.commit()
 
-    stub_client._cleanup_failure_history(item=movie, list_media_key="entry")
+    stub_client._history.queue_failure_history_cleanup(
+        item=movie, list_media_key="entry"
+    )
     stub_client.flush_failure_history_cleanup()
 
     with sync_db as ctx:
@@ -1011,11 +1031,12 @@ async def test_promote_rewatch_promotes_current_to_repeating_when_completed(
         title="Movie",
         media_type=ListMediaType.MOVIE,
     )
+    typed_entry = cast(ListEntryProtocol, entry)
     entry.status = ListStatus.COMPLETED
 
     stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
     stub_client._map_results = [
-        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=typed_entry))
     ]
     provider.entries["m1"] = entry
 
@@ -1023,7 +1044,7 @@ async def test_promote_rewatch_promotes_current_to_repeating_when_completed(
         item=movie,
         child_item=movie,
         grandchild_items=(movie,),
-        entry=entry,
+        entry=typed_entry,
         list_media_key="m1",
     )
 
@@ -1048,12 +1069,13 @@ async def test_promote_rewatch_preserves_repeating_when_already_repeating(
         title="Movie",
         media_type=ListMediaType.MOVIE,
     )
+    typed_entry = cast(ListEntryProtocol, entry)
     entry.status = ListStatus.REPEATING
     entry.progress = 1
 
     stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
     stub_client._map_results = [
-        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=typed_entry))
     ]
     provider.entries["m1"] = entry
 
@@ -1061,7 +1083,7 @@ async def test_promote_rewatch_preserves_repeating_when_already_repeating(
         item=movie,
         child_item=movie,
         grandchild_items=(movie,),
-        entry=entry,
+        entry=typed_entry,
         list_media_key="m1",
     )
 
@@ -1086,11 +1108,12 @@ async def test_promote_rewatch_disabled_does_not_change_current(
         title="Movie",
         media_type=ListMediaType.MOVIE,
     )
+    typed_entry = cast(ListEntryProtocol, entry)
     entry.status = ListStatus.COMPLETED
 
     stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
     stub_client._map_results = [
-        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=typed_entry))
     ]
     provider.entries["m1"] = entry
 
@@ -1098,7 +1121,7 @@ async def test_promote_rewatch_disabled_does_not_change_current(
         item=movie,
         child_item=movie,
         grandchild_items=(movie,),
-        entry=entry,
+        entry=typed_entry,
         list_media_key="m1",
     )
 
@@ -1123,11 +1146,12 @@ async def test_promote_rewatch_respects_sync_fields_repeating_disabled(
         title="Movie",
         media_type=ListMediaType.MOVIE,
     )
+    typed_entry = cast(ListEntryProtocol, entry)
     entry.status = ListStatus.COMPLETED
 
     stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
     stub_client._map_results = [
-        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=typed_entry))
     ]
     provider.entries["m1"] = entry
 
@@ -1135,7 +1159,7 @@ async def test_promote_rewatch_respects_sync_fields_repeating_disabled(
         item=movie,
         child_item=movie,
         grandchild_items=(movie,),
-        entry=entry,
+        entry=typed_entry,
         list_media_key="m1",
     )
 
@@ -1164,11 +1188,12 @@ async def test_promote_rewatch_does_not_affect_non_completed_statuses(
         title="Movie",
         media_type=ListMediaType.MOVIE,
     )
+    typed_entry = cast(ListEntryProtocol, entry)
     entry.status = initial_status
 
     stub_client._trackable_items = [ItemIdentifier.from_item(cast(Any, movie))]
     stub_client._map_results = [
-        (movie, (movie,), SyncTarget(list_media_key="m1", entry=entry))
+        (movie, (movie,), SyncTarget(list_media_key="m1", entry=typed_entry))
     ]
     provider.entries["m1"] = entry
 
@@ -1176,7 +1201,7 @@ async def test_promote_rewatch_does_not_affect_non_completed_statuses(
         item=movie,
         child_item=movie,
         grandchild_items=(movie,),
-        entry=entry,
+        entry=typed_entry,
         list_media_key="m1",
     )
 

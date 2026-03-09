@@ -5,24 +5,21 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from anibridge.library import (
-    HistoryEntry,
-    LibraryEpisode,
-    LibrarySeason,
-    LibraryShow,
-)
+from anibridge.library import HistoryEntry, LibraryEpisode, LibrarySeason, LibraryShow
 from anibridge.list import ListEntry, ListMediaType, ListStatus
 from anibridge.utils.cache import lru_cache, ttl_cache
 from anibridge.utils.types import MappingDescriptor
 
 from anibridge.app.core.animap import descriptor_key
-from anibridge.app.core.sync.base import (
-    BaseSyncClient,
+from anibridge.app.core.sync.base import BaseSyncClient
+from anibridge.app.core.sync.stats import ItemIdentifier
+from anibridge.app.core.sync.targeting import (
     ResolvedListTarget,
     SourceRangeMapping,
     SyncTarget,
+    find_best_search_result,
+    resolve_list_targets_batch,
 )
-from anibridge.app.core.sync.stats import ItemIdentifier
 
 __all__ = ["ShowSyncClient"]
 
@@ -49,7 +46,15 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             SyncTarget,
         ]
     ]:
-        """Yield mapping candidates for the provided show item."""
+        """Yield mapping candidates for a show.
+
+        Args:
+            item (LibraryShow): Show whose seasons should be resolved.
+
+        Yields:
+            tuple[LibrarySeason, Sequence[LibraryEpisode], SyncTarget]:
+                Season-level mapping candidates.
+        """
         seasons = self.__get_wanted_seasons(item)
         if not seasons:
             return
@@ -72,8 +77,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             and (season := seasons[season_index])
         ]
 
-        resolved_batches = await self._resolve_list_targets_batch(
-            [payload[3] for payload in season_payloads]
+        resolved_batches = await resolve_list_targets_batch(
+            animap_client=self.animap_client,
+            list_provider=self.list_provider,
+            descriptor_sets=[payload[3] for payload in season_payloads],
         )
 
         groups: dict[str, _SeasonGroup] = {}
@@ -86,7 +93,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             targets: list[tuple[ResolvedListTarget, ListEntry]] = []
             if resolved_targets:
                 for target in resolved_targets:
-                    entry = await self._get_entry_cached(target.list_media_key)
+                    entry = await self._cache.get_entry(target.list_media_key)
                     if entry is None:
                         continue
                     targets.append((target, entry))
@@ -95,7 +102,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 entry = await self.search_media(item, season)
                 if entry:
                     key = str(entry.media().key)
-                    self._cache_list_entry(entry)
+                    self._cache.cache_entry(entry)
                     targets = [
                         (
                             ResolvedListTarget(
@@ -154,7 +161,15 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
     async def search_media(
         self, item: LibraryShow, child_item: LibrarySeason
     ) -> ListEntry | None:
-        """Locate a fallback list entry for the given season."""
+        """Locate a fallback list entry for a season.
+
+        Args:
+            item (LibraryShow): Parent show being synchronized.
+            child_item (LibrarySeason): Season used to narrow fallback candidates.
+
+        Returns:
+            ListEntry | None: Matching list entry, if one meets the threshold.
+        """
         if self.search_fallback_threshold < 0 or child_item.index == 0:
             return None
 
@@ -170,7 +185,11 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             or entry.media().total_units == episode_count
         ]
         candidates = filtered or tv_results
-        return self._best_search_result(item.title, candidates)
+        return find_best_search_result(
+            item.title,
+            candidates,
+            self.search_fallback_threshold,
+        )
 
     def _filter_episodes_by_ranges(
         self,
@@ -178,7 +197,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         season_index: int,
         source_mappings: Sequence[SourceRangeMapping],
     ) -> list[LibraryEpisode]:
-        """Filter episodes based on mapping source ranges."""
+        """Filter episodes using source mapping ranges."""
         if not source_mappings:
             return list(episodes)
 
@@ -209,7 +228,11 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             list(season.mapping_descriptors()) + list(item.mapping_descriptors())
             for season in seasons.values()
         ]
-        resolved_batches = await self._resolve_list_targets_batch(descriptor_sets)
+        resolved_batches = await resolve_list_targets_batch(
+            animap_client=self.animap_client,
+            list_provider=self.list_provider,
+            descriptor_sets=descriptor_sets,
+        )
         collected = {
             str(target.list_media_key)
             for targets in resolved_batches
@@ -389,6 +412,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
 
     @lru_cache(maxsize=32)
     def __get_wanted_seasons(self, item: LibraryShow) -> dict[int, LibrarySeason]:
+        """Return seasons that should participate in sync."""
         seasons: dict[int, LibrarySeason] = {}
         for season in item.seasons():
             episodes = season.episodes()
@@ -404,6 +428,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
 
     @lru_cache(maxsize=32)
     def __get_wanted_episodes(self, item: LibraryShow) -> list[LibraryEpisode]:
+        """Return episodes belonging to wanted seasons."""
         seasons = self.__get_wanted_seasons(item)
         if not seasons:
             return []
@@ -415,6 +440,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
     async def _filter_history_by_episodes(
         self, item: LibraryShow, episodes: Sequence[LibraryEpisode]
     ) -> list[HistoryEntry]:
+        """Return history entries that belong to the supplied episodes."""
         episode_keys = {episode.key for episode in episodes}
         history = await item.history()
         filtered = [entry for entry in history if entry.library_key in episode_keys]

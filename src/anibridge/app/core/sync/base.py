@@ -3,81 +3,57 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from typing import Any
 
 from anibridge.library import LibraryEntry, LibraryProvider
 from anibridge.list import ListEntry, ListProvider, ListStatus
 from anibridge.utils.types import Comparable, MappingDescriptor
-from rapidfuzz import fuzz
-from sqlalchemy import tuple_
 
 from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField
 from anibridge.app.core.animap import AnimapClient, descriptor_key
+from anibridge.app.core.sync.cache import SyncCacheManager
+from anibridge.app.core.sync.history import SyncHistoryManager
 from anibridge.app.core.sync.stats import (
     BatchUpdate,
     EntrySnapshot,
     ItemIdentifier,
     SyncStats,
 )
-from anibridge.app.models.db.animap import AnimapEntry
-from anibridge.app.models.db.pin import Pin
-from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
-from anibridge.app.utils.mapping_ranges import SourceRange, parse_source_range
+from anibridge.app.core.sync.targeting import SyncTarget, diff_snapshots
+from anibridge.app.models.db.sync_history import SyncOutcome
 from anibridge.app.utils.terminal import ARROW
 
 __all__ = ["BaseSyncClient"]
 
-FAILURE_HISTORY_CLEANUP_BATCH_SIZE = 256
-
-
-def diff_snapshots(
-    before: EntrySnapshot | None,
-    after: EntrySnapshot | None,
-    fields: set[str],
-) -> dict[str, tuple[Any, Any]]:
-    """Compute differences between two snapshots for the specified fields."""
-    diff: dict[str, tuple[Any, Any]] = {}
-    before_map = before.to_dict() if before else {}
-    after_map = after.to_dict() if after else {}
-    for field in fields:
-        if before_map.get(field) != after_map.get(field):
-            diff[field] = (before_map.get(field), after_map.get(field))
-    return diff
-
-
-@dataclass(frozen=True)
-class SyncTarget:
-    """Resolved list target for a library media item."""
-
-    list_media_key: str
-    entry: ListEntry
-    mapping_descriptors: tuple[MappingDescriptor, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class SourceRangeMapping:
-    """Source descriptor with one or more source ranges."""
-
-    descriptor: MappingDescriptor
-    ranges: tuple[SourceRange, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedListTarget:
-    """Resolved list key with mapping descriptors and ranges."""
-
-    list_media_key: str
-    mapping_descriptors: tuple[MappingDescriptor, ...]
-    source_mappings: tuple[SourceRangeMapping, ...]
-
 
 @dataclass(slots=True)
-class _GroupedTargets:
-    descriptors: set[MappingDescriptor]
-    mappings: dict[MappingDescriptor, list[SourceRange]]
+class _FieldApplicationState:
+    pinned_blocked_fields: set[str] = dataclass_field(default_factory=set)
+    sync_rules_blocked: dict[str, str] = dataclass_field(default_factory=dict)
+    status_gate_blocked: dict[str, str] = dataclass_field(default_factory=dict)
+    destructive_blocked_fields: set[str] = dataclass_field(default_factory=set)
+    unchanged_fields: set[str] = dataclass_field(default_factory=set)
+
+    def mark_block(self, field_name: str, reason: str | None) -> None:
+        """Record why a field was blocked during sync planning."""
+        if reason is None:
+            return
+        if reason == "pinned":
+            self.pinned_blocked_fields.add(field_name)
+            return
+        if reason == "unchanged":
+            self.unchanged_fields.add(field_name)
+            return
+        if reason == "destructive_disabled":
+            self.destructive_blocked_fields.add(field_name)
+            return
+        if reason.startswith("sync_rules"):
+            _, _, detail = reason.partition(":")
+            self.sync_rules_blocked[field_name] = detail
 
 
 class BaseSyncClient[
@@ -103,7 +79,26 @@ class BaseSyncClient[
         sync_fields: Mapping[SyncField, bool | Mapping[str, bool]] | None = None,
         promote_rewatch: bool = False,
     ) -> None:
-        """Initialize the base synchronisation client."""
+        """Initialize the base synchronization client.
+
+        Args:
+            library_provider (LibraryProvider): Source library provider.
+            list_provider (ListProvider): Destination list provider.
+            animap_client (AnimapClient): Animap client used for descriptor resolution.
+            full_scan (bool): Whether to include unplayed library items.
+            destructive_sync (bool): Whether sync may remove or decrease list state.
+            empty_sync (bool): Whether empty activity should still produce
+                planning entries.
+            search_fallback_threshold (int): Minimum fuzzy score for search
+                fallback matches.
+            batch_requests (bool): Whether to queue updates for batch submission.
+            dry_run (bool): Whether to log changes without applying them.
+            profile_name (str): Active profile name.
+            sync_fields (Mapping[SyncField, bool | Mapping[str, bool]] | None):
+                Field-level sync rules.
+            promote_rewatch (bool): Whether to promote CURRENT to REPEATING
+                for rewatches.
+        """
         self.library_provider: LibraryProvider = library_provider
         self.list_provider: ListProvider = list_provider
         self.animap_client: AnimapClient = animap_client
@@ -125,10 +120,18 @@ class BaseSyncClient[
         self.profile_name: str = profile_name
 
         self.sync_stats: SyncStats = SyncStats()
-        self._pin_cache: dict[tuple[str, str], list[str]] = {}
-        self._prefetched_entries: dict[str, ListEntry] = {}
         self._pending_updates: list[BatchUpdate[ParentMediaT, ChildMediaT]] = []
-        self._failure_history_cleanup_queue: set[tuple[str, str, str | None]] = set()
+        self._cache = SyncCacheManager(
+            list_provider=self.list_provider,
+            profile_name=self.profile_name,
+            db_factory=lambda: db(),
+        )
+        self._history = SyncHistoryManager(
+            profile_name=self.profile_name,
+            library_namespace=self.library_provider.NAMESPACE,
+            list_namespace=self.list_provider.NAMESPACE,
+            db_factory=lambda: db(),
+        )
 
         self._field_calculators: dict[
             SyncField,
@@ -144,241 +147,45 @@ class BaseSyncClient[
         }
 
     async def clear_cache(self) -> None:
-        """Clear any LRU/TTL caches defined on the client."""
-        self._pin_cache.clear()
-        self._prefetched_entries.clear()
+        """Clear all sync client caches.
+
+        Returns:
+            None: This method clears manager caches and decorated function caches.
+        """
+        self._cache.clear()
         for v in dir(self):
             attr = getattr(self, v)
             if callable(attr) and hasattr(attr, "cache_clear"):
                 attr.cache_clear()
 
-    def _cache_list_entry(self, entry: ListEntry) -> None:
-        """Store a list entry in the local prefetch cache."""
-        self._prefetched_entries[entry.media().key] = entry
-        self._prefetched_entries[entry.key] = entry
-
-    async def _get_entry_cached(self, key: str) -> ListEntry | None:
-        """Return a list entry from cache or fall back to the provider."""
-        cached = self._prefetched_entries.get(str(key))
-        if cached is not None:
-            return cached
-        entry = await self.list_provider.get_entry(key)
-        if entry is not None:
-            self._cache_list_entry(entry)
-        return entry
-
     async def prefetch_entries(self, items: Sequence[ParentMediaT]) -> None:
-        """Prefetch list entries for the supplied library items."""
-        if not items:
-            return
+        """Prefetch list entries for a batch of library items.
 
-        collected: set[str] = set()
-        for item in items:
-            try:
-                keys = await self._collect_prefetch_keys(item)
-            except Exception:
-                log.error(
-                    "[%s] Failed to collect prefetch keys",
-                    self.profile_name,
-                )
-                log.exception(
-                    "[%s] Prefetch key collection error details",
-                    self.profile_name,
-                )
-                continue
-            for key in keys:
-                if key is None:
-                    continue
-                collected.add(str(key))
+        Args:
+            items (Sequence[ParentMediaT]): Items whose list entries should be
+                loaded in advance.
 
-        if not collected:
-            return
-
-        log.debug(
-            "[%s] Prefetching %s list entries",
-            self.profile_name,
-            len(collected),
-        )
-
-        try:
-            entries = await self.list_provider.get_entries_batch(list(collected))
-        except Exception:
-            log.error(
-                "[%s] Failed to prefetch list entries",
-                self.profile_name,
-            )
-            log.exception(
-                "[%s] Prefetch batch error details",
-                self.profile_name,
-            )
-            return
-
-        for entry in entries:
-            if entry is None:
-                continue
-            self._cache_list_entry(entry)
-
-        log.debug(
-            "[%s] Prefetched %s list entries",
-            self.profile_name,
-            len(entries),
+        Returns:
+            None: This method warms cache state for later sync operations.
+        """
+        await self._cache.prefetch_entries(
+            items=items,
+            collect_keys=self._collect_prefetch_keys,
         )
 
     def _get_pinned_fields(self, namespace: str, media_key: str | None) -> list[str]:
         """Return the set of pinned fields for the given list media identifier."""
-        if not media_key:
-            return []
-
-        cache_key = (namespace, media_key)
-        cached = self._pin_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        with db() as ctx:
-            pin: Pin | None = (
-                ctx.session.query(Pin)
-                .filter(
-                    Pin.profile_name == self.profile_name,
-                    Pin.list_namespace == namespace,
-                    Pin.list_media_key == media_key,
-                )
-                .first()
-            )
-
-        fields = list(pin.fields) if pin and pin.fields else []
-        self._pin_cache[cache_key] = fields
-        return fields
-
-    async def _resolve_list_targets_batch(
-        self,
-        descriptor_sets: Sequence[Sequence[MappingDescriptor]],
-    ) -> list[tuple[ResolvedListTarget, ...]]:
-        """Resolve mapping descriptors into list targets in a single batch."""
-        normalized: list[tuple[MappingDescriptor, ...]] = []
-        all_descriptors: set[MappingDescriptor] = set()
-        for descriptor_set in descriptor_sets:
-            ordered = tuple(dict.fromkeys(descriptor_set))
-            normalized.append(ordered)
-            all_descriptors.update(ordered)
-
-        if not all_descriptors:
-            return [tuple() for _ in normalized]
-
-        grouped_edges = self.animap_client.resolve_edges_grouped(
-            list(all_descriptors),
-            target_providers=self.list_provider.MAPPING_PROVIDERS,
-        )
-        ranges_by_target: dict[
-            MappingDescriptor, dict[MappingDescriptor, list[SourceRange]]
-        ] = {
-            target_descriptor: {
-                source_descriptor: [
-                    parse_source_range(source_range) for source_range in source_ranges
-                ]
-                for source_descriptor, source_ranges in sources.items()
-            }
-            for target_descriptor, sources in grouped_edges.items()
-        }
-
-        direct_targets = [
-            descriptor
-            for descriptor in all_descriptors
-            if descriptor[0] in self.list_provider.MAPPING_PROVIDERS
-        ]
-        target_descriptors = {
-            *ranges_by_target.keys(),
-            *direct_targets,
-        }
-        if not target_descriptors:
-            return [tuple() for _ in normalized]
-
-        resolved_targets = await self.list_provider.resolve_mapping_descriptors(
-            list(target_descriptors)
-        )
-
-        grouped: dict[str, _GroupedTargets] = {}
-        for target in resolved_targets:
-            group = grouped.setdefault(
-                target.media_key,
-                _GroupedTargets(descriptors=set(), mappings={}),
-            )
-            group.descriptors.add(target.descriptor)
-            if target.descriptor in ranges_by_target:
-                for source_descriptor, ranges in ranges_by_target[
-                    target.descriptor
-                ].items():
-                    mapping_ranges = group.mappings.setdefault(source_descriptor, [])
-                    mapping_ranges.extend(ranges)
-
-        def _build_target(key: str, payload: _GroupedTargets) -> ResolvedListTarget:
-            descriptors = tuple(sorted(payload.descriptors, key=descriptor_key))
-            source_mappings = tuple(
-                SourceRangeMapping(
-                    descriptor=source_descriptor,
-                    ranges=tuple(ranges),
-                )
-                for source_descriptor, ranges in sorted(
-                    payload.mappings.items(),
-                    key=lambda item: descriptor_key(item[0]),
-                )
-            )
-            return ResolvedListTarget(
-                list_media_key=key,
-                mapping_descriptors=descriptors,
-                source_mappings=source_mappings,
-            )
-
-        by_key = {
-            key: _build_target(key, grouped[key]) for key in sorted(grouped.keys())
-        }
-
-        results: list[tuple[ResolvedListTarget, ...]] = []
-        for descriptor_set in normalized:
-            source_order = list(descriptor_set)
-            filtered: list[ResolvedListTarget] = []
-            for target in by_key.values():
-                ordered_descriptors = tuple(
-                    descriptor
-                    for descriptor in source_order
-                    if descriptor in target.mapping_descriptors
-                )
-                mapping_lookup = {
-                    mapping.descriptor: mapping.ranges
-                    for mapping in target.source_mappings
-                }
-                ordered_mappings = tuple(
-                    SourceRangeMapping(
-                        descriptor=descriptor,
-                        ranges=mapping_lookup[descriptor],
-                    )
-                    for descriptor in source_order
-                    if descriptor in mapping_lookup
-                )
-                if not ordered_descriptors and not ordered_mappings:
-                    continue
-                filtered.append(
-                    ResolvedListTarget(
-                        list_media_key=target.list_media_key,
-                        mapping_descriptors=ordered_descriptors
-                        or target.mapping_descriptors,
-                        source_mappings=ordered_mappings,
-                    )
-                )
-            results.append(tuple(filtered))
-        return results
-
-    async def _resolve_list_targets(
-        self, *media_items: LibraryEntry
-    ) -> tuple[ResolvedListTarget, ...]:
-        """Resolve mapping descriptors into list targets with range metadata."""
-        descriptors: list[MappingDescriptor] = []
-        for media in media_items:
-            descriptors.extend(media.mapping_descriptors())
-        resolved = await self._resolve_list_targets_batch([descriptors])
-        return resolved[0] if resolved else tuple()
+        return self._cache.get_pinned_fields(namespace, media_key)
 
     async def process_media(self, item: ParentMediaT) -> None:
-        """Process a single library item."""
+        """Process one library item through target resolution and sync.
+
+        Args:
+            item (ParentMediaT): Library item to process.
+
+        Returns:
+            None: This method updates sync stats and history as needed.
+        """
         ids_summary = self._debug_log_ids(
             item=item,
             child_item=None,
@@ -535,29 +342,15 @@ class BaseSyncClient[
     async def search_media(
         self, item: ParentMediaT, child_item: ChildMediaT
     ) -> ListEntry | None:
-        """Search the list provider for fallback matches."""
+        """Search the list provider for fallback matches.
 
-    def _best_search_result(
-        self, title: str, results: Sequence[ListEntry]
-    ) -> ListEntry | None:
-        """Return the best fuzzy match for the given title."""
-        best_entry: ListEntry | None = None
-        best_ratio = 0
-        for entry in results:
-            candidates = {entry.title}
-            media_title = entry.media().title
-            if media_title:
-                candidates.add(media_title)
-            for candidate in candidates:
-                if not candidate:
-                    continue
-                ratio = fuzz.ratio(title, candidate)
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_entry = entry
-        if best_ratio < self.search_fallback_threshold:
-            return None
-        return best_entry
+        Args:
+            item (ParentMediaT): Parent library item being synchronized.
+            child_item (ChildMediaT): Child item used to scope the search.
+
+        Returns:
+            ListEntry | None: Matching list entry, if one can be found.
+        """
 
     async def sync_media(
         self,
@@ -568,7 +361,21 @@ class BaseSyncClient[
         list_media_key: str | None,
         mapping_descriptors: Sequence[MappingDescriptor] | None = None,
     ) -> SyncOutcome:
-        """Synchronize a mapped media item with the list provider."""
+        """Synchronize a mapped media item with the list provider.
+
+        Args:
+            item (ParentMediaT): Parent library item being synchronized.
+            child_item (ChildMediaT): Child item mapped to the target entry.
+            grandchild_items (Sequence[GrandchildMediaT]): Trackable descendants
+                used for field calculation.
+            entry (ListEntry): Current list entry to update.
+            list_media_key (str | None): Resolved list media key for the target entry.
+            mapping_descriptors (Sequence[MappingDescriptor] | None): Mapping
+                descriptors used to find the target.
+
+        Returns:
+            SyncOutcome: Final outcome for the sync operation.
+        """
         resolved_list_key = list_media_key or entry.media().key
 
         debug_title = self._debug_log_title(item=item, child_item=child_item)
@@ -592,27 +399,7 @@ class BaseSyncClient[
             for field_name, rules in self.sync_fields.items()
             if rules is False
         }
-        pinned_blocked_fields: set[str] = set(skip_fields)
-        sync_rules_blocked: dict[str, str] = {}
-        status_gate_blocked: dict[str, str] = {}
-        destructive_blocked_fields: set[str] = set()
-        unchanged_fields: set[str] = set()
-
-        def mark_field_block(field_name: str, reason: str | None) -> None:
-            if reason is None:
-                return
-            if reason == "pinned":
-                pinned_blocked_fields.add(field_name)
-                return
-            if reason == "unchanged":
-                unchanged_fields.add(field_name)
-                return
-            if reason == "destructive_disabled":
-                destructive_blocked_fields.add(field_name)
-                return
-            if reason.startswith("sync_rules"):
-                _, _, detail = reason.partition(":")
-                sync_rules_blocked[field_name] = detail
+        field_state = _FieldApplicationState(pinned_blocked_fields=set(skip_fields))
 
         calc_kwargs = {
             "item": item,
@@ -697,7 +484,7 @@ class BaseSyncClient[
 
         considered_attrs: set[str] = set()
 
-        status_should_apply, status_reason = self._should_apply_field_with_reason(
+        status_should_apply, status_reason = self._should_apply_field(
             SyncField.STATUS,
             status_value,
             before_snapshot.status,
@@ -706,48 +493,19 @@ class BaseSyncClient[
         if status_should_apply:
             entry.status = status_value
         else:
-            mark_field_block(SyncField.STATUS.value, status_reason)
+            field_state.mark_block(SyncField.STATUS.value, status_reason)
         considered_attrs.add(SyncField.STATUS.value)
         final_status = entry.status
 
-        for field in SyncField:
-            if field == SyncField.STATUS:
-                continue
-            if field.value in skip_fields:
-                pinned_blocked_fields.add(field.value)
-                continue
-            if self.sync_fields.get(field.value) is False:
-                sync_fields_disabled.add(field.value)
-                continue
-
-            if final_status is None:
-                status_gate_blocked[field.value] = "status_unset"
-                continue
-            if (
-                field
-                in (SyncField.USER_RATING, SyncField.REPEATS, SyncField.FINISHED_AT)
-                and final_status < ListStatus.COMPLETED
-            ):
-                status_gate_blocked[field.value] = "requires_completed"
-                continue
-            if field == SyncField.STARTED_AT and final_status <= ListStatus.PLANNING:
-                status_gate_blocked[field.value] = "requires_active_status"
-                continue
-
-            value = await self._field_calculators[field](**calc_kwargs)
-            current_value = getattr(entry, field.value)
-            should_apply, apply_reason = self._should_apply_field_with_reason(
-                field,
-                value,
-                current_value,
-                skip_fields,
-            )
-            if not should_apply:
-                mark_field_block(field.value, apply_reason)
-                continue
-
-            setattr(entry, field.value, value)
-            considered_attrs.add(field.value)
+        await self._apply_secondary_fields(
+            entry=entry,
+            final_status=final_status,
+            calc_kwargs=calc_kwargs,
+            skip_fields=skip_fields,
+            sync_fields_disabled=sync_fields_disabled,
+            considered_attrs=considered_attrs,
+            field_state=field_state,
+        )
 
         after_snapshot = EntrySnapshot.from_entry(entry)
         diff = diff_snapshots(before_snapshot, after_snapshot, considered_attrs)
@@ -757,17 +515,21 @@ class BaseSyncClient[
                 "final_status": final_status,
                 "promoted_current_to_repeating": promoted_current_to_repeating,
                 "sync_fields_disabled": sorted(sync_fields_disabled),
-                "pinned_blocked": sorted(pinned_blocked_fields),
+                "pinned_blocked": sorted(field_state.pinned_blocked_fields),
                 "sync_rules_blocked": [
                     f"{field_name}({rule_name})" if rule_name else field_name
-                    for field_name, rule_name in sorted(sync_rules_blocked.items())
+                    for field_name, rule_name in sorted(
+                        field_state.sync_rules_blocked.items()
+                    )
                 ],
                 "status_gate_blocked": [
                     f"{field_name}({rule_name})" if rule_name else field_name
-                    for field_name, rule_name in sorted(status_gate_blocked.items())
+                    for field_name, rule_name in sorted(
+                        field_state.status_gate_blocked.items()
+                    )
                 ],
-                "destructive_blocked": sorted(destructive_blocked_fields),
-                "unchanged_fields": sorted(unchanged_fields),
+                "destructive_blocked": sorted(field_state.destructive_blocked_fields),
+                "unchanged_fields": sorted(field_state.unchanged_fields),
                 "considered_fields": sorted(considered_attrs),
                 "applied_fields": sorted(diff.keys()),
             }
@@ -781,7 +543,7 @@ class BaseSyncClient[
                 debug_title,
                 debug_ids,
             )
-            self._cleanup_failure_history(
+            self._history.queue_failure_history_cleanup(
                 item=item,
                 child_item=child_item,
                 list_media_key=resolved_list_key,
@@ -895,6 +657,65 @@ class BaseSyncClient[
             )
             raise
 
+    async def _apply_secondary_fields(
+        self,
+        *,
+        entry: ListEntry,
+        final_status: ListStatus | None,
+        calc_kwargs: Mapping[str, Any],
+        skip_fields: set[str],
+        sync_fields_disabled: set[str],
+        considered_attrs: set[str],
+        field_state: _FieldApplicationState,
+    ) -> None:
+        """Apply non-status sync fields when gates and rules allow it."""
+        for sync_field in SyncField:
+            if sync_field == SyncField.STATUS:
+                continue
+            if sync_field.value in skip_fields:
+                field_state.pinned_blocked_fields.add(sync_field.value)
+                continue
+            if self.sync_fields.get(sync_field.value) is False:
+                sync_fields_disabled.add(sync_field.value)
+                continue
+            if (
+                reason := self._status_gate_reason(sync_field, final_status)
+            ) is not None:
+                field_state.status_gate_blocked[sync_field.value] = reason
+                continue
+
+            value = await self._field_calculators[sync_field](**calc_kwargs)
+            current_value = getattr(entry, sync_field.value)
+            should_apply, apply_reason = self._should_apply_field(
+                sync_field,
+                value,
+                current_value,
+                skip_fields,
+            )
+            if not should_apply:
+                field_state.mark_block(sync_field.value, apply_reason)
+                continue
+
+            setattr(entry, sync_field.value, value)
+            considered_attrs.add(sync_field.value)
+
+    def _status_gate_reason(
+        self,
+        field: SyncField,
+        final_status: ListStatus | None,
+    ) -> str | None:
+        """Return the status-based reason a field cannot be updated."""
+        if final_status is None:
+            return "status_unset"
+        if (
+            field in (SyncField.USER_RATING, SyncField.REPEATS, SyncField.FINISHED_AT)
+            and final_status < ListStatus.COMPLETED
+        ):
+            return "requires_completed"
+        if field == SyncField.STARTED_AT and final_status <= ListStatus.PLANNING:
+            return "requires_active_status"
+        return None
+
     def _render_diff(self, plan: BatchUpdate[ParentMediaT, ChildMediaT]) -> str:
         """Render a diff string for a planned update."""
         diff = diff_snapshots(
@@ -905,7 +726,11 @@ class BaseSyncClient[
         return self._format_diff(diff)
 
     async def batch_sync(self) -> None:
-        """Flush any queued batch updates to the list provider."""
+        """Flush queued updates to the list provider.
+
+        Returns:
+            None: This method submits pending updates and records history results.
+        """
         if not self._pending_updates:
             return
 
@@ -1000,48 +825,12 @@ class BaseSyncClient[
         finally:
             self._pending_updates.clear()
 
-    @staticmethod
-    def _stringify_history_info_value(value: Any) -> str | None:
-        """Convert supported values into non-empty strings."""
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, datetime):
-            dt = value
-            dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-            return dt.isoformat()
-        if isinstance(value, ListStatus):
-            return value.value
-        if isinstance(value, (list, tuple, set)):
-            values = [
-                serialized
-                for serialized in (
-                    BaseSyncClient._stringify_history_info_value(item) for item in value
-                )
-                if serialized
-            ]
-            return ", ".join(values) if values else None
-        text = str(value).strip()
-        return text or None
-
     def _normalize_history_info(
         self,
         payload: Mapping[str, Any] | None,
     ) -> dict[str, str]:
         """Normalize history metadata to a flat string dictionary."""
-        if not payload:
-            return {}
-        normalized: dict[str, str] = {}
-        for key, value in payload.items():
-            normalized_key = str(key).strip()
-            if not normalized_key:
-                continue
-            normalized_value = self._stringify_history_info_value(value)
-            if normalized_value is None:
-                continue
-            normalized[normalized_key] = normalized_value
-        return normalized
+        return self._history.normalize_info(payload)
 
     async def _create_sync_history(
         self,
@@ -1057,238 +846,27 @@ class BaseSyncClient[
         info: Mapping[str, Any] | None = None,
     ) -> None:
         """Record the outcome of a sync attempt."""
-        before_snapshot, after_snapshot = snapshots
-        before_state = before_snapshot.serialize() if before_snapshot else None
-        after_state = after_snapshot.serialize() if after_snapshot else None
-
-        resolved_list_media_key = list_media_key
-        if resolved_list_media_key is None:
-            resolved_list_media_key = (
-                after_snapshot.media_key
-                if after_snapshot
-                else before_snapshot.media_key
-                if before_snapshot
-                else None
-            )
-
-        library_namespace = self.library_provider.NAMESPACE
-        library_section_key = item.section().key
-        library_media_key = str(item.key)
-        list_namespace = self.list_provider.NAMESPACE
-        media_kind = item.media_kind
-        mapping_target_descriptors = sorted(
-            set(mapping_descriptors or ()),
-            key=descriptor_key,
+        await self._history.create_sync_history(
+            item=item,
+            child_item=child_item,
+            grandchild_items=grandchild_items,
+            snapshots=snapshots,
+            list_media_key=list_media_key,
+            mapping_descriptors=mapping_descriptors,
+            outcome=outcome,
+            error_message=error_message,
+            info=info,
         )
-
-        base_info = self._normalize_history_info(
-            {
-                "outcome": outcome.value,
-                "library_section_key": library_section_key,
-                "library_media_key": library_media_key,
-                "list_media_key": resolved_list_media_key,
-                "mapping_targets": [
-                    descriptor_key(descriptor)
-                    for descriptor in mapping_target_descriptors
-                ],
-                "mapping_count": len(mapping_target_descriptors),
-                "grandchild_count": (
-                    len(grandchild_items) if grandchild_items is not None else None
-                ),
-            }
-        )
-        extra_info = self._normalize_history_info(info)
-        history_info = {
-            **base_info,
-            **extra_info,
-        }
-
-        with db() as ctx:
-            if outcome == SyncOutcome.SYNCED:
-                # Remove any previous NOT_FOUND/FAILED records on successful sync
-                self._cleanup_failure_history(
-                    item=item,
-                    child_item=child_item,
-                    list_media_key=resolved_list_media_key,
-                )
-
-            if outcome == SyncOutcome.SKIPPED:
-                return
-
-            async def get_mapping_entry_id() -> int | None:
-                if not mapping_descriptors:
-                    return None
-                descriptor = sorted(mapping_descriptors, key=descriptor_key)[0]
-                provider, entry_id, scope = descriptor
-                entry = (
-                    ctx.session.query(AnimapEntry)
-                    .filter(
-                        AnimapEntry.provider == provider,
-                        AnimapEntry.entry_id == entry_id,
-                        AnimapEntry.entry_scope == scope,
-                    )
-                    .first()
-                )
-                return entry.id if entry else None
-
-            mapping_entry_id = await get_mapping_entry_id()
-
-            if outcome in (SyncOutcome.NOT_FOUND, SyncOutcome.FAILED):
-                # If a not found/failed record already exists, update it
-                filters = [
-                    SyncHistory.profile_name == self.profile_name,
-                    SyncHistory.library_namespace == library_namespace,
-                    SyncHistory.library_section_key == library_section_key,
-                    SyncHistory.library_media_key == library_media_key,
-                    SyncHistory.outcome == outcome,
-                ]
-                if resolved_list_media_key is None:
-                    filters.append(SyncHistory.list_media_key.is_(None))
-                else:
-                    filters.extend(
-                        [
-                            SyncHistory.list_namespace == list_namespace,
-                            SyncHistory.list_media_key == resolved_list_media_key,
-                        ]
-                    )
-                existing = ctx.session.query(SyncHistory).filter(*filters).first()
-                if existing:
-                    if (
-                        existing.error_message == error_message
-                        and (existing.info or {}) == history_info
-                    ):
-                        # If we're just seeing the same error, don't bring the record
-                        # forward by updating the timestamp
-                        return
-                    existing.before_state = before_state
-                    existing.after_state = after_state
-                    existing.info = history_info
-                    existing.error_message = error_message
-                    existing.timestamp = datetime.now(UTC)
-                    existing.animap_entry_id = mapping_entry_id
-                    ctx.session.commit()
-                    return
-
-            history_record = SyncHistory(
-                profile_name=self.profile_name,
-                library_namespace=library_namespace,
-                library_section_key=library_section_key,
-                library_media_key=library_media_key,
-                list_namespace=list_namespace,
-                list_media_key=resolved_list_media_key,
-                animap_entry_id=mapping_entry_id,
-                media_kind=media_kind,
-                outcome=outcome,
-                before_state=before_state,
-                after_state=after_state,
-                info=history_info,
-                error_message=error_message,
-            )
-            ctx.session.add(history_record)
-            ctx.session.commit()
 
     def flush_failure_history_cleanup(self) -> None:
-        """Remove cached failure history rows in a single delete statement."""
-        if not self._failure_history_cleanup_queue:
-            return
+        """Flush queued failure-history cleanup operations.
 
-        targets = set(self._failure_history_cleanup_queue)
-        target_pairs = list(targets)
-        profile_name = self.profile_name
-        library_namespace = self.library_provider.NAMESPACE
-
-        with db() as ctx:
-            for start in range(
-                0,
-                len(target_pairs),
-                FAILURE_HISTORY_CLEANUP_BATCH_SIZE,
-            ):
-                chunk = target_pairs[start : start + FAILURE_HISTORY_CLEANUP_BATCH_SIZE]
-                with_list_key = [
-                    (section_key, media_key, list_media_key)
-                    for section_key, media_key, list_media_key in chunk
-                    if list_media_key is not None
-                ]
-                without_list_key = [
-                    (section_key, media_key)
-                    for section_key, media_key, list_media_key in chunk
-                    if list_media_key is None
-                ]
-                if with_list_key:
-                    ctx.session.query(SyncHistory).filter(
-                        SyncHistory.profile_name == profile_name,
-                        SyncHistory.library_namespace == library_namespace,
-                        tuple_(
-                            SyncHistory.library_section_key,
-                            SyncHistory.library_media_key,
-                            SyncHistory.list_media_key,
-                        ).in_(with_list_key),
-                        SyncHistory.outcome.in_(
-                            [SyncOutcome.NOT_FOUND, SyncOutcome.FAILED]
-                        ),
-                    ).delete(synchronize_session=False)
-                if without_list_key:
-                    ctx.session.query(SyncHistory).filter(
-                        SyncHistory.profile_name == profile_name,
-                        SyncHistory.library_namespace == library_namespace,
-                        tuple_(
-                            SyncHistory.library_section_key,
-                            SyncHistory.library_media_key,
-                        ).in_(without_list_key),
-                        SyncHistory.list_media_key.is_(None),
-                        SyncHistory.outcome.in_(
-                            [SyncOutcome.NOT_FOUND, SyncOutcome.FAILED]
-                        ),
-                    ).delete(synchronize_session=False)
-            ctx.session.commit()
-
-        self._failure_history_cleanup_queue -= targets
-        log.debug(
-            f"[{profile_name}] Cleaned up failure history for "
-            f"{len(targets)} cached targets"
-        )
-
-    def _cleanup_failure_history(
-        self,
-        item: ParentMediaT,
-        child_item: ChildMediaT | None = None,
-        list_media_key: str | None = None,
-    ) -> None:
-        """Delete NOT_FOUND/FAILED history rows."""
-        library_section_key = item.section().key
-        library_media_key = str(item.key)
-
-        if not library_media_key:
-            return
-
-        cleanup_key = (library_section_key, library_media_key, list_media_key)
-        self._failure_history_cleanup_queue.add(cleanup_key)
-        if list_media_key is not None:
-            self._failure_history_cleanup_queue.add(
-                (library_section_key, library_media_key, None)
-            )
-        if len(self._failure_history_cleanup_queue) >= (
-            FAILURE_HISTORY_CLEANUP_BATCH_SIZE
-        ):
-            self.flush_failure_history_cleanup()
+        Returns:
+            None: This method delegates cleanup to the history manager.
+        """
+        self._history.flush_failure_history_cleanup()
 
     def _should_apply_field(
-        self,
-        field: SyncField,
-        new_value: Comparable | None,
-        current_value: Comparable | None,
-        skip_fields: set[str],
-    ) -> bool:
-        """Determine whether a field should be updated based on its rule."""
-        should_apply, _ = self._should_apply_field_with_reason(
-            field,
-            new_value,
-            current_value,
-            skip_fields,
-        )
-        return should_apply
-
-    def _should_apply_field_with_reason(
         self,
         field: SyncField,
         new_value: Comparable | None,
@@ -1306,7 +884,7 @@ class BaseSyncClient[
             and new_value is None
         ):
             return False, "destructive_disabled"
-        allowed, rule_reason = self._is_sync_field_allowed_with_reason(
+        allowed, rule_reason = self._is_sync_field_allowed(
             field,
             current_value,
             new_value,
@@ -1318,20 +896,6 @@ class BaseSyncClient[
         )
 
     def _is_sync_field_allowed(
-        self,
-        field: SyncField,
-        current_value: Comparable | None,
-        new_value: Comparable | None,
-    ) -> bool:
-        """Check if syncing a field is allowed based on the sync_fields rules."""
-        allowed, _ = self._is_sync_field_allowed_with_reason(
-            field,
-            current_value,
-            new_value,
-        )
-        return allowed
-
-    def _is_sync_field_allowed_with_reason(
         self,
         field: SyncField,
         current_value: Comparable | None,
