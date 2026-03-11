@@ -90,15 +90,31 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             resolved_batches,
             strict=False,
         ):
-            targets: list[tuple[ResolvedListTarget, ListEntry]] = []
-            if resolved_targets:
-                for target in resolved_targets:
-                    entry = await self._cache.get_entry(target.list_media_key)
-                    if entry is None:
-                        continue
-                    targets.append((target, entry))
+            viable_targets = self._resolve_active_targets(
+                item=item,
+                season=season,
+                season_episodes=season_episodes,
+                resolved_targets=resolved_targets,
+            )
+            self._untrack_skipped_episodes(
+                season_episodes=season_episodes,
+                viable_targets=viable_targets,
+                resolved_targets=resolved_targets,
+            )
 
-            if not targets:
+            targets: list[
+                tuple[ResolvedListTarget, ListEntry, list[LibraryEpisode]]
+            ] = []
+            for target, filtered in viable_targets:
+                entry = await self._cache.get_entry(target.list_media_key)
+                if entry is None:
+                    continue
+                targets.append((target, entry, filtered))
+
+            should_search_fallback = not targets and (
+                not resolved_targets or viable_targets
+            )
+            if should_search_fallback:
                 entry = await self.search_media(item, season)
                 if entry:
                     key = str(entry.media().key)
@@ -111,21 +127,14 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                                 source_mappings=(),
                             ),
                             entry,
+                            list(season_episodes),
                         )
                     ]
 
             if not targets:
                 continue
 
-            for target, entry in targets:
-                filtered = self._filter_episodes_by_ranges(
-                    season_episodes,
-                    season_index,
-                    target.source_mappings,
-                )
-                if not filtered:
-                    continue
-
+            for target, entry, filtered in targets:
                 media_key = entry.media().key
                 if (group := groups.get(media_key)) is None:
                     groups[media_key] = _SeasonGroup(
@@ -224,21 +233,133 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         seasons = self.__get_wanted_seasons(item)
         if not seasons:
             return []
-        descriptor_sets = [
-            list(season.mapping_descriptors()) + list(item.mapping_descriptors())
-            for season in seasons.values()
+        wanted_indexes = sorted(seasons)
+        episodes_by_season: dict[int, list[LibraryEpisode]] = defaultdict(list)
+        for episode in self.__get_wanted_episodes(item):
+            if episode.season_index in seasons:
+                episodes_by_season[episode.season_index].append(episode)
+
+        season_payloads = [
+            (
+                season_index,
+                seasons[season_index],
+                episodes_by_season[season_index],
+                list(seasons[season_index].mapping_descriptors())
+                + list(item.mapping_descriptors()),
+            )
+            for season_index in wanted_indexes
+            if episodes_by_season.get(season_index)
         ]
+        if not season_payloads:
+            return []
+
         resolved_batches = await resolve_list_targets_batch(
             animap_client=self.animap_client,
             list_provider=self.list_provider,
-            descriptor_sets=descriptor_sets,
+            descriptor_sets=[payload[3] for payload in season_payloads],
         )
         collected = {
             str(target.list_media_key)
-            for targets in resolved_batches
-            for target in targets
+            for (_, season, season_episodes, _), targets in zip(
+                season_payloads,
+                resolved_batches,
+                strict=False,
+            )
+            for target, _ in self._resolve_active_targets(
+                item=item,
+                season=season,
+                season_episodes=season_episodes,
+                resolved_targets=targets,
+            )
         }
         return tuple(sorted(collected))
+
+    def _resolve_active_targets(
+        self,
+        *,
+        item: LibraryShow,
+        season: LibrarySeason,
+        season_episodes: Sequence[LibraryEpisode],
+        resolved_targets: Sequence[ResolvedListTarget],
+    ) -> list[tuple[ResolvedListTarget, list[LibraryEpisode]]]:
+        """Return resolved targets whose mapped episodes should be considered."""
+        active_targets: list[tuple[ResolvedListTarget, list[LibraryEpisode]]] = []
+        for target in resolved_targets:
+            filtered = self._episodes_for_target(
+                item=item,
+                season=season,
+                season_episodes=season_episodes,
+                target=target,
+            )
+            if filtered:
+                active_targets.append((target, filtered))
+        return active_targets
+
+    def _untrack_skipped_episodes(
+        self,
+        *,
+        season_episodes: Sequence[LibraryEpisode],
+        viable_targets: Sequence[tuple[ResolvedListTarget, list[LibraryEpisode]]],
+        resolved_targets: Sequence[ResolvedListTarget],
+    ) -> None:
+        """Remove mapped episodes from stats when they were excluded from sync."""
+        if not resolved_targets:
+            return
+
+        included_keys = {
+            episode.key for _target, episodes in viable_targets for episode in episodes
+        }
+        skipped = [
+            episode for episode in season_episodes if episode.key not in included_keys
+        ]
+        if skipped:
+            self.sync_stats.untrack_items(ItemIdentifier.from_items(skipped))
+
+    def _episodes_for_target(
+        self,
+        *,
+        item: LibraryShow,
+        season: LibrarySeason,
+        season_episodes: Sequence[LibraryEpisode],
+        target: ResolvedListTarget,
+    ) -> list[LibraryEpisode]:
+        """Return episodes that should be considered for a resolved target."""
+        filtered = self._filter_episodes_by_ranges(
+            season_episodes,
+            season.index,
+            target.source_mappings,
+        )
+        if not filtered:
+            return []
+        if self._should_skip_inactive_mapping_range(item, season, filtered, target):
+            return []
+        return filtered
+
+    def _should_skip_inactive_mapping_range(
+        self,
+        item: LibraryShow,
+        season: LibrarySeason,
+        episodes: Sequence[LibraryEpisode],
+        target: ResolvedListTarget,
+    ) -> bool:
+        """Skip mapped subranges that have no actionable activity."""
+        if not target.source_mappings:
+            return False
+        if self.full_scan or self.destructive_sync or self.empty_sync:
+            return False
+        if item.on_watching or season.on_watching:
+            return False
+        if item.on_watchlist or season.on_watchlist:
+            return False
+        if item.user_rating is not None or season.user_rating is not None:
+            return False
+        return not any(
+            episode.view_count
+            or episode.on_watching
+            or episode.on_watchlist
+            or episode.user_rating is not None
+            for episode in episodes
+        )
 
     async def _calculate_status(
         self,

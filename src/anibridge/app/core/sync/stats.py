@@ -125,6 +125,12 @@ class SyncStats(BaseModel):
         for item_id in item_ids:
             self.untrack_item(item_id)
 
+    def filter_tracked_items(
+        self, item_ids: Sequence[ItemIdentifier]
+    ) -> list[ItemIdentifier]:
+        """Return the subset of items that are still tracked."""
+        return [item_id for item_id in item_ids if item_id in self._item_outcomes]
+
     def register_pending_items(self, item_ids: Sequence[ItemIdentifier]) -> None:
         """Register items as pending processing.
 

@@ -240,6 +240,18 @@ class BaseSyncClient[
                 self.sync_stats.track_item(item_identifier, SyncOutcome.FAILED)
 
         if not found_match:
+            remaining_trackable = self.sync_stats.filter_tracked_items(trackable)
+            if not remaining_trackable:
+                log.debug(
+                    "[%s] Skipping %s %s because all eligible items were filtered %s",
+                    self.profile_name,
+                    item.media_kind.value,
+                    self._debug_log_title(item=item, child_item=None),
+                    ids_summary,
+                )
+                self.sync_stats.track_item(item_identifier, SyncOutcome.SKIPPED)
+                return
+
             attempted_descriptors = tuple(
                 sorted(item.mapping_descriptors(), key=descriptor_key)
             )
@@ -260,14 +272,14 @@ class BaseSyncClient[
                 info={
                     "operation": "resolve_target",
                     "reason": "no_matching_list_entry",
-                    "trackable_items": str(len(trackable)),
+                    "trackable_items": str(len(remaining_trackable)),
                     "mapping_descriptor_count": str(len(attempted_descriptors)),
                     "mapping_descriptors": ", ".join(
                         descriptor_key(d) for d in attempted_descriptors
                     ),
                 },
             )
-            self.sync_stats.track_items(trackable, SyncOutcome.NOT_FOUND)
+            self.sync_stats.track_items(remaining_trackable, SyncOutcome.NOT_FOUND)
             self.sync_stats.track_item(item_identifier, SyncOutcome.NOT_FOUND)
 
     @abstractmethod

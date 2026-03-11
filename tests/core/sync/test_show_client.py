@@ -20,7 +20,7 @@ from anibridge.list import ListMediaType, ListStatus
 import anibridge.app.core.sync.show as show_module
 from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.targeting import ResolvedListTarget, SourceRangeMapping
-from anibridge.app.models.db.sync_history import SyncHistory
+from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.utils.mapping_ranges import SourceRange
 from tests.core.sync.fakes import (
     FakeAnimapClient,
@@ -167,6 +167,94 @@ async def test_process_media_syncs_show_and_writes_history(
 
 
 @pytest.mark.asyncio
+async def test_process_media_untracks_filtered_mapping_range_items(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    sync_db: AnibridgeDb,
+) -> None:
+    """Excluded mapped episodes should be removed from sync tracking."""
+    provider = cast(FakeListProvider, show_client.list_provider)
+    show, _season, _episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+    entry = FakeListEntry(
+        provider=provider,
+        key="909",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=2,
+    )
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "909",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=1, end=1, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    async def _get_entry(_key: str):
+        return entry
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
+
+    await show_client.process_media(cast(LibraryShowProtocol, show))
+
+    tracked_episode_keys = {
+        item.key for item in show_client.sync_stats.get_grandchild_items_by_outcome()
+    }
+    assert tracked_episode_keys == {"ep-1"}
+
+
+@pytest.mark.asyncio
+async def test_process_media_skips_when_all_mapped_items_are_filtered(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shows whose mapped episodes are all filtered out should be skipped."""
+    show, _season, _episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "910",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+
+    await show_client.process_media(cast(LibraryShowProtocol, show))
+
+    assert show_client.sync_stats.skipped == 1
+    assert show_client.sync_stats.not_found == 0
+    assert show_client.sync_stats.pending == 0
+    assert show_client.sync_stats.get_grandchild_items_by_outcome() == []
+    assert show_client.sync_stats.get_items_by_outcome(SyncOutcome.SKIPPED)
+
+
+@pytest.mark.asyncio
 async def test_map_media_uses_mapping_resolution(show_client: ShowSyncClient) -> None:
     """Mapping graphs resolve to list entries when provider supports it."""
     provider = cast(FakeListProvider, show_client.list_provider)
@@ -293,8 +381,10 @@ async def test_collect_prefetch_keys_sorted(
 
     async def _resolve_batch(**_kwargs):
         return [
-            [ResolvedListTarget("3", (), ())],
-            [ResolvedListTarget("1", (), ())],
+            [
+                ResolvedListTarget("3", (), ()),
+                ResolvedListTarget("1", (), ()),
+            ],
         ]
 
     monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
@@ -584,6 +674,175 @@ async def test_map_media_filters_out_empty_ranges(
 
 
 @pytest.mark.asyncio
+async def test_map_media_skips_inactive_mapping_ranges_before_lookup(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inactive mapped ranges should not trigger list lookups or fallback search."""
+    show, _season, _episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+    lookup_called = False
+    search_called = False
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "904",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    async def _get_entry(_key: str):
+        nonlocal lookup_called
+        lookup_called = True
+        return None
+
+    async def _search_media(*_args, **_kwargs):
+        nonlocal search_called
+        search_called = True
+        return None
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
+    show_client.search_media = _search_media  # type: ignore[method-assign]
+
+    results = [
+        result
+        async for result in show_client.map_media(cast(LibraryShowProtocol, show))
+    ]
+
+    assert results == []
+    assert lookup_called is False
+    assert search_called is False
+
+
+@pytest.mark.asyncio
+async def test_map_media_uses_search_fallback_for_active_mapping_range(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Active mapped ranges should still fall back to search on cache miss."""
+    provider = cast(FakeListProvider, show_client.list_provider)
+    show, _season, episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+    entry = FakeListEntry(
+        provider=provider,
+        key="906",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=len(episodes),
+    )
+    cached = {"hit": False}
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "906",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=1, end=1, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    async def _get_entry(_key: str):
+        return None
+
+    async def _search_media(*_args, **_kwargs):
+        return entry
+
+    def _cache_entry(_entry: ListEntryProtocol) -> None:
+        cached["hit"] = True
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
+    monkeypatch.setattr(show_client._cache, "cache_entry", _cache_entry)
+    show_client.search_media = _search_media  # type: ignore[method-assign]
+
+    results = [
+        result
+        async for result in show_client.map_media(cast(LibraryShowProtocol, show))
+    ]
+
+    assert len(results) == 1
+    assert list(results[0][1]) == [episodes[0], episodes[1]]
+    assert results[0][2].entry is entry
+    assert cached["hit"] is True
+
+
+@pytest.mark.asyncio
+async def test_map_media_keeps_inactive_mapping_range_when_watchlisted(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Watchlist state should keep mapped ranges eligible even without activity."""
+    provider = cast(FakeListProvider, show_client.list_provider)
+    show, season, episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={
+            "mapping_descriptors": [("tmdb", "10", "s1")],
+            "on_watchlist": True,
+        },
+    )
+    entry = FakeListEntry(
+        provider=provider,
+        key="907",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=len(episodes),
+    )
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "907",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    async def _get_entry(_key: str):
+        return entry
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
+
+    results = [
+        result
+        async for result in show_client.map_media(cast(LibraryShowProtocol, show))
+    ]
+
+    assert len(results) == 1
+    assert results[0][0] is season
+    assert list(results[0][1]) == [episodes[1]]
+    assert results[0][2].entry is entry
+
+
+@pytest.mark.asyncio
 async def test_map_media_merges_groups_across_seasons(
     show_client: ShowSyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -664,6 +923,75 @@ async def test_collect_prefetch_keys_empty(show_client: ShowSyncClient) -> None:
     keys = await show_client._collect_prefetch_keys(cast(LibraryShowProtocol, show))
 
     assert keys == []
+
+
+@pytest.mark.asyncio
+async def test_collect_prefetch_keys_skips_inactive_mapping_ranges(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prefetch should omit mapped targets whose ranges have no activity."""
+    show, _season, _episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "905",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+
+    keys = await show_client._collect_prefetch_keys(cast(LibraryShowProtocol, show))
+
+    assert keys == ()
+
+
+@pytest.mark.asyncio
+async def test_collect_prefetch_keys_keeps_inactive_mapping_ranges_in_full_scan(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full scans should continue prefetching inactive mapped ranges."""
+    show_client.full_scan = True
+    show, _season, _episodes = build_show(
+        view_counts=[1, 0],
+        season_kwargs={"mapping_descriptors": [("tmdb", "10", "s1")]},
+    )
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "908",
+                    (),
+                    (
+                        SourceRangeMapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+
+    keys = await show_client._collect_prefetch_keys(cast(LibraryShowProtocol, show))
+
+    assert keys == ("908",)
 
 
 @pytest.mark.asyncio
