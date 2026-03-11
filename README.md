@@ -9,15 +9,16 @@ The smart way to keep your anime lists perfectly synchronized.
 
 AniBridge is a media synchronization tool designed to keep your activity synchronized across different media viewing and tracking platforms. With its [mappings database](https://github.com/anibridge/anibridge-mappings) of over 60K entries tailored specifically for anime titles, AniBridge is particularly focused on anime content, however can be expanded to support more with [custom mappings](https://anibridge.eliasbenb.dev/mappings/custom-mappings).
 
-[![Jellyfin](https://img.shields.io/badge/Jellyfin-00A4DC?style=for-the-badge&logo=jellyfin&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/jellyfin)
 [![Plex](https://img.shields.io/badge/Plex-F5A623?style=for-the-badge&logo=plex&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/plex)
+[![Jellyfin](https://img.shields.io/badge/Jellyfin-00A4DC?style=for-the-badge&logo=jellyfin&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/jellyfin)
+[![Emby](https://img.shields.io/badge/Emby-52b54b?style=for-the-badge&logo=emby&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/emby)
 [![AniList](https://img.shields.io/badge/AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/anilist)
 [![MyAnimeList](https://img.shields.io/badge/MyAnimeList-2E51A2?style=for-the-badge&logo=myanimelist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/mal)
 
 ## Key Features
 
 - **🔄 Comprehensive Synchronization**: Synchronizes watch status, progress, ratings, reviews, and start/completion dates between your anime library and list.
-- **🔗 Provider-Agnostic**: Supports multiple media library and anime list providers through a flexible plugin system (Plex, Jellyfin, AniList, MyAnimeList).
+- **🔗 Provider-Agnostic**: Supports multiple media library and anime list providers through a flexible plugin system (Plex, Jellyfin, Emby, AniList, MyAnimeList).
 - **🎯 Smart Content Matching**: Uses a curated mappings database with fuzzy title search fallback and support for custom mapping overrides.
 - **⚡ Optimized Performance**: Intelligent batch processing, rate limiting, and caching to minimize API usage while maximizing sync speed.
 - **👥 Multi-User & Multi-Profile**: Define multiple profiles to simultaneously synchronize different users, libraries, and servers with granular configuration.
