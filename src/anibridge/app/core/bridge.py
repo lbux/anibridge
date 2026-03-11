@@ -19,7 +19,8 @@ from anibridge.app.config.database import db
 from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.providers import build_library_provider, build_list_provider
-from anibridge.app.core.sync import BaseSyncClient, MovieSyncClient, ShowSyncClient
+from anibridge.app.core.sync.movie import MovieSyncClient
+from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.stats import SyncProgress, SyncStats
 from anibridge.app.exceptions import MediaTypeError
 from anibridge.app.models.db.housekeeping import Housekeeping
@@ -255,28 +256,26 @@ class BridgeClient:
             library_provider=self.library_provider,
             list_provider=self.list_provider,
             animap_client=self.animap_client,
-            sync_fields=self.profile_config.sync_fields,
+            sync_rules=self.profile_config.sync_rules,
             full_scan=self.profile_config.full_scan,
             destructive_sync=self.profile_config.destructive_sync,
             empty_sync=self.profile_config.empty_sync,
             search_fallback_threshold=self.profile_config.search_fallback_threshold,
             batch_requests=self.profile_config.batch_requests,
             dry_run=self.profile_config.dry_run,
-            promote_rewatch=self.profile_config.promote_rewatch,
             profile_name=self.profile_name,
         )
         show_sync = ShowSyncClient(
             library_provider=self.library_provider,
             list_provider=self.list_provider,
             animap_client=self.animap_client,
-            sync_fields=self.profile_config.sync_fields,
+            sync_rules=self.profile_config.sync_rules,
             full_scan=self.profile_config.full_scan,
             destructive_sync=self.profile_config.destructive_sync,
             empty_sync=self.profile_config.empty_sync,
             search_fallback_threshold=self.profile_config.search_fallback_threshold,
             batch_requests=self.profile_config.batch_requests,
             dry_run=self.profile_config.dry_run,
-            promote_rewatch=self.profile_config.promote_rewatch,
             profile_name=self.profile_name,
         )
 
@@ -472,7 +471,7 @@ class BridgeClient:
                 }
             )
 
-        sync_client: BaseSyncClient
+        sync_client: MovieSyncClient | ShowSyncClient
         if section.media_kind == MediaKind.MOVIE:
             sync_client = movie_sync
         elif section.media_kind == MediaKind.SHOW:

@@ -13,10 +13,11 @@ from anibridge.utils.types import Comparable, MappingDescriptor
 
 from anibridge.app import log
 from anibridge.app.config.database import db
-from anibridge.app.config.settings import SyncField
+from anibridge.app.config.settings import SyncField, SyncRulesConfig
 from anibridge.app.core.animap import AnimapClient, descriptor_key
 from anibridge.app.core.sync.cache import SyncCacheManager
 from anibridge.app.core.sync.history import SyncHistoryManager
+from anibridge.app.core.sync.rules import SyncRuleDecision, SyncRuleEngine
 from anibridge.app.core.sync.stats import (
     BatchUpdate,
     EntrySnapshot,
@@ -32,6 +33,8 @@ __all__ = ["BaseSyncClient"]
 
 @dataclass(slots=True)
 class _FieldApplicationState:
+    """Track why individual sync fields were blocked during planning."""
+
     pinned_blocked_fields: set[str] = dataclass_field(default_factory=set)
     sync_rules_blocked: dict[str, str] = dataclass_field(default_factory=dict)
     status_gate_blocked: dict[str, str] = dataclass_field(default_factory=dict)
@@ -56,6 +59,14 @@ class _FieldApplicationState:
             self.sync_rules_blocked[field_name] = detail
 
 
+def _format_blocked_field_reasons(field_reasons: Mapping[str, str]) -> str:
+    """Format blocked field metadata for human-readable logging."""
+    return ", ".join(
+        f"{field_name}({reason})" if reason else field_name
+        for field_name, reason in sorted(field_reasons.items())
+    )
+
+
 class BaseSyncClient[
     ParentMediaT: LibraryEntry,
     ChildMediaT: LibraryEntry,
@@ -76,8 +87,7 @@ class BaseSyncClient[
         batch_requests: bool,
         dry_run: bool,
         profile_name: str,
-        sync_fields: Mapping[SyncField, bool | Mapping[str, bool]] | None = None,
-        promote_rewatch: bool = False,
+        sync_rules: SyncRulesConfig | None = None,
     ) -> None:
         """Initialize the base synchronization client.
 
@@ -94,29 +104,21 @@ class BaseSyncClient[
             batch_requests (bool): Whether to queue updates for batch submission.
             dry_run (bool): Whether to log changes without applying them.
             profile_name (str): Active profile name.
-            sync_fields (Mapping[SyncField, bool | Mapping[str, bool]] | None):
-                Field-level sync rules.
-            promote_rewatch (bool): Whether to promote CURRENT to REPEATING
-                for rewatches.
+            sync_rules (SyncRulesConfig | None): Declarative per-field sync rules.
         """
         self.library_provider: LibraryProvider = library_provider
         self.list_provider: ListProvider = list_provider
         self.animap_client: AnimapClient = animap_client
-        self.sync_fields: dict[str, bool | dict[str, bool]] = {
-            str(field): (
-                bool(rules)
-                if isinstance(rules, bool)
-                else {str(rule): bool(enabled) for rule, enabled in rules.items()}
-            )
-            for field, rules in (sync_fields or {}).items()
-        }
+        self._sync_rule_engine = SyncRuleEngine(
+            variables=sync_rules.resolved_vars() if sync_rules is not None else None,
+            field_rules=sync_rules.field_rules() if sync_rules is not None else None,
+        )
         self.full_scan: bool = full_scan
         self.destructive_sync: bool = destructive_sync
         self.empty_sync: bool = empty_sync
         self.search_fallback_threshold: int = search_fallback_threshold
         self.batch_requests: bool = batch_requests
         self.dry_run: bool = dry_run
-        self.promote_rewatch: bool = promote_rewatch
         self.profile_name: str = profile_name
 
         self.sync_stats: SyncStats = SyncStats()
@@ -394,10 +396,10 @@ class BaseSyncClient[
             self.list_provider.NAMESPACE, resolved_list_key
         )
         skip_fields = set(pinned_fields)
-        sync_fields_disabled = {
-            field_name
-            for field_name, rules in self.sync_fields.items()
-            if rules is False
+        disabled_fields = {
+            field.value
+            for field in SyncField
+            if self._sync_rule_engine.is_disabled(field.value)
         }
         field_state = _FieldApplicationState(pinned_blocked_fields=set(skip_fields))
 
@@ -408,9 +410,28 @@ class BaseSyncClient[
             "entry": entry,
         }
 
-        status_value: ListStatus | None = await self._field_calculators[
-            SyncField.STATUS
-        ](**calc_kwargs)
+        computed_values = await self._calculate_computed_values(
+            calc_kwargs=calc_kwargs,
+            disabled_fields=disabled_fields,
+        )
+        current_values = {
+            field.value: getattr(entry, field.value) for field in SyncField
+        }
+        rule_context = self._build_rule_context(
+            item=item,
+            child_item=child_item,
+            grandchild_items=grandchild_items,
+            list_media_key=resolved_list_key,
+            mapping_descriptors=mapping_descriptors,
+        )
+
+        status_rule = self._sync_rule_engine.evaluate_field(
+            field_name=SyncField.STATUS.value,
+            current_values=current_values,
+            computed_values=computed_values,
+            rule_context=rule_context,
+        )
+        status_value = self._resolve_rule_value(status_rule)
 
         if status_value is None:
             if (
@@ -449,7 +470,7 @@ class BaseSyncClient[
                         "operation": "delete_entry",
                         "reason": "status_resolved_to_none",
                         "destructive_sync": self.destructive_sync,
-                        "sync_fields_disabled": sorted(sync_fields_disabled),
+                        "disabled_fields": sorted(disabled_fields),
                         "pinned_fields": ", ".join(sorted(skip_fields))
                         if skip_fields
                         else "",
@@ -459,39 +480,33 @@ class BaseSyncClient[
                 return SyncOutcome.DELETED
 
             log.info(
-                "[%s] Skipping %s due to no activity %s %s",
+                "[%s] Skipping %s because %s %s %s",
                 self.profile_name,
                 item.media_kind.value,
+                self._describe_status_skip(
+                    status_rule=status_rule,
+                    before_status=before_snapshot.status,
+                    skip_fields=skip_fields,
+                ),
                 debug_title,
                 debug_ids,
             )
             return SyncOutcome.SKIPPED
 
-        promoted_current_to_repeating = False
-        if (
-            self.promote_rewatch
-            and status_value == ListStatus.CURRENT
-            and before_snapshot.status in (ListStatus.COMPLETED, ListStatus.REPEATING)
-        ):
-            promoted_current_to_repeating = True
-            status_value = ListStatus.REPEATING
-            log.debug(
-                "[%s] Promoting status CURRENT -> REPEATING (promote_rewatch) %s %s",
-                self.profile_name,
-                debug_title,
-                debug_ids,
-            )
-
         considered_attrs: set[str] = set()
 
-        status_should_apply, status_reason = self._should_apply_field(
-            SyncField.STATUS,
-            status_value,
-            before_snapshot.status,
-            skip_fields,
+        status_should_apply, status_reason = (
+            self._should_apply_field(
+                SyncField.STATUS,
+                status_value,
+                before_snapshot.status,
+                skip_fields,
+            )
+            if status_rule.allowed
+            else (False, f"sync_rules:{status_rule.reason}")
         )
-        if status_should_apply:
-            entry.status = status_value
+        if status_should_apply and status_value is not None:
+            setattr(entry, SyncField.STATUS.value, status_value)
         else:
             field_state.mark_block(SyncField.STATUS.value, status_reason)
         considered_attrs.add(SyncField.STATUS.value)
@@ -500,9 +515,11 @@ class BaseSyncClient[
         await self._apply_secondary_fields(
             entry=entry,
             final_status=final_status,
-            calc_kwargs=calc_kwargs,
+            current_values=current_values,
+            computed_values=computed_values,
+            rule_context=rule_context,
             skip_fields=skip_fields,
-            sync_fields_disabled=sync_fields_disabled,
+            disabled_fields=disabled_fields,
             considered_attrs=considered_attrs,
             field_state=field_state,
         )
@@ -513,8 +530,7 @@ class BaseSyncClient[
             {
                 "computed_status": status_value,
                 "final_status": final_status,
-                "promoted_current_to_repeating": promoted_current_to_repeating,
-                "sync_fields_disabled": sorted(sync_fields_disabled),
+                "disabled_fields": sorted(disabled_fields),
                 "pinned_blocked": sorted(field_state.pinned_blocked_fields),
                 "sync_rules_blocked": [
                     f"{field_name}({rule_name})" if rule_name else field_name
@@ -537,9 +553,10 @@ class BaseSyncClient[
 
         if not diff:
             log.info(
-                "[%s] Skipping %s because it is already up to date %s %s",
+                "[%s] Skipping %s because %s %s %s",
                 self.profile_name,
                 item.media_kind.value,
+                self._describe_noop_reason(field_state),
                 debug_title,
                 debug_ids,
             )
@@ -662,9 +679,11 @@ class BaseSyncClient[
         *,
         entry: ListEntry,
         final_status: ListStatus | None,
-        calc_kwargs: Mapping[str, Any],
+        current_values: Mapping[str, Any],
+        computed_values: Mapping[str, Any],
+        rule_context: Mapping[str, Any],
         skip_fields: set[str],
-        sync_fields_disabled: set[str],
+        disabled_fields: set[str],
         considered_attrs: set[str],
         field_state: _FieldApplicationState,
     ) -> None:
@@ -675,17 +694,30 @@ class BaseSyncClient[
             if sync_field.value in skip_fields:
                 field_state.pinned_blocked_fields.add(sync_field.value)
                 continue
-            if self.sync_fields.get(sync_field.value) is False:
-                sync_fields_disabled.add(sync_field.value)
-                continue
             if (
                 reason := self._status_gate_reason(sync_field, final_status)
             ) is not None:
                 field_state.status_gate_blocked[sync_field.value] = reason
                 continue
+            if self._sync_rule_engine.is_disabled(sync_field.value):
+                disabled_fields.add(sync_field.value)
+                continue
 
-            value = await self._field_calculators[sync_field](**calc_kwargs)
-            current_value = getattr(entry, sync_field.value)
+            rule_decision = self._sync_rule_engine.evaluate_field(
+                field_name=sync_field.value,
+                current_values=current_values,
+                computed_values=computed_values,
+                rule_context=rule_context,
+            )
+            if not rule_decision.allowed:
+                field_state.mark_block(
+                    sync_field.value,
+                    f"sync_rules:{rule_decision.reason}",
+                )
+                continue
+
+            value = self._resolve_rule_value(rule_decision)
+            current_value = current_values[sync_field.value]
             should_apply, apply_reason = self._should_apply_field(
                 sync_field,
                 value,
@@ -698,6 +730,125 @@ class BaseSyncClient[
 
             setattr(entry, sync_field.value, value)
             considered_attrs.add(sync_field.value)
+
+    async def _calculate_computed_values(
+        self,
+        *,
+        calc_kwargs: Mapping[str, Any],
+        disabled_fields: set[str],
+    ) -> dict[str, Comparable | None]:
+        """Calculate raw field values before any declarative rules are applied."""
+        computed: dict[str, Comparable | None] = {
+            SyncField.STATUS.value: await self._field_calculators[SyncField.STATUS](
+                **calc_kwargs
+            )
+        }
+
+        for sync_field in SyncField:
+            if sync_field == SyncField.STATUS:
+                continue
+            if self._sync_rule_engine.is_disabled(sync_field.value):
+                disabled_fields.add(sync_field.value)
+                continue
+            computed[sync_field.value] = await self._field_calculators[sync_field](
+                **calc_kwargs
+            )
+
+        return computed
+
+    @staticmethod
+    def _build_rule_context(
+        *,
+        item: ParentMediaT,
+        child_item: ChildMediaT,
+        grandchild_items: Sequence[GrandchildMediaT],
+        list_media_key: str | None,
+        mapping_descriptors: Sequence[MappingDescriptor] | None,
+    ) -> dict[str, Any]:
+        """Build the shimmed `ctx` object exposed to sync rule expressions."""
+        return {
+            "list_media_key": list_media_key,
+            "item": BaseSyncClient._shim_rule_media(item),
+            "child": BaseSyncClient._shim_rule_media(child_item),
+            "grandchildren": [
+                BaseSyncClient._shim_rule_media(grandchild_item)
+                for grandchild_item in grandchild_items
+            ],
+        }
+
+    @staticmethod
+    def _shim_rule_media(media: Any) -> dict[str, Any]:
+        """Build a stable rule-facing view of a library media object."""
+        payload = {
+            "key": getattr(media, "key", None),
+            "title": getattr(media, "title", None),
+            "media_kind": getattr((getattr(media, "media_kind", None)), "value", None),
+            "on_watching": getattr(media, "on_watching", None),
+            "on_watchlist": getattr(media, "on_watchlist", None),
+            "user_rating": getattr(media, "user_rating", None),
+            "view_count": getattr(media, "view_count", None),
+        }
+
+        for attribute in ("index", "season_index"):
+            if hasattr(media, attribute):
+                payload[attribute] = getattr(media, attribute)
+
+        return payload
+
+    @staticmethod
+    def _resolve_rule_value(decision: SyncRuleDecision) -> Comparable | None:
+        """Return the value produced by the rule engine."""
+        return decision.value
+
+    def _describe_status_skip(
+        self,
+        *,
+        status_rule: SyncRuleDecision,
+        before_status: ListStatus | None,
+        skip_fields: set[str],
+    ) -> str:
+        """Describe why sync stopped before any field could be applied."""
+        if not status_rule.allowed:
+            rule_reason = status_rule.reason or "blocked"
+            return f"status sync was blocked by sync rules ({rule_reason})"
+        if before_status is not None and SyncField.STATUS.value in skip_fields:
+            return "status changes are pinned"
+        if before_status is not None and not self.destructive_sync:
+            return "status would be cleared but destructive sync is disabled"
+        return "no syncable activity was found"
+
+    def _describe_noop_reason(self, field_state: _FieldApplicationState) -> str:
+        """Describe why planning produced no eligible changes."""
+        details: list[str] = []
+
+        if field_state.sync_rules_blocked:
+            details.append(
+                "sync rules: "
+                + _format_blocked_field_reasons(field_state.sync_rules_blocked)
+            )
+        if field_state.status_gate_blocked:
+            details.append(
+                "status gates: "
+                + _format_blocked_field_reasons(field_state.status_gate_blocked)
+            )
+        if field_state.pinned_blocked_fields:
+            details.append(
+                "pinned: " + ", ".join(sorted(field_state.pinned_blocked_fields))
+            )
+        if field_state.destructive_blocked_fields:
+            details.append(
+                "destructive sync disabled: "
+                + ", ".join(sorted(field_state.destructive_blocked_fields))
+            )
+        if field_state.unchanged_fields and not details:
+            return "all considered fields are already up to date"
+        if field_state.unchanged_fields:
+            details.append(
+                "unchanged: " + ", ".join(sorted(field_state.unchanged_fields))
+            )
+        if not details:
+            return "no eligible changes were produced"
+        return f"no eligible changes remained ({'; '.join(details)})"
 
     def _status_gate_reason(
         self,
@@ -884,48 +1035,7 @@ class BaseSyncClient[
             and new_value is None
         ):
             return False, "destructive_disabled"
-        allowed, rule_reason = self._is_sync_field_allowed(
-            field,
-            current_value,
-            new_value,
-        )
-        if allowed:
-            return True, "applied"
-        return False, (
-            f"sync_rules:{rule_reason}" if rule_reason is not None else "sync_rules"
-        )
-
-    def _is_sync_field_allowed(
-        self,
-        field: SyncField,
-        current_value: Comparable | None,
-        new_value: Comparable | None,
-    ) -> tuple[bool, str | None]:
-        """Check if sync_fields allows this update and return blocking rule."""
-        rules = self.sync_fields.get(field.value)
-        if rules is None:
-            return True, None
-        if isinstance(rules, bool):
-            return rules, "disabled" if not rules else None
-
-        if isinstance(new_value, ListStatus) and rules.get(new_value.value) is False:
-            return False, new_value.value
-
-        if current_value is not None and new_value is not None:
-            for key, blocked in (
-                ("_lt", new_value < current_value),
-                ("_lte", new_value <= current_value),
-                ("_gt", new_value > current_value),
-                ("_gte", new_value >= current_value),
-            ):
-                if rules.get(key, True) is False and blocked:
-                    return False, key
-
-        if rules.get("_eq", True) is False and new_value == current_value:
-            return False, "_eq"
-        if rules.get("_ne", True) is False and new_value != current_value:
-            return False, "_ne"
-        return True, None
+        return True, "applied"
 
     def _format_diff(self, diff: dict[str, tuple[Any, Any]]) -> str:
         """Format a diff dictionary for logging."""

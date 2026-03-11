@@ -1,15 +1,13 @@
 """AniBridge Configuration Settings."""
 
 import os
-from collections.abc import Mapping
-from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import yaml
-from anibridge.list import ListStatus
 from anibridge.utils.cache import cache
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_core import PydanticUndefined
 from pydantic_settings import (
     BaseSettings,
@@ -19,6 +17,12 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
+from anibridge.app.config.sync_rules import (
+    BaseStrEnum,
+    SyncRuleDefinition,
+    SyncRulesConfig,
+    SyncRuleTemplateId,
+)
 from anibridge.app.exceptions import ProfileConfigError, ProfileNotFoundError
 from anibridge.app.utils.logging import _get_logger
 
@@ -28,42 +32,13 @@ __all__ = [
     "LogLevel",
     "ScanMode",
     "SyncField",
+    "SyncRuleDefinition",
+    "SyncRuleTemplateId",
+    "SyncRulesConfig",
     "get_config",
 ]
 
 _log = _get_logger(__name__)
-
-
-class BaseStrEnum(StrEnum):
-    """Base class for string-based enumerations with a custom __repr__ method.
-
-    Provides case-insensitive lookup functionality and consistent string
-    representation for enumeration values.
-    """
-
-    @classmethod
-    def _missing_(cls, value: object) -> BaseStrEnum | None:
-        """Handle case-insensitive lookup for enum values.
-
-        Args:
-            value: The value to look up in the enumeration
-
-        Returns:
-            BaseStrEnum | None: The matching enum member if found, None otherwise
-        """
-        value = value.lower() if isinstance(value, str) else value
-        for member in cls:
-            if member.lower() == value:
-                return member
-        return None
-
-    def __repr__(self) -> str:
-        """Return the string value of the enum member."""
-        return self.value
-
-    def __str__(self) -> str:
-        """Return the string representation of the enum member."""
-        return repr(self)
 
 
 class LogLevel(BaseStrEnum):
@@ -93,6 +68,15 @@ class SyncField(BaseStrEnum):
     USER_RATING = "user_rating"  # User's rating/score
     STARTED_AT = "started_at"  # When the user started watching (date)
     FINISHED_AT = "finished_at"  # When the user finished watching (date)
+
+    @classmethod
+    def field_names(cls) -> tuple[str, ...]:
+        """Get a tuple of all sync field names.
+
+        Returns:
+            tuple[str, ...]: All sync field names as strings.
+        """
+        return tuple(field.value for field in cls)
 
 
 class ScanMode(BaseStrEnum):
@@ -198,22 +182,12 @@ class AnibridgeProfileConfig(BaseModel):
             "planning instead of being skipped"
         ),
     )
-    promote_rewatch: bool = Field(
-        default=False,
+    sync_rules: SyncRulesConfig = Field(
+        default_factory=SyncRulesConfig,
         description=(
-            "When enabled, automatically set status to repeating on the list provider "
-            "if the entry is already marked as completed or repeating and new watch "
-            "activity is detected in the library"
-        ),
-    )
-    sync_fields: dict[SyncField, bool | dict[str, bool]] = Field(
-        default_factory=lambda: {
-            SyncField.REVIEW: False,
-            SyncField.USER_RATING: False,
-        },
-        description=(
-            "Per-field sync rules. Set a field to false to disable syncing it, "
-            "or define operator/value rules with a mapping."
+            "Declarative rule-based sync overrides. Each field can be disabled "
+            "or configured with an ordered list of conditions that decide how "
+            "the computed value should be transformed or whether it should sync."
         ),
     )
     backup_retention_days: int = Field(
@@ -246,6 +220,28 @@ class AnibridgeProfileConfig(BaseModel):
         repr=False,
         description="List provider configuration by namespace",
     )
+
+    _parent: AnibridgeConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def raise_on_legacy_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Detect legacy fields and raise an error with instructions for migration.
+
+        Only raises for dangerous fields that might cause data loss if misconfigured.
+        """
+        legacy_fields = {
+            "promote_on_rewatch": "sync_rules.status",
+            "sync_fields": "sync_rules",
+            "sync_modes": "scan_modes",
+        }
+        for legacy, new in legacy_fields.items():
+            if legacy in values:
+                raise ProfileConfigError(
+                    f"Legacy field '{legacy}' detected in profile config. "
+                    f"Please migrate to the new configuration format using '{new}'."
+                )
+        return values
 
     @property
     def parent(self) -> AnibridgeConfig:
@@ -294,65 +290,6 @@ class AnibridgeProfileConfig(BaseModel):
                 global_value = getattr(self._parent.global_config, field)
                 setattr(self, field, global_value)
         return self
-
-    @field_validator("sync_fields", mode="before")
-    @classmethod
-    def normalize_sync_fields(
-        cls,
-        value: Mapping[SyncField | str, bool | Mapping[str, bool]] | None,
-    ) -> Mapping[str, bool | dict[str, bool]] | None:
-        """Normalize and validate per-field sync rules."""
-        if value is None:
-            return value
-
-        if not isinstance(value, Mapping):
-            raise ValueError("sync_fields must be a mapping")
-
-        normalized: dict[str, bool | dict[str, bool]] = {}
-        allowed_fields = {field.value for field in SyncField}
-        allowed_ops = {"_lt", "_lte", "_gt", "_gte", "_eq", "_ne"}
-        allowed_statuses = {status.value for status in ListStatus}
-
-        for raw_field, raw_rules in value.items():
-            field = str(raw_field)
-            if field not in allowed_fields:
-                raise ValueError(f"sync_fields contains unknown field: '{field}'")
-
-            if isinstance(raw_rules, bool):
-                normalized[field] = raw_rules
-                continue
-
-            if not isinstance(raw_rules, Mapping):
-                raise ValueError(
-                    "sync_fields entries must be either booleans or mappings"
-                )
-
-            field_rules: dict[str, bool] = {}
-            for raw_rule_key, rule_value in raw_rules.items():
-                if not isinstance(rule_value, bool):
-                    raise ValueError("sync_fields nested rules must be booleans")
-
-                rule_key = str(raw_rule_key)
-                if rule_key.startswith("_") and rule_key not in allowed_ops:
-                    raise ValueError(
-                        f"sync_fields.{field} contains unknown operator: '{rule_key}'"
-                    )
-
-                if field == SyncField.STATUS.value and not rule_key.startswith("_"):
-                    rule_key = rule_key.lower()
-                    if rule_key not in allowed_statuses:
-                        raise ValueError(
-                            f"sync_fields.{field} contains unknown status: "
-                            f"'{raw_rule_key}'"
-                        )
-
-                field_rules[rule_key] = rule_value
-
-            normalized[field] = field_rules
-
-        return normalized
-
-    _parent: AnibridgeConfig | None = None
 
 
 class AnibridgeConfig(BaseSettings):

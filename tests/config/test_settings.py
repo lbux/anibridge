@@ -1,6 +1,7 @@
 """Tests for settings configuration utilities."""
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pydantic import SecretStr
@@ -10,6 +11,8 @@ from anibridge.app.config.settings import (
     AnibridgeProfileConfig,
     BasicAuthConfig,
     SyncField,
+    SyncRulesConfig,
+    SyncRuleTemplateId,
     WebConfig,
     find_yaml_config_file,
 )
@@ -145,48 +148,156 @@ def test_get_profile_raises_for_unknown_name(
         config.get_profile("missing")
 
 
-def test_sync_fields_rejects_unknown_operator() -> None:
-    """Unknown sync field operators should fail validation."""
+def test_legacy_field_rules_reject_unknown_operator() -> None:
+    """Unknown legacy field-rule operators should fail validation."""
     with pytest.raises(ValueError):
-        AnibridgeProfileConfig(sync_fields={SyncField.STATUS: {"_between": False}})
+        AnibridgeProfileConfig.model_validate(
+            {"sync_fields": {SyncField.STATUS: {"_between": False}}}
+        )
 
 
-def test_sync_fields_inherit_from_global_profile() -> None:
-    """Global sync_fields should be inherited when a profile omits sync_fields."""
-    config = AnibridgeConfig.model_validate(
+def test_sync_rules_accept_declarative_field_rules() -> None:
+    """Declarative sync rules should validate and preserve runtime aliases."""
+    rules = SyncRulesConfig.model_validate(
         {
-            "global_config": {
-                "library_provider": "plex",
-                "sync_fields": {"review": False, "status": False},
+            "vars": {
+                "has_review": (
+                    "computed.review is not None and len(computed.review) > 0"
+                ),
+                "is_special_item": 'ctx.item.title == "Movie"',
             },
-            "profiles": {
-                "anilist": {
-                    "list_provider": "anilist",
-                    "list_provider_config": {"anilist": {"token": "token"}},
+            "status": [
+                {
+                    "name": "Promote rewatch",
+                    "if": (
+                        'current.status == "completed" and computed.status == "current"'
+                    ),
+                    "set": "repeating",
                 }
-            },
+            ],
+            "review": [
+                {
+                    "name": "Clear empty review",
+                    "if": "not vars.has_review",
+                    "set": None,
+                }
+            ],
         }
     )
 
-    profile = config.get_profile("anilist")
+    field_rules = rules.field_rules()
+    status_rules = cast(list[dict[str, object]], field_rules["status"])
+    review_rules = cast(list[dict[str, object]], field_rules["review"])
 
-    assert profile.sync_fields[SyncField.REVIEW] is False
-    assert profile.sync_fields[SyncField.STATUS] is False
+    assert status_rules[0]["if"] == (
+        'current.status == "completed" and computed.status == "current"'
+    )
+    assert status_rules[0]["set"] == "repeating"
+    assert "set" in review_rules[0]
+    assert review_rules[0]["set"] is None
 
 
-def test_sync_fields_status_rules_are_case_insensitive() -> None:
-    """Status rule keys should normalize to ListStatus values."""
-    profile = AnibridgeProfileConfig(
-        sync_fields={
-            SyncField.STATUS: {"dropped": False, "PAUSED": False, "pLaNNing": False}
+def test_sync_rules_templates_prepend_selected_rules() -> None:
+    """Built-in templates should prepend field rules before user-defined rules."""
+    rules = SyncRulesConfig.model_validate(
+        {
+            "templates": [SyncRuleTemplateId.PROMOTE_REWATCH],
+            "status": [
+                {
+                    "name": "User rule",
+                    "if": "computed.status == current.status",
+                    "set": "computed.status",
+                }
+            ],
         }
     )
 
-    status_rules = profile.sync_fields[SyncField.STATUS]
-    assert isinstance(status_rules, dict)
-    assert status_rules["dropped"] is False
-    assert status_rules["paused"] is False
-    assert status_rules["planning"] is False
+    status_rules = cast(list[dict[str, object]], rules.field_rules()["status"])
+
+    assert status_rules[0]["name"] == "Promote rewatch to repeating"
+    assert status_rules[1]["name"] == "User rule"
+
+
+def test_sync_rules_disable_review_and_rating_template_overrides_defaults() -> None:
+    """The disable template should force review and user_rating off."""
+    rules = SyncRulesConfig.model_validate(
+        {"templates": [SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW]}
+    )
+
+    assert rules.field_rules()["review"] is False
+    assert rules.field_rules()["user_rating"] is False
+    assert rules.templates == [SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW]
+
+
+def test_sync_rules_prevent_regressions_template_adds_guard_rules() -> None:
+    """The regression template should add keep-current rules for decreasing fields."""
+    rules = SyncRulesConfig.model_validate(
+        {
+            "templates": [SyncRuleTemplateId.PREVENT_REGRESSIONS],
+        }
+    )
+    progress_rules = cast(list[dict[str, object]], rules.field_rules()["progress"])
+    status_rules = cast(list[dict[str, object]], rules.field_rules()["status"])
+
+    assert progress_rules[0]["if"] == (
+        "current.progress is not None and "
+        "(computed.progress is None or computed.progress < current.progress)"
+    )
+    assert progress_rules[0]["set"] == "current.progress"
+    assert status_rules[0]["if"] == (
+        "current.status is not None and "
+        "(computed.status is None or computed.status < current.status)"
+    )
+
+
+def test_sync_rules_explicit_false_overrides_template_field_rules() -> None:
+    """Explicit field disables should still beat template-provided rule lists."""
+    rules = SyncRulesConfig.model_validate(
+        {
+            "templates": [SyncRuleTemplateId.PREVENT_REGRESSIONS],
+            "progress": False,
+        }
+    )
+
+    assert rules.field_rules()["progress"] is False
+
+
+def test_sync_rules_reject_unknown_template_ids() -> None:
+    """Unknown built-in template IDs should fail validation."""
+    with pytest.raises(ValueError):
+        SyncRulesConfig.model_validate({"templates": ["missing-template"]})
+
+
+def test_sync_rules_reject_reserved_ctx_variable_name() -> None:
+    """sync_rules.vars cannot redefine the ctx namespace."""
+    with pytest.raises(ValueError):
+        SyncRulesConfig(vars={"ctx": "True"})
+
+
+def test_sync_rules_reject_none_field_values() -> None:
+    """Declarative sync rule fields should not accept null values."""
+    with pytest.raises(ValueError):
+        SyncRulesConfig.model_validate({"status": None})
+
+
+def test_sync_rules_reject_invalid_variable_names() -> None:
+    """sync_rules.vars names must be safe Python identifiers."""
+    with pytest.raises(ValueError):
+        SyncRulesConfig(vars={"current": "True"})
+
+
+def test_sync_rules_reject_unsupported_expression_syntax() -> None:
+    """Expressions should reject unsupported Python constructs."""
+    with pytest.raises(ValueError):
+        SyncRulesConfig.model_validate(
+            {
+                "review": [
+                    {
+                        "if": "[value for value in [1, 2, 3]]",
+                    }
+                ]
+            }
+        )
 
 
 def test_web_config_reports_auth_configuration_state(tmp_path: Path) -> None:
