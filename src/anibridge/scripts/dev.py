@@ -407,6 +407,7 @@ def meta_setup() -> None:
         "anibridge-library-base": "https://github.com/anibridge/anibridge-library-base",
         "anibridge-list-base": "https://github.com/anibridge/anibridge-list-base",
         "anibridge-mal-provider": "https://github.com/anibridge/anibridge-mal-provider",
+        "anibridge-mappings": "https://github.com/anibridge/anibridge-mappings",
         "anibridge-plex-provider": "https://github.com/anibridge/anibridge-plex-provider",
         "anibridge-utils": "https://github.com/anibridge/anibridge-utils",
     }
