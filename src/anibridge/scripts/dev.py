@@ -25,6 +25,45 @@ def _resolve_root_dir() -> Path:
 ROOT_DIR = _resolve_root_dir()
 
 
+def _iter_package_dirs() -> list[Path]:
+    """Return nested package repositories that expose a pyproject."""
+    packages_dir = ROOT_DIR / "packages"
+    if not packages_dir.exists():
+        return []
+
+    return sorted(
+        path for path in packages_dir.iterdir() if (path / "pyproject.toml").exists()
+    )
+
+
+def _iter_testable_package_dirs() -> list[Path]:
+    """Return nested package repositories that contain a tests directory."""
+    return [path for path in _iter_package_dirs() if (path / "tests").is_dir()]
+
+
+def _run_python_command(
+    cmd: list[str], *, cwd: Path, success_message: str, failure_message: str
+) -> None:
+    """Run a Python-related command with consistent error reporting."""
+    try:
+        subprocess.run(cmd, cwd=cwd, check=True)
+        print_success(success_message)
+    except subprocess.CalledProcessError:
+        print_error(failure_message)
+        raise
+    except FileNotFoundError as e:
+        print_error(f"Tool not found: {e}")
+        raise
+
+
+def _python_tool(name: str) -> str:
+    """Resolve a Python tool from the active environment when possible."""
+    candidate = Path(sys.executable).with_name(name)
+    if candidate.exists():
+        return str(candidate)
+    return name
+
+
 class Colors:
     """ANSI color codes for terminal output."""
 
@@ -273,8 +312,17 @@ def format() -> None:
     try:
         if target in ("both", "backend"):
             print_info("Running ruff formatter on Python code...")
-            subprocess.run(["ruff", "format", "."], cwd=ROOT_DIR, check=True)
+            subprocess.run(
+                [_python_tool("ruff"), "format", "."], cwd=ROOT_DIR, check=True
+            )
             print_success("Python code formatted successfully!")
+
+            for package_dir in _iter_package_dirs():
+                print_info(f"Running ruff formatter in {package_dir.name}...")
+                subprocess.run(
+                    [_python_tool("ruff"), "format", "."], cwd=package_dir, check=True
+                )
+                print_success(f"{package_dir.name} formatted successfully!")
 
         if target in ("both", "frontend"):
             print_info("Running pnpm format on frontend code...")
@@ -299,8 +347,27 @@ def lint() -> None:
     try:
         if target in ("both", "backend"):
             print_info("Running ruff linter on Python code...")
-            subprocess.run(["ruff", "check", "."], cwd=ROOT_DIR, check=True)
+            subprocess.run(
+                [_python_tool("ruff"), "check", "."], cwd=ROOT_DIR, check=True
+            )
+            subprocess.run(
+                [_python_tool("ruff"), "format", "--check", "."],
+                cwd=ROOT_DIR,
+                check=True,
+            )
             print_success("Python code linting passed!")
+
+            for package_dir in _iter_package_dirs():
+                print_info(f"Running lint checks in {package_dir.name}...")
+                subprocess.run(
+                    [_python_tool("ruff"), "check", "."], cwd=package_dir, check=True
+                )
+                subprocess.run(
+                    [_python_tool("ruff"), "format", "--check", "."],
+                    cwd=package_dir,
+                    check=True,
+                )
+                print_success(f"{package_dir.name} linting passed!")
 
         if target in ("both", "frontend"):
             print_info("Running pnpm lint on frontend code...")
@@ -394,8 +461,17 @@ def test() -> None:
     print_task("Running backend tests with pytest...")
 
     try:
-        subprocess.run(["uv", "run", "pytest"], cwd=ROOT_DIR, check=True)
+        subprocess.run([sys.executable, "-m", "pytest"], cwd=ROOT_DIR, check=True)
         print_success("Pytest suite completed successfully!")
+
+        for package_dir in _iter_testable_package_dirs():
+            print_info(f"Running pytest in {package_dir.name}...")
+            _run_python_command(
+                [sys.executable, "-m", "pytest"],
+                cwd=package_dir,
+                success_message=f"{package_dir.name} tests completed successfully!",
+                failure_message=f"{package_dir.name} tests failed!",
+            )
     except subprocess.CalledProcessError:
         print_error("Tests failed! Please fix the issues above.")
         sys.exit(1)

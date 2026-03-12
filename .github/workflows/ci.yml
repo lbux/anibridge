@@ -69,7 +69,7 @@ jobs:
               run: uv sync --group dev --frozen
 
             - name: Run pytest
-              run: uv run pytest
+              run: uv run ab-test
 
     publish:
         name: Build and Publish Docker Image
