@@ -402,6 +402,7 @@ def meta_setup() -> None:
 
     repos: dict[str, str] = {
         "anibridge-anilist-provider": "https://github.com/anibridge/anibridge-anilist-provider",
+        "anibridge-docs": "https://github.com/anibridge/anibridge-docs",
         "anibridge-emby-provider": "https://github.com/anibridge/anibridge-emby-provider",
         "anibridge-jellyfin-provider": "https://github.com/anibridge/anibridge-jellyfin-provider",
         "anibridge-library-base": "https://github.com/anibridge/anibridge-library-base",
