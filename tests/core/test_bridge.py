@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -213,6 +213,7 @@ def _make_profile_config(**overrides: Any) -> SimpleNamespace:
         "list_provider": "fake",
         "library_provider_config": {},
         "list_provider_config": {},
+        "poll_interval": 60,
         "sync_rules": SyncRulesConfig(),
         "full_scan": False,
         "empty_sync": False,
@@ -406,6 +407,57 @@ async def test_sync_section_batches_and_handles_errors(
     assert movie_sync.batch_called is True
     assert movie_sync.flush_called is True
     assert provider.list_calls[0]["min_last_modified"] is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_section_first_poll_defaults_to_one_poll_interval_ago(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """First poll syncs should start from one poll interval ago."""
+    movie_section = FakeSection("Movies", bridge_module.MediaKind.MOVIE)
+    provider = FakeLibraryProvider(
+        sections=[movie_section],
+        items_by_section={"Movies": []},
+    )
+    list_provider = FakeListProvider(backup_payload="")
+
+    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
+    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
+
+    fixed_now = datetime(2026, 3, 12, 12, 0, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is not None else fixed_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(bridge_module, "datetime", FrozenDateTime)
+
+    client = BridgeClient(
+        profile_name="default",
+        profile_config=cast(
+            "bridge_module.AnibridgeProfileConfig",
+            _make_profile_config(poll_interval=60),
+        ),
+        global_config=cast(
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
+        ),
+        shared_animap_client=cast(Any, object()),
+    )
+
+    await client._sync_section(
+        cast("bridge_module.LibrarySection", movie_section),
+        poll=True,
+        movie_sync=cast("bridge_module.MovieSyncClient", FakeSyncClient()),
+        show_sync=cast("bridge_module.ShowSyncClient", FakeSyncClient()),
+        keys=None,
+        section_index=1,
+        section_count=1,
+    )
+
+    assert provider.list_calls[0]["min_last_modified"] == fixed_now - timedelta(
+        seconds=75
+    )
 
 
 @pytest.mark.asyncio

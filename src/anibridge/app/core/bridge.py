@@ -420,7 +420,12 @@ class BridgeClient:
         )
 
         min_last_modified = (
-            (self.last_synced or datetime.now(UTC)) - timedelta(seconds=15)
+            (
+                self.last_synced
+                or datetime.now(UTC)
+                - timedelta(seconds=self.profile_config.poll_interval)
+            )
+            - timedelta(seconds=15)  # small buffer
             if poll
             else None
         )
