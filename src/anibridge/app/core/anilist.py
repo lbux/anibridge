@@ -5,17 +5,14 @@ from collections.abc import Iterable
 from typing import Any
 
 import aiohttp
+from anibridge.providers.list.anilist.client import anilist_limiter
 from anibridge.utils.cache import cache, ttl_cache
-from anibridge.utils.limiter import Limiter
 
 from anibridge.app import __version__, log
 from anibridge.app.exceptions import AniListFilterError, AniListSearchError
 from anibridge.app.models.schemas.anilist import Media
 
 __all__ = ["AniListClient"]
-
-# Rate limit of 30 req/min with a burst capacity of 4
-anilist_limiter = Limiter(rate=30 / 60, capacity=4)
 
 
 class AniListClient:
