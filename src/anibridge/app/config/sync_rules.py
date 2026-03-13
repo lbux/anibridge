@@ -169,13 +169,8 @@ SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
         status=[
             SyncRuleDefinition(
                 name="Disable dropped status syncing",
-                if_expr='computed.status == "dropped"',
-                set_expr='"current"',
-            ),
-            SyncRuleDefinition(
-                name="Disable paused status syncing",
-                if_expr='computed.status == "paused"',
-                set_expr='"current"',
+                if_expr='computed.status in ("dropped", "paused")',
+                set_expr='"current" if current.status is None else current.status',
             ),
         ],
     ),
