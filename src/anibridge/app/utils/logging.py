@@ -5,10 +5,11 @@ import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import colorama
 from anibridge.utils.cache import cache
+from anibridge.utils.types import ProviderLogger
 from colorama import Fore, Style
 
 __all__ = ["Logger", "get_logger"]
@@ -279,7 +280,7 @@ logging.setLoggerClass(Logger)
 
 def _get_logger(
     log_name: str, log_level: str = "INFO", log_dir: str | Path | None = None
-) -> Logger:
+) -> ProviderLogger:
     """Get a configured instance of Logger.
 
     Args:
@@ -288,7 +289,7 @@ def _get_logger(
         log_dir (str | Path | None): Directory where log files will be stored.
 
     Returns:
-        Logger: Configured logger instance
+        ProviderLogger: Configured logger instance
     """
     logger = logging.getLogger(log_name)
     log_dir = str(log_dir) if log_dir is not None else None
@@ -299,15 +300,15 @@ def _get_logger(
         logger = Logger(log_name)
         logger.setup(log_level, log_dir)
 
-    return logger
+    return cast(ProviderLogger, logger)
 
 
 @cache
-def get_logger() -> Logger:
+def get_logger() -> ProviderLogger:
     """Get the main application logger.
 
     Returns:
-        Logger: Main application logger instance
+        ProviderLogger: Main application logger instance.
     """
     from anibridge.app.config.settings import get_config
 

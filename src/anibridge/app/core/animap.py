@@ -48,8 +48,7 @@ def parse_mapping_descriptor(raw: str) -> MappingDescriptor:
     match = _DESCRIPTOR_PATTERN.match(raw)
     if not match:
         raise ValueError("Invalid mapping descriptor")
-    scope = match.group("scope") or None
-    return (match.group("provider"), match.group("entry"), scope)
+    return (match.group("provider"), match.group("entry"), match.group("scope") or None)
 
 
 @dataclass(frozen=True, slots=True)
