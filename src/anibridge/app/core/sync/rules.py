@@ -298,7 +298,7 @@ class SyncRuleEngine:
         computed_values: Mapping[str, Any],
         rule_context: Mapping[str, Any] | None = None,
     ) -> SyncRuleDecision:
-        """Resolve the effective value for one field against the sync context.
+        """Resolve one field using first-match wins with default fallback.
 
         Args:
             field_name (str): Sync field name being evaluated.
@@ -336,15 +336,17 @@ class SyncRuleEngine:
             ):
                 continue
 
-            if "set" in rule:
-                value = self._resolve_set_value(field_name, rule["set"], environment)
-            else:
-                value = computed_value
+            if "set" not in rule:
+                raise ValueError(
+                    f"sync rule {index} for field {field_name!r} is missing "
+                    "required 'set'"
+                )
+            value = self._resolve_set_value(field_name, rule["set"], environment)
 
             rule_name = str(rule.get("name") or f"rule_{index}")
             return SyncRuleDecision(allowed=True, value=value, reason=rule_name)
 
-        return SyncRuleDecision(allowed=False, value=current_value, reason="no_match")
+        return SyncRuleDecision(allowed=True, value=computed_value, reason="default")
 
     def _build_environment(
         self,
