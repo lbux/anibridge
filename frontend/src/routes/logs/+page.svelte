@@ -21,7 +21,7 @@
     import { toast } from "$lib/utils/notify";
 
     let tab = $state<"live" | "history">("live");
-    let level = $state("INFO");
+    let level = $state("DEBUG");
     let search = $state("");
     let wrap = $state(false);
     let autoScroll = $state(true);
@@ -170,7 +170,13 @@
             historyEntries = await r.json();
             lastHistoryLinesLoaded = historyLines;
             applyFilter();
-            requestAnimationFrame(() => scrollToBottom("history"));
+            requestAnimationFrame(() => {
+                if (historyLines > 0) {
+                    scrollToBottom("history");
+                    return;
+                }
+                if (historyScroller) historyScroller.scrollTop = 0;
+            });
         } catch {
             toast("Failed to load log file", "error");
         }
