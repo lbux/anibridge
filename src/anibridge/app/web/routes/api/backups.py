@@ -55,7 +55,7 @@ async def restore_backup(profile: str, req: RestoreRequest) -> None:
 
 
 @router.get("/{profile}/raw/{filename}")
-def get_backup_raw(profile: str, filename: str) -> dict[str, Any]:
+def get_backup_raw(profile: str, filename: str) -> Any:
     """Return raw JSON content of a backup.
 
     The response is unvalidated JSON so the UI can present a preview.

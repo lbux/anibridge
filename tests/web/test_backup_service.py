@@ -102,6 +102,17 @@ def test_read_backup_raw_and_invalid_filename(configured_scheduler):
     )
 
     assert service.read_backup_raw("primary", file_path.name) == {"entries": []}
+
+    list_file = (
+        tmp_path / "backups" / "primary" / "anibridge_primary_mal_20240303030304.json"
+    )
+    list_file.write_text(
+        json.dumps([{"id": 1, "status": "watching"}]), encoding="utf-8"
+    )
+    assert service.read_backup_raw("primary", list_file.name) == [
+        {"id": 1, "status": "watching"}
+    ]
+
     with pytest.raises(InvalidBackupFilenameError):
         service.read_backup_raw("primary", "../escape.json")
 

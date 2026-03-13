@@ -114,7 +114,7 @@ class BackupService:
         )
         return list(reversed(metas))  # Newest first
 
-    def read_backup_raw(self, profile: str, filename: str) -> dict[str, Any]:
+    def read_backup_raw(self, profile: str, filename: str) -> Any:
         """Return the raw JSON content of a backup file.
 
         Args:
@@ -122,7 +122,7 @@ class BackupService:
             filename: Backup filename (basename only)
 
         Returns:
-            dict[str, Any]: Parsed JSON content.
+            Any: Parsed JSON content.
 
         Raises:
             SchedulerNotInitializedError: If the scheduler is not running.
