@@ -233,7 +233,7 @@ SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
                     "if": (
                         "current.started_at is not None and "
                         "(computed.started_at is None or "
-                        "computed.started_at < current.started_at)"
+                        "computed.started_at > current.started_at)"
                     ),
                     "set": "current.started_at",
                 }
@@ -246,7 +246,7 @@ SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
                     "if": (
                         "current.finished_at is not None and "
                         "(computed.finished_at is None or "
-                        "computed.finished_at < current.finished_at)"
+                        "computed.finished_at > current.finished_at)"
                     ),
                     "set": "current.finished_at",
                 }
