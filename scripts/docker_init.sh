@@ -7,7 +7,7 @@ APP_USER=abc
 APP_GROUP=abc
 
 log() {
-    printf "%s - init - INFO\t%s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
+    printf "%s - INFO - init - %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
 }
 
 EXISTING_GROUP=$(getent group "$PGID" 2>/dev/null | cut -d: -f1)
