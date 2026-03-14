@@ -306,6 +306,44 @@ async def test_sync_media_deletes_entry_when_destructive(
 
 
 @pytest.mark.asyncio
+async def test_sync_media_empty_sync_wins_over_destructive_delete(
+    stub_client: StubSyncClient,
+) -> None:
+    """empty_sync should retain idle entries as planning instead of deleting them."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-empty",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.COMPLETED
+    entry.progress = 1
+    provider.entries["200-empty"] = entry
+
+    stub_client.destructive_sync = True
+    stub_client.empty_sync = True
+    stub_client._status_override = ListStatus.PLANNING
+    stub_client._progress_override = None
+
+    outcome = await stub_client.sync_media(
+        item=make_movie(),
+        child_item=make_movie(),
+        grandchild_items=(),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="200-empty",
+        mapping_descriptors=None,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    assert provider.deleted_keys == []
+    assert provider.updated_entries and provider.updated_entries[0][0] == "200-empty"
+    assert entry.status == ListStatus.PLANNING
+    assert entry.progress is None
+
+
+@pytest.mark.asyncio
 async def test_sync_media_skips_sync_rule_disabled_field_calculator(
     stub_client: StubSyncClient,
 ) -> None:
