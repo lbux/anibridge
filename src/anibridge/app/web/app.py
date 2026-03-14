@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from logging import DEBUG
+from logging import DEBUG, Logger
 from typing import Any, cast
 
 from fastapi.applications import FastAPI
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception:
         log.debug("Web - Failed to initialize public AniList client at startup")
 
-    root_logger = log
+    root_logger = cast(Logger, log)
     log_ws_handler = get_log_ws_handler()
     if log_ws_handler not in root_logger.handlers:
         root_logger.addHandler(log_ws_handler)
@@ -85,7 +85,7 @@ def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
         app.extra["scheduler"] = scheduler
 
     # Add request logging middleware if in debug mode
-    if log.level <= DEBUG:
+    if cast(Logger, log).level <= DEBUG:
         app.add_middleware(cast(Any, RequestLoggingMiddleware))
         log.debug("Web - Request logging enabled (debug mode)")
 
