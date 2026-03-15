@@ -169,12 +169,12 @@
                                                     {#if m.anilist.format}<span
                                                             class="truncate rounded bg-slate-800/70 px-1 py-0.5 tracking-wide uppercase"
                                                             title={m.anilist.format}
-                                                            >{m.anilist.format}</span>
+                                                            >{m.anilist.format.replaceAll('_', ' ')}</span>
                                                     {/if}
                                                     {#if m.anilist.status}<span
                                                             class="truncate rounded bg-slate-800/70 px-1 py-0.5 tracking-wide uppercase"
                                                             title={m.anilist.status}
-                                                            >{m.anilist.status}</span>
+                                                            >{m.anilist.status.replaceAll('_', ' ')}</span>
                                                     {/if}
                                                     {#if m.anilist.season && m.anilist.seasonYear}<span
                                                             class="truncate rounded bg-slate-800/70 px-1 py-0.5 tracking-wide uppercase"
