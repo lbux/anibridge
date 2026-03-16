@@ -372,6 +372,7 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     before: EntrySnapshot | None
     after: EntrySnapshot
     entry: ListEntry
+    source_entry: ListEntry | None
     list_media_key: str | None
     mapping_descriptors: tuple[MappingDescriptor, ...] = ()
     diagnostics: dict[str, str] = field(default_factory=dict)

@@ -48,27 +48,46 @@ class SyncCacheManager:
         """Store a list entry in the local cache.
 
         Args:
-            entry (ListEntry): Entry to cache by both entry key and media key.
+            entry (ListEntry): Entry to cache by list media key.
 
         Returns:
             None: This method mutates in-memory cache state only.
         """
-        self._prefetched_entries[entry.media().key] = entry
-        self._prefetched_entries[entry.key] = entry
+        media_key = str(entry.media().key)
+        self._prefetched_entries[media_key] = entry
 
-    async def get_entry(self, key: str) -> ListEntry | None:
+    def remove_entry(self, media_key: str) -> None:
+        """Remove a list entry from cache by list media key."""
+        self._prefetched_entries.pop(str(media_key), None)
+
+    @staticmethod
+    def apply_planned_update(
+        *,
+        source_entry: ListEntry | None,
+        planned_entry: ListEntry,
+        fields: Sequence[str],
+    ) -> None:
+        """Apply planned field values onto an in-memory cached source entry."""
+        if source_entry is None:
+            return
+
+        for field_name in fields:
+            setattr(source_entry, field_name, getattr(planned_entry, field_name))
+
+    async def get_entry(self, media_key: str) -> ListEntry | None:
         """Return a list entry from cache or the provider.
 
         Args:
-            key (str): Entry key or media key to resolve.
+            media_key (str): List media key to resolve.
 
         Returns:
             ListEntry | None: Cached or fetched entry, if available.
         """
-        cached = self._prefetched_entries.get(str(key))
+        cache_key = str(media_key)
+        cached = self._prefetched_entries.get(cache_key)
         if cached is not None:
             return cached
-        entry = await self.list_provider.get_entry(key)
+        entry = await self.list_provider.get_entry(media_key)
         if entry is not None:
             self.cache_entry(entry)
         return entry

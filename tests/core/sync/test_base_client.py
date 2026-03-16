@@ -306,6 +306,37 @@ async def test_sync_media_deletes_entry_when_destructive(
 
 
 @pytest.mark.asyncio
+async def test_sync_media_deletes_entry_evicts_cache(
+    stub_client: StubSyncClient,
+) -> None:
+    """Destructive delete should evict the deleted entry from cache."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-cache",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    stub_client._cache.cache_entry(cast(ListEntryProtocol, entry))
+    stub_client.destructive_sync = True
+    stub_client._status_override = None
+
+    outcome = await stub_client.sync_media(
+        item=make_movie(),
+        child_item=make_movie(),
+        grandchild_items=(),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key="200-cache",
+        mapping_descriptors=None,
+    )
+
+    assert outcome is SyncOutcome.DELETED
+    assert await stub_client._cache.get_entry("200-cache") is None
+
+
+@pytest.mark.asyncio
 async def test_sync_media_empty_sync_wins_over_destructive_delete(
     stub_client: StubSyncClient,
 ) -> None:
@@ -428,6 +459,7 @@ async def test_apply_update_dry_run_returns_skipped(
         before=before,
         after=after,
         entry=cast(ListEntryProtocol, entry),
+        source_entry=cast(ListEntryProtocol, entry),
         list_media_key="300",
         mapping_descriptors=(),
     )
@@ -469,6 +501,7 @@ async def test_batch_sync_dry_run_clears_queue(
             before=before,
             after=after,
             entry=cast(ListEntryProtocol, entry),
+            source_entry=cast(ListEntryProtocol, entry),
             list_media_key="400",
             mapping_descriptors=(),
         )
@@ -504,6 +537,7 @@ async def test_batch_sync_failure_raises(stub_client: StubSyncClient, sync_db) -
             before=before,
             after=after,
             entry=cast(ListEntryProtocol, entry),
+            source_entry=cast(ListEntryProtocol, entry),
             list_media_key="500",
             mapping_descriptors=(),
         )
@@ -542,6 +576,7 @@ def test_render_diff_includes_changes(stub_client: StubSyncClient) -> None:
         before=before,
         after=after,
         entry=cast(ListEntryProtocol, entry),
+        source_entry=cast(ListEntryProtocol, entry),
         list_media_key="600",
         mapping_descriptors=(),
     )
@@ -575,6 +610,7 @@ async def test_batch_sync_success(stub_client: StubSyncClient, sync_db) -> None:
             before=before,
             after=after,
             entry=cast(ListEntryProtocol, entry),
+            source_entry=cast(ListEntryProtocol, entry),
             list_media_key="700",
             mapping_descriptors=(),
         )
@@ -611,6 +647,7 @@ async def test_apply_update_raises_on_provider_error(
         before=before,
         after=after,
         entry=cast(ListEntryProtocol, entry),
+        source_entry=cast(ListEntryProtocol, entry),
         list_media_key="800",
         mapping_descriptors=(),
     )
@@ -1153,7 +1190,9 @@ async def test_sync_media_batches_when_enabled(
     )
 
     assert result is SyncOutcome.SYNCED
-    assert [update.entry for update in stub_client._pending_updates] == [entry]
+    assert [update.source_entry for update in stub_client._pending_updates] == [entry]
+    assert stub_client._pending_updates[0].entry is not entry
+    assert entry.progress is None
     assert stub_client._pending_updates
     assert provider.updated_entries == []
 
@@ -1181,7 +1220,8 @@ async def test_batch_sync_flushes_history(stub_client: StubSyncClient, sync_db) 
 
     await stub_client.batch_sync()
 
-    assert provider.batch_updates and provider.batch_updates[0][0] is entry
+    assert provider.batch_updates and provider.batch_updates[0][0] is not entry
+    assert entry.progress == 1
     assert not [update.entry for update in stub_client._pending_updates]
     assert not stub_client._pending_updates
 

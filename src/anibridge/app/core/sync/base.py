@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from copy import copy
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
@@ -347,13 +348,18 @@ class BaseSyncClient[
         Returns:
             SyncOutcome: Final outcome for the sync operation.
         """
-        before_snapshot = EntrySnapshot.from_entry(entry)
+        original_entry = entry
+        planned_entry = copy(entry)
+        before_snapshot = EntrySnapshot.from_entry(original_entry)
         resolved_list_key = (
-            list_media_key or entry.media().key or before_snapshot.media_key
+            list_media_key or original_entry.media().key or before_snapshot.media_key
         )
         debug_title = self._debug_log_title(item=item, child_item=child_item)
         debug_ids = self._debug_log_ids(
-            item=item, child_item=child_item, entry=entry, media_key=resolved_list_key
+            item=item,
+            child_item=child_item,
+            entry=original_entry,
+            media_key=resolved_list_key,
         )
 
         pinned_fields = self._get_pinned_fields(
@@ -369,13 +375,13 @@ class BaseSyncClient[
             "item": item,
             "child_item": child_item,
             "grandchild_items": grandchild_items,
-            "entry": entry,
+            "entry": planned_entry,
             "source_mappings": source_mappings,
         }
         computed_values = await self._calculate_computed_values(
             calc_kwargs=calc_kwargs, disabled_fields=disabled_fields
         )
-        current_values = {f.value: getattr(entry, f.value) for f in SyncField}
+        current_values = {f.value: getattr(planned_entry, f.value) for f in SyncField}
         rule_context = self._build_rule_context(
             item=item,
             child_item=child_item,
@@ -413,6 +419,7 @@ class BaseSyncClient[
                     )
                     return SyncOutcome.SKIPPED
                 await self.list_provider.delete_entry(before_snapshot.media_key)
+                self._cache.remove_entry(before_snapshot.media_key)
                 await self._create_sync_history(
                     item=item,
                     child_item=child_item,
@@ -463,14 +470,14 @@ class BaseSyncClient[
             else (False, f"sync_rules:{status_rule.reason}")
         )
         if status_should_apply:
-            setattr(entry, SyncField.STATUS.value, status_rule.value)
+            setattr(planned_entry, SyncField.STATUS.value, status_rule.value)
         else:
             field_state.mark_block(SyncField.STATUS.value, status_reason)
         considered_attrs.add(SyncField.STATUS.value)
 
         await self._apply_secondary_fields(
-            entry=entry,
-            final_status=entry.status,
+            entry=planned_entry,
+            final_status=planned_entry.status,
             current_values=current_values,
             computed_values=computed_values,
             rule_context=rule_context,
@@ -480,12 +487,12 @@ class BaseSyncClient[
             field_state=field_state,
         )
 
-        after_snapshot = EntrySnapshot.from_entry(entry)
+        after_snapshot = EntrySnapshot.from_entry(planned_entry)
         diff = diff_snapshots(before_snapshot, after_snapshot, considered_attrs)
         sync_diagnostics = self._normalize_history_info(
             {
                 "computed_status": status_rule.value,
-                "final_status": entry.status,
+                "final_status": planned_entry.status,
                 "disabled_fields": sorted(disabled_fields),
                 "pinned_blocked": sorted(field_state.pinned_blocked_fields),
                 "sync_rules_blocked": [
@@ -535,7 +542,8 @@ class BaseSyncClient[
                 grandchildren=grandchild_items,
                 before=before_snapshot,
                 after=after_snapshot,
-                entry=entry,
+                entry=planned_entry,
+                source_entry=original_entry,
                 list_media_key=resolved_list_key,
                 mapping_descriptors=tuple(mapping_descriptors or ()),
                 diagnostics=sync_diagnostics,
@@ -576,6 +584,11 @@ class BaseSyncClient[
 
         try:
             await self.list_provider.update_entry(plan.after.media_key, plan.entry)
+            self._cache.apply_planned_update(
+                source_entry=plan.source_entry,
+                planned_entry=plan.entry,
+                fields=[f.value for f in SyncField],
+            )
             log.success(
                 "[%s] Synced %s %s %s",
                 self.profile_name,
@@ -800,6 +813,12 @@ class BaseSyncClient[
                     if update.after.media_key in updated_keys
                     else SyncOutcome.FAILED
                 )
+                if outcome == SyncOutcome.SYNCED:
+                    self._cache.apply_planned_update(
+                        source_entry=update.source_entry,
+                        planned_entry=update.entry,
+                        fields=[f.value for f in SyncField],
+                    )
                 await self._create_sync_history(
                     item=update.item,
                     child_item=update.child,
