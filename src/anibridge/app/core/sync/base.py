@@ -562,22 +562,24 @@ class BaseSyncClient[
     ) -> SyncOutcome:
         """Queue or apply a list entry update."""
         if self.batch_requests:
-            log.debug(
-                "[%s] Queuing %s %s for batch sync",
+            log.success(
+                "[%s] Queuing %s %s %s for batch sync",
                 self.profile_name,
                 plan.item.media_kind.value,
                 debug_title,
+                debug_ids,
             )
             log.success("\t\tQUEUED UPDATE: %s", diff_str)
             self._pending_updates.append(plan)
             return SyncOutcome.SYNCED
 
         if self.dry_run:
-            log.debug(
-                "[%s] Dry run; skipping sync of %s %s",
+            log.success(
+                "[%s] Dry run; skipping sync of %s %s %s",
                 self.profile_name,
                 plan.item.media_kind.value,
                 debug_title,
+                debug_ids,
             )
             log.success("\t\tDRY RUN UPDATE: %s", diff_str)
             return SyncOutcome.SKIPPED
@@ -596,7 +598,14 @@ class BaseSyncClient[
                 debug_title,
                 debug_ids,
             )
-            log.success("\t\tUPDATE: %s", diff_str)
+            log.success(
+                "[%s] UPDATE %s %s %s: %s",
+                self.profile_name,
+                plan.item.media_kind.value,
+                debug_title,
+                debug_ids,
+                diff_str,
+            )
             await self._create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
