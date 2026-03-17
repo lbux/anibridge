@@ -28,9 +28,19 @@
         onSubmit,
     }: Props = $props();
 
+    function resetPage() {
+        if (page !== 1) page = 1;
+    }
+
+    function handleSubmit() {
+        resetPage();
+        onSubmit?.();
+        onLoad();
+    }
+
     function toggleCustom() {
         customOnly = !customOnly;
-        page = 1;
+        resetPage();
         onLoad();
     }
 </script>
@@ -43,11 +53,7 @@
             size="md"
             {loading}
             {onCancel}
-            onSubmit={() => {
-                page = 1;
-                onSubmit?.();
-                onLoad();
-            }} />
+            onSubmit={handleSubmit} />
     </div>
     <button
         onclick={toggleCustom}
