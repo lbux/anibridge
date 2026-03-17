@@ -239,12 +239,21 @@ class HistoryService:
         return metadata
 
     @ttl_cache(ttl=60)
-    async def _fetch_profile_stats(self, profile: str) -> dict[str, int]:
+    async def _fetch_profile_stats(
+        self,
+        profile: str,
+        library_namespace: str,
+        list_namespace: str,
+    ) -> dict[str, int]:
         """Cached profile statistics fetch."""
         with db() as ctx:
             stats_rows = (
                 ctx.session.query(SyncHistory.outcome, func.count(SyncHistory.id))
-                .filter(SyncHistory.profile_name == profile)
+                .filter(
+                    SyncHistory.profile_name == profile,
+                    SyncHistory.library_namespace == library_namespace,
+                    SyncHistory.list_namespace == list_namespace,
+                )
                 .group_by(SyncHistory.outcome)
                 .all()
             )
@@ -281,19 +290,26 @@ class HistoryService:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
         """
+        bridge = get_bridge(profile)
+        effective_library_namespace = (
+            library_namespace or bridge.library_provider.NAMESPACE
+        )
+        effective_list_namespace = list_namespace or bridge.list_provider.NAMESPACE
+
         base_filters = [
             SyncHistory.profile_name == profile,
+            SyncHistory.library_namespace == effective_library_namespace,
+            SyncHistory.list_namespace == effective_list_namespace,
         ]
         if outcome:
             base_filters.append(SyncHistory.outcome == outcome)
-        if library_namespace:
-            base_filters.append(SyncHistory.library_namespace == library_namespace)
-        if list_namespace:
-            base_filters.append(SyncHistory.list_namespace == list_namespace)
 
         with db() as ctx:
-            # Get cached stats
-            stats = await self._fetch_profile_stats(profile)
+            stats = await self._fetch_profile_stats(
+                profile,
+                effective_library_namespace,
+                effective_list_namespace,
+            )
 
             count_stmt = (
                 select(func.count()).select_from(SyncHistory).where(*base_filters)

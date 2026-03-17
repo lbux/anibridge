@@ -344,7 +344,7 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
 async def test_history_service_clear_all_caches(history_env):
     """clear_all_caches resets cache state metrics."""
     service = HistoryService()
-    await service._fetch_profile_stats("profile")
+    await service._fetch_profile_stats("profile", "_dummy-library", "alist")
     await service.clear_all_caches()
     info = service.get_cache_info()
     assert info["stats_cache"].currsize == 0
