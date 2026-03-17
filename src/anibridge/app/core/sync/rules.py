@@ -243,6 +243,41 @@ def _evaluate_expression(expression: str, environment: Mapping[str, Any]) -> Any
     )
 
 
+def _ctx_field_refs_for_expression(expression: str) -> set[str]:
+    """Return media field names referenced under `ctx` in one expression."""
+    tree = _validate_expression_ast(expression)
+    refs: set[str] = set()
+
+    def _attribute_chain(node: ast.AST) -> list[str] | None:
+        parts: list[str] = []
+        current = node
+        while isinstance(current, ast.Attribute):
+            parts.append(current.attr)
+            current = current.value
+        if isinstance(current, ast.Subscript):
+            current = current.value
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+        if not isinstance(current, ast.Name):
+            return None
+        parts.append(current.id)
+        parts.reverse()
+        return parts
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        chain = _attribute_chain(node)
+        if not chain or len(chain) < 3 or chain[0] != "ctx":
+            continue
+        if chain[1] not in {"item", "child", "grandchildren"}:
+            continue
+        refs.add(chain[2])
+
+    return refs
+
+
 class SyncRuleEngine:
     """Apply declarative sync rules to computed field values."""
 
@@ -265,6 +300,9 @@ class SyncRuleEngine:
         """
         self._variables = dict(variables or {})
         self._field_rules = dict(field_rules or {})
+        self._ctx_fields_by_field: dict[str, frozenset[str]] = {}
+        for field_name in self._field_rules:
+            self._ctx_fields_by_field[field_name] = self._collect_ctx_fields(field_name)
 
     def has_field_rules(self, field_name: str) -> bool:
         """Return whether a field has an ordered decision list configured.
@@ -289,6 +327,10 @@ class SyncRuleEngine:
             bool: True when the field is disabled by a ``false`` rule value.
         """
         return self._field_rules.get(field_name) is False
+
+    def context_media_fields(self, field_name: str) -> frozenset[str]:
+        """Return the media fields needed for `ctx` when evaluating a field."""
+        return self._ctx_fields_by_field.get(field_name, frozenset())
 
     def evaluate_field(
         self,
@@ -347,6 +389,26 @@ class SyncRuleEngine:
             return SyncRuleDecision(allowed=True, value=value, reason=rule_name)
 
         return SyncRuleDecision(allowed=True, value=computed_value, reason="default")
+
+    def _collect_ctx_fields(self, field_name: str) -> frozenset[str]:
+        """Collect `ctx` media fields required by rules and shared variables."""
+        rules = self._field_rules.get(field_name)
+        if not isinstance(rules, Sequence) or isinstance(rules, (str, bytes)):
+            return frozenset()
+
+        refs: set[str] = set()
+        for expression in self._variables.values():
+            refs.update(_ctx_field_refs_for_expression(expression))
+
+        for rule in rules:
+            condition = rule.get("if")
+            if condition is not None:
+                refs.update(_ctx_field_refs_for_expression(str(condition)))
+            set_value = rule.get("set")
+            if isinstance(set_value, str):
+                refs.update(_ctx_field_refs_for_expression(set_value))
+
+        return frozenset(refs)
 
     def _build_environment(
         self,

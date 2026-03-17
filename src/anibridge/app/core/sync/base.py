@@ -191,7 +191,7 @@ class BaseSyncClient[
         trackable = await self._get_all_trackable_items(item)
         if not trackable:
             log.debug(
-                "[%s] Skipping %s %s because it has no eligible items %s",
+                "[%s] Skipping %s %s because it has no trackable items %s",
                 self.profile_name,
                 item.media_kind.value,
                 debug_title,
@@ -382,19 +382,21 @@ class BaseSyncClient[
             calc_kwargs=calc_kwargs, disabled_fields=disabled_fields
         )
         current_values = {f.value: getattr(planned_entry, f.value) for f in SyncField}
-        rule_context = self._build_rule_context(
-            item=item,
-            child_item=child_item,
-            grandchild_items=grandchild_items,
-            list_media_key=resolved_list_key,
-            mapping_descriptors=mapping_descriptors,
-        )
 
         status_rule = self._sync_rule_engine.evaluate_field(
             field_name=SyncField.STATUS.value,
             current_values=current_values,
             computed_values=computed_values,
-            rule_context=rule_context,
+            rule_context=self._build_rule_context(
+                item=item,
+                child_item=child_item,
+                grandchild_items=grandchild_items,
+                list_media_key=resolved_list_key,
+                mapping_descriptors=mapping_descriptors,
+                required_media_fields=self._sync_rule_engine.context_media_fields(
+                    SyncField.STATUS.value
+                ),
+            ),
         )
 
         if status_rule.value is None:
@@ -412,10 +414,11 @@ class BaseSyncClient[
                 )
                 if self.dry_run:
                     log.debug(
-                        "[%s] Dry run; skipping deletion of %s %s",
+                        "[%s] Dry run; skipping deletion of %s %s %s",
                         self.profile_name,
                         item.media_kind.value,
                         debug_title,
+                        debug_ids,
                     )
                     return SyncOutcome.SKIPPED
                 await self.list_provider.delete_entry(before_snapshot.media_key)
@@ -453,11 +456,12 @@ class BaseSyncClient[
             else:
                 skip_reason = "no syncable activity"
             log.info(
-                "[%s] Skipping %s %s because %s",
+                "[%s] Skipping %s %s because %s %s",
                 self.profile_name,
                 item.media_kind.value,
                 debug_title,
                 skip_reason,
+                debug_ids,
             )
             return SyncOutcome.SKIPPED
 
@@ -476,11 +480,15 @@ class BaseSyncClient[
         considered_attrs.add(SyncField.STATUS.value)
 
         await self._apply_secondary_fields(
+            item=item,
+            child_item=child_item,
+            grandchild_items=grandchild_items,
+            list_media_key=resolved_list_key,
+            mapping_descriptors=mapping_descriptors,
             entry=planned_entry,
             final_status=planned_entry.status,
             current_values=current_values,
             computed_values=computed_values,
-            rule_context=rule_context,
             skip_fields=skip_fields,
             disabled_fields=disabled_fields,
             considered_attrs=considered_attrs,
@@ -512,10 +520,11 @@ class BaseSyncClient[
 
         if not diff:
             log.info(
-                "[%s] Skipping %s %s because it has no eligible changes",
+                "[%s] Skipping %s %s because it is already up to date %s",
                 self.profile_name,
                 item.media_kind.value,
                 debug_title,
+                debug_ids,
             )
             log.debug(
                 (
@@ -652,11 +661,15 @@ class BaseSyncClient[
     async def _apply_secondary_fields(
         self,
         *,
+        item,
+        child_item,
+        grandchild_items,
+        list_media_key,
+        mapping_descriptors,
         entry: ListEntry,
         final_status: ListStatus | None,
         current_values: Mapping[str, Any],
         computed_values: Mapping[str, Any],
-        rule_context: Mapping[str, Any],
         skip_fields: set[str],
         disabled_fields: set[str],
         considered_attrs: set[str],
@@ -677,6 +690,17 @@ class BaseSyncClient[
             if self._sync_rule_engine.is_disabled(sync_field.value):
                 disabled_fields.add(sync_field.value)
                 continue
+
+            rule_context = self._build_rule_context(
+                item=item,
+                child_item=child_item,
+                grandchild_items=grandchild_items,
+                list_media_key=list_media_key,
+                mapping_descriptors=mapping_descriptors,
+                required_media_fields=self._sync_rule_engine.context_media_fields(
+                    sync_field.value
+                ),
+            )
 
             rule_decision = self._sync_rule_engine.evaluate_field(
                 field_name=sync_field.value,
@@ -727,34 +751,48 @@ class BaseSyncClient[
 
     @staticmethod
     def _build_rule_context(
-        *, item, child_item, grandchild_items, list_media_key, mapping_descriptors
+        *,
+        item,
+        child_item,
+        grandchild_items,
+        list_media_key,
+        mapping_descriptors,
+        required_media_fields: frozenset[str],
     ) -> dict[str, Any]:
         """Build the shimmed `ctx` object exposed to sync rule expressions."""
         return {
             "list_media_key": list_media_key,
-            "item": BaseSyncClient._shim_rule_media(item),
-            "child": BaseSyncClient._shim_rule_media(child_item),
+            "item": BaseSyncClient._shim_rule_media(item, required_media_fields),
+            "child": BaseSyncClient._shim_rule_media(child_item, required_media_fields),
             "grandchildren": [
-                BaseSyncClient._shim_rule_media(g) for g in grandchild_items
+                BaseSyncClient._shim_rule_media(g, required_media_fields)
+                for g in grandchild_items
             ],
         }
 
     @staticmethod
-    def _shim_rule_media(media: Any) -> dict[str, Any]:
+    def _shim_rule_media(
+        media: Any, required_media_fields: frozenset[str]
+    ) -> dict[str, Any]:
         """Build a stable rule-facing view of a library media object."""
         payload = {
             "key": getattr(media, "key", None),
             "title": getattr(media, "title", None),
             "media_kind": getattr(getattr(media, "media_kind", None), "value", None),
-            "on_watching": getattr(media, "on_watching", None),
-            "on_watchlist": getattr(media, "on_watchlist", None),
-            "user_rating": getattr(media, "user_rating", None),
-            "view_count": getattr(media, "view_count", None),
         }
 
-        for attr in ("index", "season_index"):
-            if hasattr(media, attr):
-                payload[attr] = getattr(media, attr)
+        if "on_watching" in required_media_fields:
+            payload["on_watching"] = getattr(media, "on_watching", None)
+        if "on_watchlist" in required_media_fields:
+            payload["on_watchlist"] = getattr(media, "on_watchlist", None)
+        if "user_rating" in required_media_fields:
+            payload["user_rating"] = getattr(media, "user_rating", None)
+        if "view_count" in required_media_fields:
+            payload["view_count"] = getattr(media, "view_count", None)
+        if "index" in required_media_fields and hasattr(media, "index"):
+            payload["index"] = getattr(media, "index", None)
+        if "season_index" in required_media_fields and hasattr(media, "season_index"):
+            payload["season_index"] = getattr(media, "season_index", None)
 
         return payload
 

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from anibridge.library import HistoryEntry, LibraryEpisode, LibrarySeason, LibraryShow
 from anibridge.list import ListEntry, ListMediaType, ListStatus
-from anibridge.utils.cache import lru_cache, ttl_cache
+from anibridge.utils.cache import lru_cache
 from anibridge.utils.types import MappingDescriptor
 
 from anibridge.app.core.animap import descriptor_key
@@ -616,7 +616,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             episode for episode in item.episodes() if episode.season_index in seasons
         ]
 
-    @ttl_cache(ttl=15)
+    @lru_cache(maxsize=32)
     async def _filter_history_by_episodes(
         self, item: LibraryShow, episodes: Sequence[LibraryEpisode]
     ) -> list[HistoryEntry]:

@@ -159,6 +159,64 @@ class CaptureHandler(logging.Handler):
         self.messages.append(record.getMessage())
 
 
+class _ExplosiveRuleMedia(FakeLibraryMovie):
+    """Media stub whose expensive properties raise if touched."""
+
+    def __init__(self) -> None:
+        super().__init__(key="lib-1", title="Explosive")
+
+    @property
+    def on_watching(self) -> bool:
+        raise AssertionError("on_watching should not be evaluated")
+
+    @property
+    def on_watchlist(self) -> bool:
+        raise AssertionError("on_watchlist should not be evaluated")
+
+    @property
+    def user_rating(self) -> int | None:
+        raise AssertionError("user_rating should not be evaluated")
+
+    @property
+    def view_count(self) -> int:
+        raise AssertionError("view_count should not be evaluated")
+
+
+class _CountedRuleMedia(_ExplosiveRuleMedia):
+    """Media stub that counts expensive property accesses."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.on_watching_reads = 0
+
+    @property
+    def on_watching(self) -> bool:
+        self.on_watching_reads += 1
+        return True
+
+
+class _CountedWatchlistMedia(_ExplosiveRuleMedia):
+    """Media stub that counts watchlist property accesses."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.on_watchlist_reads = 0
+
+    @property
+    def on_watchlist(self) -> bool:
+        self.on_watchlist_reads += 1
+        return True
+
+
+class _IndexedRuleMedia(FakeLibraryMovie):
+    """Media stub exposing grandchild index fields used by ctx rules."""
+
+    def __init__(self, *, key: str, season_index: int, index: int) -> None:
+        super().__init__(key=key, title="Indexed")
+        self.season_index = season_index
+        self.index = index
+
+
 def test_diff_snapshots_returns_changed_fields() -> None:
     """`diff_snapshots` only includes differences for requested fields."""
     before = EntrySnapshot(
@@ -303,6 +361,218 @@ async def test_sync_media_deletes_entry_when_destructive(
 
     assert outcome is SyncOutcome.DELETED
     assert provider.deleted_keys == ["200"]
+
+
+@pytest.mark.asyncio
+async def test_sync_media_does_not_hydrate_unused_ctx_media_fields(
+    stub_client: StubSyncClient,
+) -> None:
+    """Context hydration should skip expensive fields when rules don't use them."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-unused-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "status": [
+                {
+                    "name": "status without ctx",
+                    "if": 'computed.status == "current"',
+                    "set": "computed.status",
+                }
+            ]
+        },
+    )
+
+    media = _ExplosiveRuleMedia()
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+
+
+@pytest.mark.asyncio
+async def test_sync_media_hydrates_ctx_media_fields_when_rule_uses_them(
+    stub_client: StubSyncClient,
+) -> None:
+    """Context hydration should evaluate expensive fields when rules reference them."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-used-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "status": [
+                {
+                    "name": "status with ctx",
+                    "if": "ctx.item.on_watching",
+                    "set": "computed.status",
+                }
+            ]
+        },
+    )
+
+    media = _CountedRuleMedia()
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    assert media.on_watching_reads > 0
+
+
+@pytest.mark.asyncio
+async def test_sync_media_preserves_cheap_ctx_fields(
+    stub_client: StubSyncClient,
+) -> None:
+    """Rules should still be able to read always-available ctx media fields."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-cheap-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "status": [
+                {
+                    "name": "cheap ctx title check",
+                    "if": (
+                        'ctx.item.title == "Movie" and ctx.child.media_kind == "movie"'
+                    ),
+                    "set": "computed.status",
+                }
+            ]
+        },
+    )
+
+    media = FakeLibraryMovie(key="cheap-ctx", title="Movie")
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+
+
+@pytest.mark.asyncio
+async def test_sync_media_preserves_grandchild_index_context(
+    stub_client: StubSyncClient,
+) -> None:
+    """Rules should still be able to read indexed grandchild ctx fields."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-grandchild-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "status": [
+                {
+                    "name": "grandchild season index check",
+                    "if": (
+                        "ctx.grandchildren[0].season_index == 2 and "
+                        "ctx.grandchildren[0].index == 7"
+                    ),
+                    "set": "computed.status",
+                }
+            ]
+        },
+    )
+
+    item = make_movie(key="grandchild-parent")
+    child = make_movie(key="grandchild-child")
+    grandchild = _IndexedRuleMedia(key="grandchild-1", season_index=2, index=7)
+    outcome = await stub_client.sync_media(
+        item=item,
+        child_item=child,
+        grandchild_items=(grandchild,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+
+
+@pytest.mark.asyncio
+async def test_sync_media_hydrates_ctx_fields_referenced_through_vars(
+    stub_client: StubSyncClient,
+) -> None:
+    """Vars that reference ctx should still trigger the needed context hydration."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="200-vars-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "vars": {
+                "watchlisted": "ctx.item.on_watchlist",
+            },
+            "status": [
+                {
+                    "name": "ctx through vars",
+                    "if": "vars.watchlisted",
+                    "set": "computed.status",
+                }
+            ],
+        },
+    )
+
+    media = _CountedWatchlistMedia()
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    assert media.on_watchlist_reads > 0
 
 
 @pytest.mark.asyncio

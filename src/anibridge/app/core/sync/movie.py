@@ -5,7 +5,7 @@ from datetime import datetime
 
 from anibridge.library import LibraryMovie
 from anibridge.list import ListEntry, ListMediaType, ListStatus
-from anibridge.utils.cache import ttl_cache
+from anibridge.utils.cache import lru_cache
 
 from anibridge.app.core.animap import descriptor_key
 from anibridge.app.core.sync.base import BaseSyncClient
@@ -120,7 +120,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
     ) -> Sequence[ItemIdentifier]:
         return [ItemIdentifier.from_item(item)]
 
-    @ttl_cache(ttl=15)
+    @lru_cache(maxsize=32)
     async def _get_history(self, item: LibraryMovie):
         return await item.history()
 
