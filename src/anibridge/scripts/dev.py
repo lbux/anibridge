@@ -315,12 +315,20 @@ def format() -> None:
             subprocess.run(
                 [_python_tool("ruff"), "format", "."], cwd=ROOT_DIR, check=True
             )
+            subprocess.run(
+                [_python_tool("ruff"), "check", ".", "--fix"], cwd=ROOT_DIR, check=True
+            )
             print_success("Python code formatted successfully!")
 
             for package_dir in _iter_package_dirs():
                 print_info(f"Running ruff formatter in {package_dir.name}...")
                 subprocess.run(
                     [_python_tool("ruff"), "format", "."], cwd=package_dir, check=True
+                )
+                subprocess.run(
+                    [_python_tool("ruff"), "check", ".", "--fix"],
+                    cwd=package_dir,
+                    check=True,
                 )
                 print_success(f"{package_dir.name} formatted successfully!")
 
