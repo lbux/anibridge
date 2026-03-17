@@ -15,6 +15,8 @@ from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.core.sched.coord import GlobalSyncCoordinator
 from anibridge.app.core.sched.profile import ProfileScheduler
 from anibridge.app.exceptions import ProfileNotFoundError
+from anibridge.app.utils.cron import format_interval, is_enabled_interval
+from anibridge.app.utils.human import human_duration
 
 __all__ = ["SchedulerClient"]
 
@@ -125,11 +127,11 @@ class SchedulerClient:
             profile_config = self.global_config.get_profile(profile_name)
 
             log.info(
-                "[%s] Starting scheduler: poll_interval=%ss, scan_interval=%ss, "
+                "[%s] Starting scheduler: poll_interval=%s, scan_interval=%s, "
                 "modes=%s, full_scan=%s, destructive=%s",
                 profile_name,
-                profile_config.poll_interval,
-                profile_config.scan_interval,
+                format_interval(profile_config.poll_interval),
+                format_interval(profile_config.scan_interval),
                 profile_config.scan_modes,
                 "enabled" if profile_config.full_scan else "disabled",
                 "enabled" if profile_config.destructive_sync else "disabled",
@@ -153,7 +155,7 @@ class SchedulerClient:
                 next_sync_time = "in progress"
                 if (
                     ScanMode.PERIODIC in profile_config.scan_modes
-                    and profile_config.scan_interval > 0
+                    and is_enabled_interval(profile_config.scan_interval)
                 ):
                     next_sync = datetime.now(UTC).astimezone()
                     next_sync_time = "at {}".format(
@@ -452,12 +454,12 @@ class SchedulerClient:
                 now = datetime.now(UTC)
                 next_sync_time = self._get_next_1am_utc(now)
 
-                sleep_duration = (next_sync_time - now).total_seconds()
+                sleep_duration = int((next_sync_time - now).total_seconds())
 
                 log.info(
-                    "Next database sync scheduled for: %s (in %.1f hours)",
+                    "Next database sync scheduled for: %s (in %s)",
                     next_sync_time.astimezone(),
-                    sleep_duration / 3600,
+                    human_duration(sleep_duration),
                 )
 
                 try:
