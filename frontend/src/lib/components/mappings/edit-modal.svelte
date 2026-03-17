@@ -11,7 +11,6 @@
     } from "$lib/types/api";
     import Modal from "$lib/ui/modal.svelte";
     import { apiFetch } from "$lib/utils/api";
-    import { toast } from "$lib/utils/notify";
 
     interface Props {
         open: boolean;
@@ -438,7 +437,6 @@
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = (await res.json()) as MappingDetail;
             hydrateDetail(data);
-            toast("Mapping loaded", "success");
         } catch (err) {
             console.error(err);
             error = "Failed to load mapping";

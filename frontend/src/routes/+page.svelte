@@ -186,7 +186,7 @@
             </div>
         </div>
     </div>
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,32rem),1fr))] gap-4">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,42rem),1fr))] gap-4">
         {#if isLoading && Object.keys(profiles).length === 0}
             {#each [1, 2, 3] as i (i)}
                 <div
