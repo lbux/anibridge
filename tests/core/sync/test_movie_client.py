@@ -108,6 +108,26 @@ async def test_calculate_status_empty_sync_marks_idle_as_planning(
 
 
 @pytest.mark.asyncio
+async def test_calculate_status_empty_sync_skips_existing_entry(
+    movie_client: MovieSyncClient,
+) -> None:
+    """empty_sync should not force planning for already tracked movie entries."""
+    movie_client.empty_sync = True
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    entry.status = ListStatus.COMPLETED
+    idle = make_movie(view_count=0, on_watchlist=False, history=[])
+
+    status = await movie_client._calculate_status(**_call_args(idle, entry))
+
+    assert status is None
+
+
+@pytest.mark.asyncio
 async def test_progress_and_repeats(movie_client: MovieSyncClient) -> None:
     """Progress equals total units when watched and repeats reflect extra views."""
     entry = FakeListEntry(

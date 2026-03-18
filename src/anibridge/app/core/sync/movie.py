@@ -147,7 +147,7 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
             return ListStatus.PLANNING
         if has_history:
             return ListStatus.DROPPED
-        if self.empty_sync:
+        if self.empty_sync and entry.status is None:
             return ListStatus.PLANNING
         return None
 
