@@ -578,7 +578,7 @@ class BaseSyncClient[
                 debug_title,
                 debug_ids,
             )
-            log.success("\t\tQUEUED UPDATE: %s", diff_str)
+            log.success("\tQUEUED UPDATE: %s", diff_str)
             self._pending_updates.append(plan)
             return SyncOutcome.SYNCED
 
@@ -590,7 +590,7 @@ class BaseSyncClient[
                 debug_title,
                 debug_ids,
             )
-            log.success("\t\tDRY RUN UPDATE: %s", diff_str)
+            log.success("\tDRY RUN UPDATE: %s", diff_str)
             return SyncOutcome.SKIPPED
 
         try:
@@ -607,14 +607,7 @@ class BaseSyncClient[
                 debug_title,
                 debug_ids,
             )
-            log.success(
-                "[%s] UPDATE %s %s %s: %s",
-                self.profile_name,
-                plan.item.media_kind.value,
-                debug_title,
-                debug_ids,
-                diff_str,
-            )
+            log.success("\tUPDATE: %s", diff_str)
             await self._create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
@@ -845,7 +838,7 @@ class BaseSyncClient[
                     update.item.media_kind.value,
                     self._debug_log_title(item=update.item, child_item=update.child),
                 )
-                log.success("\t\tDRY RUN BATCH UPDATE: %s", self._render_diff(update))
+                log.success("\tDRY RUN BATCH UPDATE: %s", self._render_diff(update))
             self._pending_updates.clear()
             return
 
