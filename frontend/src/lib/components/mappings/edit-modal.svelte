@@ -297,11 +297,7 @@
                   ]
                 : entry.removed_ranges;
             const nextRanges = entry.ranges.filter((_, i) => i !== index);
-            return {
-                ...entry,
-                ranges: nextRanges,
-                removed_ranges: nextRemoved,
-            };
+            return { ...entry, ranges: nextRanges, removed_ranges: nextRemoved };
         });
     }
 
@@ -335,9 +331,7 @@
             const seen: string[] = [];
             const ranges: EditableRange[] = [];
             for (const r of [...entry.ranges, ...entry.removed_ranges]) {
-                const source = (
-                    r.original_source_range.trim() || r.source_range.trim()
-                );
+                const source = r.original_source_range.trim() || r.source_range.trim();
                 if (!source || seen.includes(source)) {
                     continue;
                 }
@@ -830,7 +824,7 @@
                                             range.custom_value === null
                                                 ? "null (mapping removed)"
                                                 : (range.upstream_value ??
-                                                    "Destination range")}
+                                                  "Destination range")}
                                             aria-label="Range destination"
                                             disabled={entry.deleted} />
                                         <div
@@ -857,8 +851,7 @@
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-1.5">
-                                        {#if range.mode === "custom" &&
-                                        range.custom_value === null}
+                                        {#if range.mode === "custom" && range.custom_value === null}
                                             <span
                                                 class="rounded border border-rose-800/60 bg-rose-900/30 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase"
                                                 title="Explicit null: this source range is disabled for this target">
