@@ -48,6 +48,7 @@
         deleted: boolean;
         original_descriptor: string;
         ranges: EditableRange[];
+        removed_ranges: EditableRange[];
     };
 
     const DESCRIPTOR_RE = /^[^:\s]+:[^:\s]+(?::[^:\s]+)?$/;
@@ -191,12 +192,13 @@
                 origin: entry.origin,
                 deleted: entry.deleted ?? false,
                 original_descriptor: entry.descriptor,
+                removed_ranges: [],
                 ranges: (entry.ranges || []).map((range) => ({
                     source_range: range.source_range,
                     upstream_value: range.upstream ?? null,
                     custom_value:
                         range.origin === "custom" ? (range.effective ?? null) : null,
-                    mode: (range.origin === "custom" || !range.upstream
+                    mode: (range.origin === "custom"
                         ? "custom"
                         : "inherited") as RangeMode,
                     original_source_range: range.source_range,
@@ -228,6 +230,7 @@
                 origin: "custom",
                 deleted: false,
                 original_descriptor: "",
+                removed_ranges: [],
                 ranges: [
                     {
                         source_range: "",
@@ -279,8 +282,26 @@
 
     function removeRange(key: string, index: number) {
         updateEntry(key, (entry) => {
-            const next = entry.ranges.filter((_, i) => i !== index);
-            return { ...entry, ranges: next.length ? next : entry.ranges.slice(0, 1) };
+            const removed = entry.ranges[index];
+            const removedSource = removed?.original_source_range.trim() || "";
+            const nextRemoved = removedSource
+                ? [
+                      ...entry.removed_ranges.filter(
+                          (r) => r.original_source_range !== removedSource,
+                      ),
+                      {
+                          ...removed,
+                          source_range: removedSource,
+                          original_source_range: removedSource,
+                      },
+                  ]
+                : entry.removed_ranges;
+            const nextRanges = entry.ranges.filter((_, i) => i !== index);
+            return {
+                ...entry,
+                ranges: nextRanges,
+                removed_ranges: nextRemoved,
+            };
         });
     }
 
@@ -294,6 +315,7 @@
     }
 
     function setRangeValue(key: string, index: number, value: string) {
+        const normalized = value.trim();
         updateEntry(key, (entry) => ({
             ...entry,
             ranges: entry.ranges.map((r, i) =>
@@ -301,7 +323,7 @@
                     ? {
                           ...r,
                           mode: "custom",
-                          custom_value: value === "" ? null : value,
+                          custom_value: normalized === "" ? null : normalized,
                       }
                     : r,
             ),
@@ -310,12 +332,24 @@
 
     function revertEntry(key: string) {
         updateEntry(key, (entry) => {
-            const ranges = entry.ranges.map((r) => ({
-                ...r,
-                mode: (r.upstream_value ? "inherited" : "custom") as RangeMode,
-                custom_value: null,
-                original_source_range: r.source_range,
-            }));
+            const seen: string[] = [];
+            const ranges: EditableRange[] = [];
+            for (const r of [...entry.ranges, ...entry.removed_ranges]) {
+                const source = (
+                    r.original_source_range.trim() || r.source_range.trim()
+                );
+                if (!source || seen.includes(source)) {
+                    continue;
+                }
+                seen.push(source);
+                ranges.push({
+                    ...r,
+                    source_range: source,
+                    mode: (r.upstream_value ? "inherited" : "custom") as RangeMode,
+                    custom_value: null,
+                    original_source_range: source,
+                });
+            }
             return {
                 ...entry,
                 provider: "",
@@ -325,6 +359,7 @@
                 origin: entry.origin === "deleted" ? "upstream" : entry.origin,
                 original_descriptor: entry.original_descriptor,
                 ranges,
+                removed_ranges: [],
             };
         });
     }
@@ -363,6 +398,12 @@
                 newDescriptor !== originalDescriptor && !!originalDescriptor;
 
             const removedSources: Record<string, boolean> = {};
+            for (const removed of entry.removed_ranges) {
+                const source = removed.original_source_range.trim();
+                if (source) {
+                    removedSources[source] = true;
+                }
+            }
             const ranges = [] as {
                 source_range: string;
                 destination_range: string | null;
@@ -388,14 +429,38 @@
                         ? destFromUpstream
                         : destFromCustom;
 
-                if ((descriptorChanged || range.mode !== "inherited") && source) {
+                if (!source) {
+                    const original = range.original_source_range.trim();
+                    if (original) {
+                        removedSources[original] = true;
+                    }
+                    continue;
+                }
+
+                if (removedSources[source]) {
+                    delete removedSources[source];
+                }
+
+                if (descriptorChanged) {
+                    // While moving descriptors, skip null destinations because they
+                    // represent non-existent mappings.
+                    if (destination_range === null) {
+                        continue;
+                    }
+                    ranges.push({ source_range: source, destination_range });
+                } else if (range.mode !== "inherited") {
                     ranges.push({ source_range: source, destination_range });
                 }
 
                 const original = range.original_source_range.trim();
-                if (original && original !== source && !removedSources[original]) {
-                    ranges.push({ source_range: original, destination_range: null });
+                if (original && original !== source) {
                     removedSources[original] = true;
+                }
+            }
+
+            if (!descriptorChanged) {
+                for (const source_range of Object.keys(removedSources)) {
+                    ranges.push({ source_range, destination_range: null });
                 }
             }
 
@@ -693,10 +758,21 @@
 
                         <div class="mt-3 space-y-2 border-l border-slate-800/60 pl-4">
                             {#each entry.ranges as range, idx (idx)}
-                                <div class="flex flex-wrap items-center gap-2">
+                                <div
+                                    class={`flex flex-wrap items-center gap-2 ${
+                                        range.mode === "custom" &&
+                                        range.custom_value === null
+                                            ? "opacity-70"
+                                            : ""
+                                    }`}>
                                     <div class="relative w-full min-w-44 flex-1">
                                         <input
-                                            class="w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] text-slate-100 placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none"
+                                            class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
+                                                range.mode === "custom" &&
+                                                range.custom_value === null
+                                                    ? "text-slate-500 line-through"
+                                                    : "text-slate-100"
+                                            }`}
                                             value={range.mode === "custom"
                                                 ? range.source_range
                                                 : ""}
@@ -735,7 +811,12 @@
                                     </div>
                                     <div class="relative w-full min-w-44 flex-1">
                                         <input
-                                            class="w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] text-slate-100 placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none"
+                                            class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
+                                                range.mode === "custom" &&
+                                                range.custom_value === null
+                                                    ? "text-slate-500 line-through"
+                                                    : "text-slate-100"
+                                            }`}
                                             value={range.mode === "custom"
                                                 ? (range.custom_value ?? "")
                                                 : ""}
@@ -745,8 +826,11 @@
                                                     idx,
                                                     ev.currentTarget.value,
                                                 )}
-                                            placeholder={range.upstream_value ||
-                                                "Destination range"}
+                                            placeholder={range.mode === "custom" &&
+                                            range.custom_value === null
+                                                ? "null (mapping removed)"
+                                                : (range.upstream_value ??
+                                                    "Destination range")}
                                             aria-label="Range destination"
                                             disabled={entry.deleted} />
                                         <div
@@ -773,6 +857,14 @@
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-1.5">
+                                        {#if range.mode === "custom" &&
+                                        range.custom_value === null}
+                                            <span
+                                                class="rounded border border-rose-800/60 bg-rose-900/30 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase"
+                                                title="Explicit null: this source range is disabled for this target">
+                                                Null override
+                                            </span>
+                                        {/if}
                                         <button
                                             type="button"
                                             class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-rose-200 transition-colors hover:border-rose-500 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-rose-200"
