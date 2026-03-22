@@ -128,40 +128,33 @@ def _tail_lines(path: Path, max_lines: int) -> list[str]:
 
     if max_lines == 0:
         with path.open("r", encoding="utf-8", errors="replace") as fh:
-            return [ln.rstrip("\n\r") for ln in fh.readlines()]
+            return [ln.rstrip("\n\r") for ln in fh]
 
-    # Read in binary for efficiency, then decode assuming UTF-8.
     chunk_size = 8192
-    lines: list[str] = []
 
     with path.open("rb") as fh:
         fh.seek(0, 2)
         file_size = fh.tell()
-        buffer = b""
-        pos = file_size
+        if file_size <= 0:
+            return []
 
-        while pos > 0 and len(lines) < max_lines:
+        pos = file_size
+        blocks: list[bytes] = []
+        newline_count = 0
+
+        # Read backwards until we have enough separators to reconstruct
+        # the final max_lines entries.
+        while pos > 0 and newline_count <= max_lines:
             read_size = min(chunk_size, pos)
             pos -= read_size
             fh.seek(pos)
-            buffer = fh.read(read_size) + buffer
-            parts = buffer.split(b"\n")
-            buffer = parts[0]
-            for line in parts[1:]:
-                try:
-                    lines.append(line.decode("utf-8", errors="replace"))
-                except Exception:
-                    lines.append("")
-                if len(lines) >= max_lines:
-                    break
+            block = fh.read(read_size)
+            blocks.append(block)
+            newline_count += block.count(b"\n")
 
-        if len(lines) < max_lines and buffer:
-            try:
-                lines.append(buffer.decode("utf-8", errors="replace"))
-            except Exception:
-                lines.append("")
-
-    return list(reversed(lines[:max_lines]))
+    data = b"".join(reversed(blocks))
+    tail_bytes = data.splitlines()[-max_lines:]
+    return [line.decode("utf-8", errors="replace") for line in tail_bytes]
 
 
 @router.get(

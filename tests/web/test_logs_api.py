@@ -27,3 +27,49 @@ def test_list_log_files_case_insensitive_filename_match(tmp_path, monkeypatch):
 
     assert mixed_entry.current is False
     assert lower_entry.current is True
+
+
+def test_get_log_file_returns_tail_when_length_limited(tmp_path, monkeypatch):
+    """Length-limited reads should return the final N lines, oldest to newest."""
+    log_file = tmp_path / "anibridge.DEBUG.log"
+    log_file.write_text(
+        "\n".join([f"line-{i}" for i in range(1, 11)]) + "\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(logs_api, "LOG_DIR", tmp_path)
+
+    result = logs_api.get_log_file("anibridge.DEBUG.log", lines=3)
+
+    assert [entry.message for entry in result] == ["line-8", "line-9", "line-10"]
+
+
+def test_get_log_file_returns_all_lines_when_unlimited(tmp_path, monkeypatch):
+    """A lines=0 request should return every line in file order."""
+    log_file = tmp_path / "anibridge.DEBUG.log"
+    log_file.write_text(
+        "\n".join([f"line-{i}" for i in range(1, 6)]) + "\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(logs_api, "LOG_DIR", tmp_path)
+
+    result = logs_api.get_log_file("anibridge.DEBUG.log", lines=0)
+
+    assert [entry.message for entry in result] == [
+        "line-1",
+        "line-2",
+        "line-3",
+        "line-4",
+        "line-5",
+    ]
+
+
+def test_get_log_file_tail_without_trailing_newline(tmp_path, monkeypatch):
+    """Tail reads should work when the file does not end with a newline."""
+    log_file = tmp_path / "anibridge.DEBUG.log"
+    log_file.write_text("\n".join([f"line-{i}" for i in range(1, 6)]), encoding="utf-8")
+
+    monkeypatch.setattr(logs_api, "LOG_DIR", tmp_path)
+
+    result = logs_api.get_log_file("anibridge.DEBUG.log", lines=2)
+
+    assert [entry.message for entry in result] == ["line-4", "line-5"]
