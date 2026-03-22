@@ -114,7 +114,7 @@ def animap_client(
 
 def _mapping_data():
     return {
-        "anilist:1": {"tmdb:10": {"1": None}},
+        "anilist:1": {"tmdb:10": {"1": "1"}},
         "anilist:2:s1": {"tvdb:20:s1": {"1-12": "1-12"}},
     }
 
@@ -170,7 +170,7 @@ def test_resolve_edges_and_grouping(
     """Resolved edges should honor target filters and grouping."""
     mapping_data = {
         "anilist:1": {
-            "tmdb:10": {"1": None},
+            "tmdb:10": {"1-12": None},
             "tvdb:20": {"1": "1-12"},
         }
     }
@@ -183,10 +183,11 @@ def test_resolve_edges_and_grouping(
     filtered = animap_client.resolve_edges(descriptors, target_providers={"tmdb"})
     grouped = animap_client.resolve_edges_grouped(descriptors)
 
-    assert len(edges) == 2
-    assert len(filtered) == 1
-    assert ("tmdb", "10", None) in grouped
-    assert ("anilist", "1", None) in grouped[("tmdb", "10", None)]
+    assert len(edges) == 1
+    assert len(filtered) == 0
+    assert ("tmdb", "10", None) not in grouped
+    assert ("tvdb", "20", None) in grouped
+    assert ("anilist", "1", None) in grouped[("tvdb", "20", None)]
 
 
 def test_select_entry_ids_returns_ids(
@@ -281,7 +282,7 @@ def test_sync_db_creates_entries_mappings_and_provenance(
         for edge in edges
     }
     assert edge_keys == {
-        ("anilist", "1", None, "tmdb", "10", None, "1", None),
+        ("anilist", "1", None, "tmdb", "10", None, "1", "1"),
         ("anilist", "2", "s1", "tvdb", "20", "s1", "1-12", "1-12"),
     }
 
@@ -297,7 +298,7 @@ def test_sync_db_refreshes_provenance_when_hash_matches(
     animap_client: AnimapClient, in_memory_db: AnibridgeDb
 ) -> None:
     """Syncing the database again with the same mappings refreshes provenance."""
-    base_mappings = {"anilist:1": {"tmdb:1": {"1": None}}}
+    base_mappings = {"anilist:1": {"tmdb:1": {"1": "1"}}}
     fake_client = FakeMappingsClient(
         mappings=base_mappings,
         provenance={"anilist:1": ["/initial.json"]},
@@ -333,7 +334,7 @@ def test_sync_db_skips_work_when_hashes_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Unchanged mappings/provenance should skip expensive rebuild checks."""
-    base_mappings = {"anilist:1": {"tmdb:1": {"1": None}}}
+    base_mappings = {"anilist:1": {"tmdb:1": {"1": "1"}}}
     fake_client = FakeMappingsClient(
         mappings=base_mappings,
         provenance={"anilist:1": ["/same.json"]},
@@ -384,14 +385,14 @@ def test_sync_db_logs_distinct_mapping_changes(
 ) -> None:
     """Sync log summarizes distinct mapping changes by source/target."""
     initial_mappings = {
-        "anilist:1": {"tmdb:10": {"1": None}},
+        "anilist:1": {"tmdb:10": {"1": "1"}},
         "anilist:2": {"tvdb:20": {"1-12": "1-12"}},
-        "anilist:3": {"tmdb:30": {"1": None}},
+        "anilist:3": {"tmdb:30": {"1": "1"}},
     }
     updated_mappings = {
         "anilist:2": {"tvdb:20": {"1-13": "1-13"}},
-        "anilist:3": {"tmdb:30": {"1": None}},
-        "anilist:4": {"tmdb:40": {"1": None}},
+        "anilist:3": {"tmdb:30": {"1": "1"}},
+        "anilist:4": {"tmdb:40": {"1": "1"}},
     }
 
     fake_client = FakeMappingsClient(mappings=initial_mappings, provenance={})
@@ -424,3 +425,25 @@ def test_sync_db_logs_distinct_mapping_changes(
         r"Mappings database sync complete: 1 removed, 1 updated, 1 created",
         messages[-1],
     )
+
+
+def test_build_edges_skips_null_destination_ranges(
+    animap_client: AnimapClient,
+) -> None:
+    """Null destination ranges should behave as deleted/non-existent mappings."""
+    mappings = {
+        "anilist:1": {
+            "tmdb:10": {
+                "1-12": None,
+            }
+        }
+    }
+
+    _descriptors, edges, provenance, invalid_count = animap_client._build_edges(
+        mappings,
+        {"anilist:1": ["/tmp/mappings.json"]},
+    )
+
+    assert invalid_count == 0
+    assert edges == {}
+    assert provenance == {}

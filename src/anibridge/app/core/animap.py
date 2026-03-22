@@ -344,9 +344,9 @@ class AnimapClient:
                     if not isinstance(source_range, str) or not source_range:
                         invalid_count += 1
                         continue
-                    if destination_range is not None and not isinstance(
-                        destination_range, str
-                    ):
+                    if destination_range is None:
+                        continue
+                    if not isinstance(destination_range, str):
                         invalid_count += 1
                         continue
                     if not is_valid_source_range(source_range):
@@ -359,9 +359,7 @@ class AnimapClient:
                         )
                         invalid_count += 1
                         continue
-                    if destination_range is not None and not is_valid_target_range(
-                        destination_range
-                    ):
+                    if not is_valid_target_range(destination_range):
                         log.warning(
                             "Invalid destination range $$'%s'$$ under $$'%s'$$ → "
                             "$$'%s'$$; skipped",
