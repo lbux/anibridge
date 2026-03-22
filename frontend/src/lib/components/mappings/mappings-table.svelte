@@ -73,8 +73,13 @@
         return columnId.startsWith("provider:") ? columnId.slice(9) : null;
     }
 
+    function formatDestinationRange(value: string | null | undefined): string {
+        if (value === null || value === undefined) return "null";
+        return value === "" ? '""' : value;
+    }
+
     function edgeKey(edge: MappingEdge) {
-        return `${edge.target_provider}:${edge.target_entry_id}:${edge.target_scope ?? ""}:${edge.source_range}:${edge.destination_range ?? "all"}`;
+        return `${edge.target_provider}:${edge.target_entry_id}:${edge.target_scope ?? ""}:${edge.source_range}:${formatDestinationRange(edge.destination_range)}`;
     }
 </script>
 
@@ -245,7 +250,7 @@
                                                         edge.target_scope,
                                                     )}
                                                     meta={[
-                                                        `${edge.source_range} → ${edge.destination_range ?? "all"}`,
+                                                        `${edge.source_range} → ${formatDestinationRange(edge.destination_range)}`,
                                                     ]}
                                                     onNavigate={() =>
                                                         navigate(
