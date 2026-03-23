@@ -1304,6 +1304,59 @@ async def test_calculate_progress_applies_mixed_target_ratio_segments(
 
 
 @pytest.mark.asyncio
+async def test_calculate_progress_uses_piecewise_target_segments_for_steps(
+    show_client: ShowSyncClient,
+) -> None:
+    """Per-episode progress should follow segment boundaries, not a global average."""
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=100,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "17074", None),
+            source_ranges=(MappingRange(start=1, end=23, ratio=None),),
+            target_ranges=(
+                (
+                    MappingRange(start=1, end=4, ratio=None),
+                    MappingRange(start=5, end=6, ratio=-2),
+                    MappingRange(start=7, end=9, ratio=None),
+                    MappingRange(start=10, end=11, ratio=-2),
+                    MappingRange(start=12, end=14, ratio=None),
+                    MappingRange(start=15, end=16, ratio=-2),
+                    MappingRange(start=17, end=26, ratio=None),
+                ),
+            ),
+        ),
+    )
+
+    checkpoints = {
+        4: 4,
+        5: 6,
+        8: 9,
+        9: 11,
+        12: 14,
+        13: 16,
+        23: 26,
+    }
+
+    for watched_count, expected in checkpoints.items():
+        show, season, episodes = build_show(view_counts=[1] * watched_count)
+        progress = await show_client._calculate_progress(
+            item=cast(LibraryShowProtocol, show),
+            child_item=cast(LibrarySeasonProtocol, season),
+            grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+            entry=cast(ListEntryProtocol, entry),
+            mappings=mappings,
+        )
+
+        assert progress == expected
+
+
+@pytest.mark.asyncio
 async def test_calculate_progress_applies_target_positive_ratio_compression(
     show_client: ShowSyncClient,
 ) -> None:

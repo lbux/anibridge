@@ -20,7 +20,7 @@ from anibridge.app.core.sync.targeting import (
     find_best_search_result,
     resolve_list_targets_batch,
 )
-from anibridge.app.utils.mapping_ranges import mapping_weight
+from anibridge.app.utils.mapping_ranges import mapping_weight_plan
 
 __all__ = ["ShowSyncClient"]
 
@@ -544,14 +544,16 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         weighted_specs = [
             (
                 source_range,
-                mapping_weight(source_range, target_ranges),
+                mapping_weight_plan(source_range, target_ranges),
             )
             for source_range, target_ranges in range_specs
         ]
 
         if all(
-            source_range.ratio in (None, 1) and weight == 1.0
-            for source_range, weight in weighted_specs
+            source_range.ratio in (None, 1)
+            and weight_plan.default_weight == 1.0
+            and weight_plan.per_index_weights is None
+            for source_range, weight_plan in weighted_specs
         ):
             # Basic case where there's no ratio weight
             return watched_count
@@ -561,9 +563,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         for episode in watched_episodes:
             if episode.index not in weight_by_index:
                 weight = 1.0
-                for source_range, range_weight in weighted_specs:
+                for source_range, weight_plan in weighted_specs:
                     if source_range.contains(episode.index):
-                        weight = range_weight
+                        weight = weight_plan.weight_for(episode.index)
                         break
                 weight_by_index[episode.index] = weight
             else:
