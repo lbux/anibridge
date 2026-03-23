@@ -41,6 +41,7 @@
     "eslint.workingDirectories": ["./frontend"],
     "git.scanRepositories": [
         "packages/anibridge-anilist-provider",
+        "packages/anibridge-emby-provider",
         "packages/anibridge-jellyfin-provider",
         "packages/anibridge-library-base",
         "packages/anibridge-list-base",
