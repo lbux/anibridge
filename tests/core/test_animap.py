@@ -2,12 +2,12 @@
 
 import asyncio
 import importlib
-import json
 import re
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
 
+import orjson
 import pytest
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -121,7 +121,7 @@ def _mapping_data():
 
 def _write_mapping_file(base: Path, data: dict) -> Path:
     mappings_path = base / "mappings.json"
-    mappings_path.write_text(json.dumps(data), encoding="utf-8")
+    mappings_path.write_bytes(orjson.dumps(data))
     return mappings_path
 
 
@@ -236,7 +236,9 @@ def test_sync_db_creates_entries_mappings_and_provenance(
 
     asyncio.run(animap_client.sync_db())
 
-    expected_hash = md5(json.dumps(mapping_data, sort_keys=True).encode()).hexdigest()
+    expected_hash = md5(
+        orjson.dumps(mapping_data, option=orjson.OPT_SORT_KEYS)
+    ).hexdigest()
 
     with in_memory_db as ctx:
         entries = (

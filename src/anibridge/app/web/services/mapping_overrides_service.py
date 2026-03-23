@@ -2,10 +2,10 @@
 
 import asyncio
 import copy
-import json
 from pathlib import Path
 from typing import Any, ClassVar
 
+import orjson
 import yaml
 from anibridge.utils.cache import cache
 
@@ -60,8 +60,7 @@ class MappingOverridesService:
 
         try:
             if fmt == "json":
-                with path.open("r", encoding="utf-8") as fh:
-                    data = json.load(fh)
+                data = orjson.loads(path.read_bytes())
             else:
                 with path.open("r", encoding="utf-8") as fh:
                     data = yaml.safe_load(fh)
@@ -79,9 +78,14 @@ class MappingOverridesService:
         """Persist raw override data to the custom mappings file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         if fmt == "json":
-            with path.open("w", encoding="utf-8") as fh:
-                json.dump(raw, fh, indent=2, sort_keys=True)
-                fh.write("\n")
+            path.write_bytes(
+                orjson.dumps(
+                    raw,
+                    option=orjson.OPT_INDENT_2
+                    | orjson.OPT_SORT_KEYS
+                    | orjson.OPT_APPEND_NEWLINE,
+                )
+            )
         else:
             with path.open("w", encoding="utf-8") as fh:
                 yaml.safe_dump(raw, fh, sort_keys=False, allow_unicode=False)

@@ -1,11 +1,11 @@
 """Tests for the core mappings client (descriptor graph)."""
 
-import json
 from compression import zstd
 from pathlib import Path
 from typing import Any, cast
 
 import aiohttp
+import orjson
 import pytest
 
 import anibridge.app.core.mappings as mappings_module
@@ -76,14 +76,13 @@ async def test_get_provenance_preservesdescriptor_keys(tmp_path: Path) -> None:
     data_path.mkdir()
 
     custom_path = data_path / "mappings.json"
-    custom_path.write_text(
-        json.dumps(
+    custom_path.write_bytes(
+        orjson.dumps(
             {
                 "123": {"tmdb:1": {"1": None}},
                 "abc:def:s1": {"tmdb:2:s1": {"1": None}},
             }
-        ),
-        encoding="utf-8",
+        )
     )
 
     client = MappingsClient(data_path=data_path, upstream_url=None)

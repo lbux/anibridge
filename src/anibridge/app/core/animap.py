@@ -1,6 +1,5 @@
 """Animap client for v3 provider-range mappings."""
 
-import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from hashlib import md5
 from itertools import batched
 from pathlib import Path
 
+import orjson
 from anibridge.utils.types import MappingDescriptor
 from sqlalchemy import func
 from sqlalchemy.dialects.sqlite import insert
@@ -409,10 +409,10 @@ class AnimapClient:
         provenance_by_descriptor = self.mappings_client.get_provenance()
 
         curr_mappings_hash = md5(
-            json.dumps(mappings, sort_keys=True).encode()
+            orjson.dumps(mappings, option=orjson.OPT_SORT_KEYS)
         ).hexdigest()
         curr_provenance_hash = md5(
-            json.dumps(provenance_by_descriptor, sort_keys=True).encode()
+            orjson.dumps(provenance_by_descriptor, option=orjson.OPT_SORT_KEYS)
         ).hexdigest()
 
         with db() as ctx:

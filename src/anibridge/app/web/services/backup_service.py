@@ -1,10 +1,10 @@
 """Backup listing and restore service."""
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import orjson
 from anibridge.utils.cache import cache
 from pydantic import BaseModel
 
@@ -137,8 +137,7 @@ class BackupService:
         )
         path = self._resolve_backup_path(profile, filename)
 
-        with path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+        return orjson.loads(path.read_bytes())
 
     def _resolve_backup_path(self, profile: str, filename: str) -> Path:
         """Resolve and validate a backup filename for a profile."""

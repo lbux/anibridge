@@ -1,9 +1,9 @@
 """Base Model Module."""
 
-import json
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+import orjson
 from sqlalchemy.orm import DeclarativeBase
 
 from anibridge.app.exceptions import UnsupportedModeError
@@ -66,5 +66,5 @@ class Base(DeclarativeBase):
         if mode == "python":
             return result
         if mode == "json":
-            return json.loads(json.dumps(result, default=_generic_serialize))
+            return orjson.loads(orjson.dumps(result, default=_generic_serialize))
         raise UnsupportedModeError(f"Unsupported mode: {mode}")

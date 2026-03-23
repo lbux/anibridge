@@ -1,10 +1,10 @@
 """Tests for the backup listing and restoration service."""
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import orjson
 import pytest
 
 from anibridge.app.web.services.backup_service import (
@@ -74,7 +74,7 @@ def _write_backup(path: Path, name: str, entries: list[dict[str, str]] | None = 
     target = path / "backups" / "primary"
     target.mkdir(parents=True, exist_ok=True)
     file_path = target / name
-    file_path.write_text(json.dumps(payload), encoding="utf-8")
+    file_path.write_bytes(orjson.dumps(payload))
     return file_path
 
 
@@ -106,9 +106,7 @@ def test_read_backup_raw_and_invalid_filename(configured_scheduler):
     list_file = (
         tmp_path / "backups" / "primary" / "anibridge_primary_mal_20240303030304.json"
     )
-    list_file.write_text(
-        json.dumps([{"id": 1, "status": "watching"}]), encoding="utf-8"
-    )
+    list_file.write_bytes(orjson.dumps([{"id": 1, "status": "watching"}]))
     assert service.read_backup_raw("primary", list_file.name) == [
         {"id": 1, "status": "watching"}
     ]

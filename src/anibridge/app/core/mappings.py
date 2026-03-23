@@ -1,7 +1,6 @@
 """Mappings Client Module."""
 
 import asyncio
-import json
 from compression import zstd
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -143,7 +142,7 @@ class MappingsClient:
                 src,
             )
             return orjson.loads(payload)
-        except json.JSONDecodeError, yaml.YAMLError:
+        except orjson.JSONDecodeError, yaml.YAMLError:
             log.error("Error decoding file $$'%s'$$", src)
             log.exception("Decode error details")
         except Exception:
