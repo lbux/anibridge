@@ -527,7 +527,7 @@ def _render_default_config_template() -> str:
     commented_lines = [
         "############################################################################################################",
         "# This is a template configuration file for AniBridge.                                                     #",  # noqa: E501
-        "# All optional coniguration fields  are commented out with their default values.                           #",  # noqa: E501
+        "# All optional coniguration fields are commented out with their default values.                            #",  # noqa: E501
         "# Required fields are uncommented and indicated by a placeholder `...`.                                    #",  # noqa: E501
         "#                                                                                                          #",  # noqa: E501
         "# Please refer to the documentation for more details: https://anibridge.eliasbenb.dev/configuration/       #",  # noqa: E501
