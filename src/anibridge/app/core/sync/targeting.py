@@ -11,11 +11,15 @@ from rapidfuzz import fuzz
 
 from anibridge.app.core.animap import AnimapClient, descriptor_key
 from anibridge.app.core.sync.stats import EntrySnapshot
-from anibridge.app.utils.mapping_ranges import SourceRange, parse_source_range
+from anibridge.app.utils.mapping_ranges import (
+    MappingRange,
+    parse_mapping_range,
+    parse_target_ranges,
+)
 
 __all__ = [
+    "RangeMapping",
     "ResolvedListTarget",
-    "SourceRangeMapping",
     "SyncTarget",
     "diff_snapshots",
     "find_best_search_result",
@@ -55,15 +59,16 @@ class SyncTarget:
     list_media_key: str
     entry: ListEntry
     mapping_descriptors: tuple[MappingDescriptor, ...] = ()
-    source_mappings: tuple[SourceRangeMapping, ...] = ()
+    mappings: tuple[RangeMapping, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class SourceRangeMapping:
+class RangeMapping:
     """Source descriptor with one or more source ranges."""
 
     descriptor: MappingDescriptor
-    ranges: tuple[SourceRange, ...]
+    source_ranges: tuple[MappingRange, ...]
+    target_ranges: tuple[tuple[MappingRange, ...], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,13 +77,16 @@ class ResolvedListTarget:
 
     list_media_key: str
     mapping_descriptors: tuple[MappingDescriptor, ...]
-    source_mappings: tuple[SourceRangeMapping, ...]
+    mappings: tuple[RangeMapping, ...]
 
 
 @dataclass(slots=True)
 class _GroupedTargets:
     descriptors: set[MappingDescriptor]
-    mappings: dict[MappingDescriptor, list[SourceRange]]
+    mappings: dict[
+        MappingDescriptor,
+        tuple[list[MappingRange], list[tuple[MappingRange, ...]]],
+    ]
 
 
 def find_best_search_result(
@@ -119,12 +127,13 @@ def find_best_search_result(
 def _build_resolved_target(key: str, payload: _GroupedTargets) -> ResolvedListTarget:
     """Build a resolved target from grouped descriptors and ranges."""
     descriptors = tuple(sorted(payload.descriptors, key=descriptor_key))
-    source_mappings = tuple(
-        SourceRangeMapping(
+    mappings = tuple(
+        RangeMapping(
             descriptor=source_descriptor,
-            ranges=tuple(ranges),
+            source_ranges=tuple(ranges),
+            target_ranges=tuple(target_ranges),
         )
-        for source_descriptor, ranges in sorted(
+        for source_descriptor, (ranges, target_ranges) in sorted(
             payload.mappings.items(),
             key=lambda item: descriptor_key(item[0]),
         )
@@ -132,7 +141,7 @@ def _build_resolved_target(key: str, payload: _GroupedTargets) -> ResolvedListTa
     return ResolvedListTarget(
         list_media_key=key,
         mapping_descriptors=descriptors,
-        source_mappings=source_mappings,
+        mappings=mappings,
     )
 
 
@@ -147,12 +156,14 @@ def _order_target_for_descriptor_set(
         if descriptor in target.mapping_descriptors
     )
     mapping_lookup = {
-        mapping.descriptor: mapping.ranges for mapping in target.source_mappings
+        mapping.descriptor: (mapping.source_ranges, mapping.target_ranges)
+        for mapping in target.mappings
     }
     ordered_mappings = tuple(
-        SourceRangeMapping(
+        RangeMapping(
             descriptor=descriptor,
-            ranges=mapping_lookup[descriptor],
+            source_ranges=mapping_lookup[descriptor][0],
+            target_ranges=mapping_lookup[descriptor][1],
         )
         for descriptor in descriptor_set
         if descriptor in mapping_lookup
@@ -162,7 +173,7 @@ def _order_target_for_descriptor_set(
     return ResolvedListTarget(
         list_media_key=target.list_media_key,
         mapping_descriptors=ordered_descriptors or target.mapping_descriptors,
-        source_mappings=ordered_mappings,
+        mappings=ordered_mappings,
     )
 
 
@@ -199,12 +210,24 @@ async def resolve_list_targets_batch(
         target_providers=list_provider.MAPPING_PROVIDERS,
     )
     ranges_by_target: dict[
-        MappingDescriptor, dict[MappingDescriptor, list[SourceRange]]
+        MappingDescriptor,
+        dict[
+            MappingDescriptor, tuple[list[MappingRange], list[tuple[MappingRange, ...]]]
+        ],
     ] = {
         target_descriptor: {
-            source_descriptor: [
-                parse_source_range(source_range) for source_range in source_ranges
-            ]
+            source_descriptor: (
+                [
+                    parse_mapping_range(source_range)
+                    for source_range, _ in source_ranges
+                ],
+                [
+                    parse_target_ranges(destination_range)
+                    if destination_range is not None
+                    else ()
+                    for _source_range, destination_range in source_ranges
+                ],
+            )
             for source_descriptor, source_ranges in sources.items()
         }
         for target_descriptor, sources in grouped_edges.items()
@@ -235,9 +258,15 @@ async def resolve_list_targets_batch(
         group.descriptors.add(target.descriptor)
         if target.descriptor not in ranges_by_target:
             continue
-        for source_descriptor, ranges in ranges_by_target[target.descriptor].items():
-            mapping_ranges = group.mappings.setdefault(source_descriptor, [])
+        for source_descriptor, (ranges, target_ranges) in ranges_by_target[
+            target.descriptor
+        ].items():
+            mapping_ranges, mapping_targets = group.mappings.setdefault(
+                source_descriptor,
+                ([], []),
+            )
             mapping_ranges.extend(ranges)
+            mapping_targets.extend(target_ranges)
 
     targets_by_key = {
         key: _build_resolved_target(key, grouped[key]) for key in sorted(grouped.keys())

@@ -169,13 +169,16 @@ class AnimapClient:
         descriptors: Sequence[MappingDescriptor],
         *,
         target_providers: set[str] | frozenset[str] | None = None,
-    ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[str]]]:
+    ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[tuple[str, str | None]]]]:
         """Resolve mapping edges into a grouped target->source mapping."""
-        grouped: dict[MappingDescriptor, dict[MappingDescriptor, list[str]]] = {}
+        grouped: dict[
+            MappingDescriptor,
+            dict[MappingDescriptor, list[tuple[str, str | None]]],
+        ] = {}
         for edge in self.resolve_edges(descriptors, target_providers=target_providers):
             target_ranges = grouped.setdefault(edge.destination, {})
             source_ranges = target_ranges.setdefault(edge.source, [])
-            source_ranges.append(edge.source_range)
+            source_ranges.append((edge.source_range, edge.destination_range))
         return grouped
 
     @classmethod

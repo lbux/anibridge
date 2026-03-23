@@ -14,12 +14,13 @@ from anibridge.app.core.animap import descriptor_key
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
 from anibridge.app.core.sync.targeting import (
+    RangeMapping,
     ResolvedListTarget,
-    SourceRangeMapping,
     SyncTarget,
     find_best_search_result,
     resolve_list_targets_batch,
 )
+from anibridge.app.utils.mapping_ranges import mapping_weight
 
 __all__ = ["ShowSyncClient"]
 
@@ -31,8 +32,8 @@ class _SeasonGroup:
     episodes: list[LibraryEpisode]
     entry: ListEntry
     media_key: str
-    mapping_descriptors: list[MappingDescriptor]
-    source_mappings: list[SourceRangeMapping]
+    mapping_descriptors: dict[MappingDescriptor, None]
+    mappings: dict[RangeMapping, None]
 
 
 class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode]):
@@ -71,7 +72,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 season_index,
                 season,
                 season_episodes,
-                list(season.mapping_descriptors()) + list(item.mapping_descriptors()),
+                (*season.mapping_descriptors(), *item.mapping_descriptors()),
             )
             for season_index in sorted(wanted_indexes)
             if (season_episodes := episodes_by_season.get(season_index))
@@ -125,10 +126,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                             ResolvedListTarget(
                                 list_media_key=key,
                                 mapping_descriptors=(),
-                                source_mappings=(),
+                                mappings=(),
                             ),
                             entry,
-                            list(season_episodes),
+                            season_episodes,
                         )
                     ]
 
@@ -141,11 +142,11 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     groups[media_key] = _SeasonGroup(
                         child_item=season,
                         first_index=season_index,
-                        episodes=list(filtered),
+                        episodes=filtered,
                         entry=entry,
                         media_key=media_key,
-                        mapping_descriptors=list(target.mapping_descriptors),
-                        source_mappings=list(target.source_mappings),
+                        mapping_descriptors=dict.fromkeys(target.mapping_descriptors),
+                        mappings=dict.fromkeys(target.mappings),
                     )
                     continue
 
@@ -154,11 +155,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 group.episodes.extend(filtered)
                 group.entry = entry
                 for descriptor in target.mapping_descriptors:
-                    if descriptor not in group.mapping_descriptors:
-                        group.mapping_descriptors.append(descriptor)
-                for source_mapping in target.source_mappings:
-                    if source_mapping not in group.source_mappings:
-                        group.source_mappings.append(source_mapping)
+                    group.mapping_descriptors.setdefault(descriptor, None)
+                for mapping_rule in target.mappings:
+                    group.mappings.setdefault(mapping_rule, None)
 
         for group in sorted(groups.values(), key=lambda g: g.first_index):
             eps = sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
@@ -169,7 +168,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     list_media_key=group.media_key,
                     entry=group.entry,
                     mapping_descriptors=tuple(group.mapping_descriptors),
-                    source_mappings=tuple(group.source_mappings),
+                    mappings=tuple(group.mappings),
                 ),
             )
 
@@ -209,23 +208,25 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
     def _filter_episodes_by_ranges(
         self,
         episodes: Sequence[LibraryEpisode],
-        season_index: int,
-        source_mappings: Sequence[SourceRangeMapping],
+        mappings: Sequence[RangeMapping],
     ) -> list[LibraryEpisode]:
         """Filter episodes using source mapping ranges."""
-        if not source_mappings:
+        if not mappings:
             return list(episodes)
 
-        matched: set[str] = set()
-        filtered: list[LibraryEpisode] = []
-        for mapping in source_mappings:
-            for episode in episodes:
-                if episode.key in matched:
-                    continue
-                if any(r.contains(episode.index) for r in mapping.ranges):
-                    matched.add(episode.key)
-                    filtered.append(episode)
-        return filtered
+        all_source_ranges = [
+            source_range
+            for mapping in mappings
+            for source_range in mapping.source_ranges
+        ]
+        return [
+            episode
+            for episode in episodes
+            if any(
+                source_range.contains(episode.index)
+                for source_range in all_source_ranges
+            )
+        ]
 
     async def _get_all_trackable_items(
         self, item: LibraryShow
@@ -250,8 +251,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 season_index,
                 seasons[season_index],
                 episodes_by_season[season_index],
-                list(seasons[season_index].mapping_descriptors())
-                + list(item.mapping_descriptors()),
+                (
+                    *seasons[season_index].mapping_descriptors(),
+                    *item.mapping_descriptors(),
+                ),
             )
             for season_index in wanted_indexes
             if episodes_by_season.get(season_index)
@@ -332,8 +335,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         """Return episodes that should be considered for a resolved target."""
         filtered = self._filter_episodes_by_ranges(
             season_episodes,
-            season.index,
-            target.source_mappings,
+            target.mappings,
         )
         if not filtered:
             return []
@@ -349,7 +351,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         target: ResolvedListTarget,
     ) -> bool:
         """Skip mapped subranges that have no actionable activity."""
-        if not target.source_mappings:
+        if not target.mappings:
             return False
         if self.full_scan or self.destructive_sync or self.empty_sync:
             return False
@@ -374,9 +376,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> ListStatus | None:
-        watched_count = self._calculate_watched_units(grandchild_items, source_mappings)
+        watched_count = self._calculate_watched_units(grandchild_items, mappings)
         min_view_count = min(
             (episode.view_count for episode in grandchild_items if episode.view_count),
             default=0,
@@ -428,7 +430,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> int | None:
         scores = [
             episode.user_rating for episode in grandchild_items if episode.user_rating
@@ -449,9 +451,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> int | None:
-        watched = self._calculate_watched_units(grandchild_items, source_mappings)
+        watched = self._calculate_watched_units(grandchild_items, mappings)
         total_units = entry.media().total_units or len(grandchild_items)
         if total_units:
             return min(watched, total_units)
@@ -464,7 +466,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> int | None:
         view_counts = [
             episode.view_count for episode in grandchild_items if episode.view_count
@@ -478,7 +480,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> datetime | None:
         history = await self._filter_history_by_episodes(item, grandchild_items)
         if not history:
@@ -492,7 +494,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> datetime | None:
         history = await self._filter_history_by_episodes(item, grandchild_items)
         if not history:
@@ -506,7 +508,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         child_item: LibrarySeason,
         grandchild_items: Sequence[LibraryEpisode],
         entry: ListEntry,
-        source_mappings: Sequence[SourceRangeMapping] | None = None,
+        mappings: Sequence[RangeMapping] | None = None,
     ) -> str | None:
         if entry.media().total_units == 1 and len(grandchild_items) == 1:
             review = await grandchild_items[0].review
@@ -517,49 +519,57 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
     def _calculate_watched_units(
         self,
         episodes: Sequence[LibraryEpisode],
-        source_mappings: Sequence[SourceRangeMapping] | None,
+        mappings: Sequence[RangeMapping] | None,
     ) -> int:
         """Calculate the number of watched units, taking mapping ratios into account."""
-        watched_count = sum(1 for episode in episodes if episode.view_count)
+        watched_episodes = [episode for episode in episodes if episode.view_count]
+        watched_count = len(watched_episodes)
         if watched_count == 0:
             return 0
-        if not source_mappings:
+        if not mappings:
             return watched_count
 
-        ranges = [
-            source_range
-            for mapping in source_mappings
-            for source_range in mapping.ranges
+        range_specs = [
+            (
+                source_range,
+                mapping.target_ranges[index]
+                if index < len(mapping.target_ranges)
+                else (),
+            )
+            for mapping in mappings
+            for index, source_range in enumerate(mapping.source_ranges)
         ]
-        if not ranges:
+        if not range_specs:
             return watched_count
+        weighted_specs = [
+            (
+                source_range,
+                mapping_weight(source_range, target_ranges),
+            )
+            for source_range, target_ranges in range_specs
+        ]
+
         if all(
-            source_range.ratio is None or source_range.ratio == 1
-            for source_range in ranges
+            source_range.ratio in (None, 1) and weight == 1.0
+            for source_range, weight in weighted_specs
         ):
             # Basic case where there's no ratio weight
             return watched_count
 
         watched_units = 0.0
-        ratio_by_index: dict[int, int | None] = {}  # Cache
-        for episode in episodes:
-            if not episode.view_count:
-                continue
-            ratio = ratio_by_index.get(episode.index)
-            if episode.index not in ratio_by_index:
-                ratio = None
-                for source_range in ranges:
+        weight_by_index: dict[int, float] = {}  # Cache
+        for episode in watched_episodes:
+            if episode.index not in weight_by_index:
+                weight = 1.0
+                for source_range, range_weight in weighted_specs:
                     if source_range.contains(episode.index):
-                        ratio = source_range.ratio
+                        weight = range_weight
                         break
-                ratio_by_index[episode.index] = ratio
-            if ratio is None or ratio == 1:
-                watched_units += 1
-            elif ratio > 0:
-                watched_units += ratio
+                weight_by_index[episode.index] = weight
             else:
-                watched_units += 1 / abs(ratio)
-        return int(watched_units)
+                weight = weight_by_index[episode.index]
+            watched_units += weight
+        return int(watched_units + 1e-9)  # Floating point precision
 
     def _debug_log_title(
         self,

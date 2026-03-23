@@ -5,23 +5,17 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from anibridge.library import (
-    LibraryEpisode as LibraryEpisodeProtocol,
-)
-from anibridge.library import (
-    LibrarySeason as LibrarySeasonProtocol,
-)
-from anibridge.library import (
-    LibraryShow as LibraryShowProtocol,
-)
+from anibridge.library import LibraryEpisode as LibraryEpisodeProtocol
+from anibridge.library import LibrarySeason as LibrarySeasonProtocol
+from anibridge.library import LibraryShow as LibraryShowProtocol
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
 
 import anibridge.app.core.sync.show as show_module
 from anibridge.app.core.sync.show import ShowSyncClient
-from anibridge.app.core.sync.targeting import ResolvedListTarget, SourceRangeMapping
+from anibridge.app.core.sync.targeting import RangeMapping, ResolvedListTarget
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
-from anibridge.app.utils.mapping_ranges import SourceRange
+from anibridge.app.utils.mapping_ranges import MappingRange
 from tests.core.sync.fakes import (
     FakeAnimapClient,
     FakeLibraryEpisode,
@@ -193,9 +187,9 @@ async def test_process_media_untracks_filtered_mapping_range_items(
                     "909",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=1, end=1, ratio=None),),
+                            source_ranges=(MappingRange(start=1, end=1, ratio=None),),
                         ),
                     ),
                 )
@@ -234,9 +228,9 @@ async def test_process_media_skips_when_all_mapped_items_are_filtered(
                     "910",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                            source_ranges=(MappingRange(start=2, end=2, ratio=None),),
                         ),
                     ),
                 )
@@ -336,15 +330,14 @@ async def test_search_media_returns_none_when_disabled(
 
 def test_filter_episodes_by_ranges(show_client: ShowSyncClient) -> None:
     """Episode filtering should honor source range mappings."""
-    _show, season, episodes = build_show(view_counts=[0, 0, 0])
-    mapping = SourceRangeMapping(
+    _show, _season, episodes = build_show(view_counts=[0, 0, 0])
+    mapping = RangeMapping(
         descriptor=("anilist", "1", None),
-        ranges=(SourceRange(start=2, end=2, ratio=None),),
+        source_ranges=(MappingRange(start=2, end=2, ratio=None),),
     )
 
     filtered = show_client._filter_episodes_by_ranges(
         episodes,
-        season.index,
         [mapping],
     )
 
@@ -355,15 +348,14 @@ def test_filter_episodes_by_ranges_returns_empty_when_no_range_matches(
     show_client: ShowSyncClient,
 ) -> None:
     """Non-overlapping source ranges should not fall back to all episodes."""
-    _show, season, episodes = build_show(view_counts=[0] * 12)
-    mapping = SourceRangeMapping(
+    _show, _season, episodes = build_show(view_counts=[0] * 12)
+    mapping = RangeMapping(
         descriptor=("anilist", "2", None),
-        ranges=(SourceRange(start=13, end=24, ratio=None),),
+        source_ranges=(MappingRange(start=13, end=24, ratio=None),),
     )
 
     filtered = show_client._filter_episodes_by_ranges(
         episodes,
-        season.index,
         [mapping],
     )
 
@@ -719,9 +711,9 @@ async def test_map_media_skips_inactive_mapping_ranges_before_lookup(
                     "904",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                            source_ranges=(MappingRange(start=2, end=2, ratio=None),),
                         ),
                     ),
                 )
@@ -779,9 +771,9 @@ async def test_map_media_uses_search_fallback_for_active_mapping_range(
                     "906",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=1, end=1, ratio=None),),
+                            source_ranges=(MappingRange(start=1, end=1, ratio=None),),
                         ),
                     ),
                 )
@@ -842,9 +834,9 @@ async def test_map_media_keeps_inactive_mapping_range_when_watchlisted(
                     "907",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                            source_ranges=(MappingRange(start=2, end=2, ratio=None),),
                         ),
                     ),
                 )
@@ -913,18 +905,17 @@ def test_filter_episodes_by_ranges_deduplicates(
     show_client: ShowSyncClient,
 ) -> None:
     """Duplicate episode matches should only be included once."""
-    _show, season, episodes = build_show(view_counts=[0, 0])
-    mapping = SourceRangeMapping(
+    _show, _season, episodes = build_show(view_counts=[0, 0])
+    mapping = RangeMapping(
         descriptor=("anilist", "1", None),
-        ranges=(
-            SourceRange(start=1, end=2, ratio=None),
-            SourceRange(start=1, end=1, ratio=None),
+        source_ranges=(
+            MappingRange(start=1, end=2, ratio=None),
+            MappingRange(start=1, end=1, ratio=None),
         ),
     )
 
     filtered = show_client._filter_episodes_by_ranges(
         episodes,
-        season.index,
         [mapping],
     )
 
@@ -969,9 +960,9 @@ async def test_collect_prefetch_keys_skips_inactive_mapping_ranges(
                     "905",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                            source_ranges=(MappingRange(start=2, end=2, ratio=None),),
                         ),
                     ),
                 )
@@ -1004,9 +995,9 @@ async def test_collect_prefetch_keys_keeps_inactive_mapping_ranges_in_full_scan(
                     "908",
                     (),
                     (
-                        SourceRangeMapping(
+                        RangeMapping(
                             descriptor=("tmdb", "10", "s1"),
-                            ranges=(SourceRange(start=2, end=2, ratio=None),),
+                            source_ranges=(MappingRange(start=2, end=2, ratio=None),),
                         ),
                     ),
                 )
@@ -1117,10 +1108,10 @@ async def test_calculate_progress_applies_positive_ratio(
         media_type=ListMediaType.TV,
         total_units=4,
     )
-    source_mappings = (
-        SourceRangeMapping(
+    mappings = (
+        RangeMapping(
             descriptor=("anilist", "1", None),
-            ranges=(SourceRange(start=1, end=2, ratio=2),),
+            source_ranges=(MappingRange(start=1, end=2, ratio=2),),
         ),
     )
 
@@ -1129,14 +1120,14 @@ async def test_calculate_progress_applies_positive_ratio(
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        source_mappings=source_mappings,
+        mappings=mappings,
     )
     status = await show_client._calculate_status(
         item=cast(LibraryShowProtocol, show),
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        source_mappings=source_mappings,
+        mappings=mappings,
     )
 
     assert progress == 4
@@ -1156,10 +1147,10 @@ async def test_calculate_progress_applies_negative_ratio(
         media_type=ListMediaType.TV,
         total_units=3,
     )
-    source_mappings = (
-        SourceRangeMapping(
+    mappings = (
+        RangeMapping(
             descriptor=("anilist", "1", None),
-            ranges=(SourceRange(start=1, end=3, ratio=-2),),
+            source_ranges=(MappingRange(start=1, end=3, ratio=-2),),
         ),
     )
 
@@ -1168,10 +1159,217 @@ async def test_calculate_progress_applies_negative_ratio(
         child_item=cast(LibrarySeasonProtocol, season),
         grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
         entry=cast(ListEntryProtocol, entry),
-        source_mappings=source_mappings,
+        mappings=mappings,
     )
 
     assert progress == 1
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_applies_destination_ratio(
+    show_client: ShowSyncClient,
+) -> None:
+    """Target-side positive ratios should compress watched progress units."""
+    show, season, episodes = build_show(view_counts=[1, 1])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=4,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "1", None),
+            source_ranges=(MappingRange(start=1, end=2, ratio=None),),
+            target_ranges=((MappingRange(start=10, end=None, ratio=2),),),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 1
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_prefers_source_ratio_over_destination_ratio(
+    show_client: ShowSyncClient,
+) -> None:
+    """Explicit source ratio should take precedence when both sides provide one."""
+    show, season, episodes = build_show(view_counts=[1, 1])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=4,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "1", None),
+            source_ranges=(MappingRange(start=1, end=2, ratio=-2),),
+            target_ranges=((MappingRange(start=1, end=2, ratio=2),),),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 1
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_derives_weight_from_destination_lengths(
+    show_client: ShowSyncClient,
+) -> None:
+    """Destination segment lengths should derive source weight when finite."""
+    show, season, episodes = build_show(view_counts=[1, 1])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=4,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "1", None),
+            source_ranges=(MappingRange(start=1, end=2, ratio=None),),
+            target_ranges=(
+                (
+                    MappingRange(start=1, end=1, ratio=None),
+                    MappingRange(start=3, end=6, ratio=None),
+                ),
+            ),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 4
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_applies_mixed_target_ratio_segments(
+    show_client: ShowSyncClient,
+) -> None:
+    """Mixed target segments should honor per-segment ratio semantics."""
+    show, season, episodes = build_show(view_counts=[1] * 23)
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=100,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "17074", None),
+            source_ranges=(MappingRange(start=1, end=23, ratio=None),),
+            target_ranges=(
+                (
+                    MappingRange(start=1, end=22, ratio=None),
+                    MappingRange(start=23, end=26, ratio=-4),
+                ),
+            ),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 26
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_applies_target_positive_ratio_compression(
+    show_client: ShowSyncClient,
+) -> None:
+    """Target-side positive ratios should compress mapped progress units."""
+    show, season, episodes = build_show(view_counts=[1] * 22)
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=100,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "17074", None),
+            source_ranges=(MappingRange(start=1, end=22, ratio=None),),
+            target_ranges=((MappingRange(start=1, end=11, ratio=2),),),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 11
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_caps_after_ratio_expansion(
+    show_client: ShowSyncClient,
+) -> None:
+    """Expanded ratio progress should still cap to the entry total units."""
+    show, season, episodes = build_show(view_counts=[1] * 23)
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=23,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "17074", None),
+            source_ranges=(MappingRange(start=1, end=23, ratio=None),),
+            target_ranges=(
+                (
+                    MappingRange(start=1, end=22, ratio=None),
+                    MappingRange(start=23, end=26, ratio=-4),
+                ),
+            ),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 23
 
 
 @pytest.mark.asyncio

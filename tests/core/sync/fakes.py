@@ -520,7 +520,10 @@ class FakeAnimapClient:
         descriptors: Sequence[MappingDescriptor],
         *,
         target_providers: set[str] | frozenset[str] | None = None,
-    ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[str]]]:
+    ) -> dict[
+        MappingDescriptor,
+        dict[MappingDescriptor, list[tuple[str, str | None]]],
+    ]:
         return {}
 
 
