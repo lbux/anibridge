@@ -20,6 +20,7 @@ def test_is_valid_source_range_accepts_and_rejects() -> None:
     assert is_valid_source_range("1-12")
     assert is_valid_source_range("1-")
     assert is_valid_source_range("1|2")
+    assert is_valid_source_range("1|0")
     assert not is_valid_source_range("a")
 
 
@@ -29,6 +30,7 @@ def test_is_valid_target_range_accepts_and_rejects() -> None:
     assert is_valid_target_range("1-12")
     assert is_valid_target_range("1-12,13")
     assert is_valid_target_range("1|2,3|1")
+    assert is_valid_target_range("1|0,2")
     assert not is_valid_target_range("1,,2")
 
 
@@ -169,3 +171,30 @@ def test_mapping_weight_plan_weight_for_uses_default_outside_piecewise_map() -> 
     assert plan.per_index_weights is not None
     assert plan.weight_for(5) == 2.0
     assert plan.weight_for(999) == pytest.approx(26 / 23)
+
+
+def test_ratio_to_weight_supports_zero_as_empty() -> None:
+    """A zero ratio should represent an explicitly empty mapping contribution."""
+    assert ratio_to_weight(0) == 0.0
+
+
+def test_mapping_weight_plan_with_zero_source_ratio_is_empty() -> None:
+    """Zero source ratio should yield zero aggregate contribution."""
+    source = MappingRange(start=1, end=3, ratio=0)
+    targets = (MappingRange(start=1, end=3, ratio=None),)
+
+    plan = mapping_weight_plan(source, targets)
+
+    assert plan.default_weight == 0.0
+    assert plan.per_index_weights is None
+
+
+def test_mapping_weight_plan_with_only_zero_target_segments_is_empty() -> None:
+    """All-zero target segments should produce an empty contribution plan."""
+    source = MappingRange(start=1, end=3, ratio=None)
+    targets = (MappingRange(start=1, end=4, ratio=0),)
+
+    plan = mapping_weight_plan(source, targets)
+
+    assert plan.default_weight == 0.0
+    assert plan.per_index_weights is None

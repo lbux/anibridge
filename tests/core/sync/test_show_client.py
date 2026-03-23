@@ -362,6 +362,45 @@ def test_filter_episodes_by_ranges_returns_empty_when_no_range_matches(
     assert filtered == []
 
 
+def test_filter_episodes_by_ranges_treats_zero_source_ratio_as_empty(
+    show_client: ShowSyncClient,
+) -> None:
+    """Source ranges with ratio=0 should not include any episodes."""
+    _show, _season, episodes = build_show(view_counts=[0, 0, 0])
+    mapping = RangeMapping(
+        descriptor=("anilist", "3", None),
+        source_ranges=(MappingRange(start=1, end=3, ratio=0),),
+    )
+
+    filtered = show_client._filter_episodes_by_ranges(
+        episodes,
+        [mapping],
+    )
+
+    assert filtered == []
+
+
+def test_filter_episodes_by_ranges_ignores_zero_ratio_when_mixed(
+    show_client: ShowSyncClient,
+) -> None:
+    """Zero-ratio source ranges should be ignored when other ranges are present."""
+    _show, _season, episodes = build_show(view_counts=[0, 0, 0])
+    mapping = RangeMapping(
+        descriptor=("anilist", "4", None),
+        source_ranges=(
+            MappingRange(start=1, end=1, ratio=0),
+            MappingRange(start=2, end=3, ratio=None),
+        ),
+    )
+
+    filtered = show_client._filter_episodes_by_ranges(
+        episodes,
+        [mapping],
+    )
+
+    assert [ep.index for ep in filtered] == [2, 3]
+
+
 @pytest.mark.asyncio
 async def test_collect_prefetch_keys_sorted(
     show_client: ShowSyncClient,

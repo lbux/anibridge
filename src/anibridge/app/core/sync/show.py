@@ -218,7 +218,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             source_range
             for mapping in mappings
             for source_range in mapping.source_ranges
+            if source_range.ratio != 0
         ]
+        if not all_source_ranges:
+            return []
         return [
             episode
             for episode in episodes

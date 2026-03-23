@@ -102,6 +102,8 @@ def ratio_to_weight(ratio: int | None) -> float:
     """Convert a mapping ratio into weight in the opposing mapped range."""
     if ratio is None or ratio == 1:
         return 1.0
+    if ratio == 0:
+        return 0.0
     if ratio > 0:
         return float(ratio)
     return 1.0 / abs(ratio)
@@ -125,12 +127,18 @@ def mapping_weight_plan(
 
     for target_range in target_ranges:
         source_per_target = ratio_to_weight(target_range.ratio)
+        if source_per_target == 0.0:
+            # A zero-ratio segment is explicitly empty.
+            continue
         target_ratio_weights.append(source_per_target)
         target_length = _range_length(target_range)
         if target_length is None:
             has_open_ended_target = True
             continue
         target_length_total += target_length
+
+    if not target_ratio_weights:
+        return MappingWeightPlan(default_weight=0.0)
 
     # If we have a closed range, we can calculate a precise weight
     default_weight = 1.0
@@ -185,6 +193,8 @@ def _build_piecewise_weights(
             return None
 
         source_per_target = ratio_to_weight(target_range.ratio)
+        if source_per_target == 0.0:
+            continue
         consumed_source = target_length * source_per_target
         consumed_source_int = round(consumed_source)
         if not _is_near_int(consumed_source, consumed_source_int):
