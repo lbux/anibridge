@@ -1036,6 +1036,37 @@ async def test_calculate_status_finished_no_total_units(
 
 
 @pytest.mark.asyncio
+async def test_calculate_status_finished_no_total_units_with_ratio_expansion(
+    show_client: ShowSyncClient,
+) -> None:
+    """Finished episode coverage should be current even when weighted units expand."""
+    show, season, episodes = build_show(view_counts=[1, 1])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=None,
+    )
+    mappings = (
+        RangeMapping(
+            descriptor=("anilist", "1", None),
+            source_ranges=(MappingRange(start=1, end=2, ratio=2),),
+        ),
+    )
+
+    status = await show_client._calculate_status(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert status == ListStatus.CURRENT
+
+
+@pytest.mark.asyncio
 async def test_calculate_user_rating_prefers_sources(
     show_client: ShowSyncClient,
 ) -> None:

@@ -378,7 +378,10 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         entry: ListEntry,
         mappings: Sequence[RangeMapping] | None = None,
     ) -> ListStatus | None:
-        watched_count = self._calculate_watched_units(grandchild_items, mappings)
+        watched_units = self._calculate_watched_units(grandchild_items, mappings)
+        watched_episode_count = sum(
+            1 for episode in grandchild_items if episode.view_count
+        )
         min_view_count = min(
             (episode.view_count for episode in grandchild_items if episode.view_count),
             default=0,
@@ -388,9 +391,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             or child_item.on_watching
             or any(episode.on_watching for episode in grandchild_items)
         )
-        is_finished = len(grandchild_items) == watched_count
+        is_finished = len(grandchild_items) == watched_episode_count
         _total_units = entry.media().total_units
-        is_completed = _total_units is not None and watched_count >= _total_units
+        is_completed = _total_units is not None and watched_units >= _total_units
 
         # We've watched all required episodes at least once
         if is_completed:
@@ -404,7 +407,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             return ListStatus.CURRENT
 
         # We've stopped watching partway through or have no more available episodes
-        if watched_count:
+        if watched_units:
             # Either the list or library has incomplete data; assume current
             if is_finished:  # and not is_completed
                 return ListStatus.CURRENT
