@@ -436,6 +436,29 @@ class AnimapClient:
                     )
                 )
             }
+            existing_entry_ids = {
+                entry_id_db: descriptor
+                for descriptor, entry_id_db in existing_entries.items()
+            }
+            previous_mapping_keys = {
+                (src_desc, dst_desc, source_range, destination_range)
+                for (
+                    source_entry_id,
+                    destination_entry_id,
+                    source_range,
+                    destination_range,
+                ) in ctx.session.execute(
+                    select(
+                        AnimapMapping.source_entry_id,
+                        AnimapMapping.destination_entry_id,
+                        AnimapMapping.source_range,
+                        AnimapMapping.destination_range,
+                    )
+                )
+                if (src_desc := existing_entry_ids.get(source_entry_id)) is not None
+                and (dst_desc := existing_entry_ids.get(destination_entry_id))
+                is not None
+            }
 
             new_entry_keys = set(descriptors.keys())
             existing_entry_keys = set(existing_entries.keys())
@@ -636,15 +659,23 @@ class AnimapClient:
 
             ctx.session.commit()
 
+            current_mapping_keys = set(edges.keys())
             existing_pairs = {
-                (src_id, dst_id) for src_id, dst_id, _, _ in existing_keys
+                (src_desc, dst_desc)
+                for src_desc, dst_desc, _, _ in previous_mapping_keys
             }
-            new_pairs = {(src_id, dst_id) for src_id, dst_id, _, _ in new_keys}
+            new_pairs = {
+                (src_desc, dst_desc)
+                for src_desc, dst_desc, _, _ in current_mapping_keys
+            }
             removed_pairs = existing_pairs - new_pairs
             created_pairs = new_pairs - existing_pairs
             changed_pairs = {
-                (src_id, dst_id)
-                for src_id, dst_id, _, _ in (to_delete_mappings | to_insert_mappings)
+                (src_desc, dst_desc)
+                for src_desc, dst_desc, _, _ in (
+                    (previous_mapping_keys - current_mapping_keys)
+                    | (current_mapping_keys - previous_mapping_keys)
+                )
             }
             updated_pairs = changed_pairs - removed_pairs - created_pairs
 
