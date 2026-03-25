@@ -27,7 +27,10 @@
                 "yzhang.markdown-all-in-one",
                 "svelte.svelte-vscode",
                 "bradlc.vscode-tailwindcss"
-            ]
+            ],
+            "settings": {
+                "python-envs.terminal.autoActivationType": "shellStartup"
+            }
         }
     },
     "forwardPorts": [4848, 5173],
