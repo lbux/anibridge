@@ -580,19 +580,148 @@
         </div>
     {/snippet}
 
-    <div
-        class="rounded-md border border-slate-800/70 bg-slate-900/70 p-4 shadow-inner">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-                <div class="flex-1 space-y-3">
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        {#each descriptorInputs as field (field.field)}
+    <div class="rounded-md border border-slate-800/70 bg-slate-900/70 p-4 shadow-inner">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="flex-1 space-y-3">
+                <div class="grid gap-3 sm:grid-cols-3">
+                    {#each descriptorInputs as field (field.field)}
+                        <div class="relative w-full">
+                            <input
+                                class="h-9 w-full rounded-md border border-slate-700/60 bg-slate-950 px-3 pr-10 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                                placeholder={field.placeholder}
+                                aria-label={field.aria}
+                                bind:value={descriptor[field.field]}
+                                disabled={mode === "edit"} />
+                            <div class="absolute inset-y-0 right-2 flex items-center">
+                                <Tooltip.Root delayDuration={120}>
+                                    <Tooltip.Trigger>
+                                        <button
+                                            type="button"
+                                            class="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
+                                            aria-label={`${field.placeholder} info`}>
+                                            <Info class="h-3 w-3" />
+                                        </button>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Portal>
+                                        <Tooltip.Content
+                                            side="top"
+                                            sideOffset={6}
+                                            class="z-50 rounded-md border border-slate-800/70 bg-slate-900/95 px-2 py-1.5 text-[11px] text-slate-100 shadow-xl">
+                                            {field.info}
+                                            <Tooltip.Arrow />
+                                        </Tooltip.Content>
+                                    </Tooltip.Portal>
+                                </Tooltip.Root>
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-[11px]">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-100 shadow-sm transition-colors hover:border-emerald-500 hover:text-emerald-100 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
+                    onclick={() => loadDetail()}
+                    disabled={loadingDetail || !canLoadDescriptor()}>
+                    <RefreshCcw class="inline h-3.5 w-3.5" />
+                    Load existing
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-100 shadow-sm transition-colors hover:border-emerald-500 hover:text-emerald-100 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
+                    onclick={addEntry}
+                    disabled={saving}>
+                    <Plus class="inline h-3.5 w-3.5" />
+                    Add Mapping
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {#if entries.length === 0}
+        <div
+            class="rounded-md border border-dashed border-slate-800 bg-slate-950/70 p-6 text-center text-sm text-slate-400">
+            Load an existing mapping or add a mapping to start.
+        </div>
+    {:else}
+        <div class="space-y-4">
+            {#each entries as entry (entry.key)}
+                <div
+                    class={`rounded-md border p-4 shadow-md ${
+                        entry.deleted && entry.origin !== "custom"
+                            ? "border-rose-900/60 bg-slate-950/50 opacity-70"
+                            : "border-slate-800 bg-slate-950/80"
+                    }`}>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span
+                            class={`font-mono text-xs ${
+                                entry.deleted && entry.origin !== "custom"
+                                    ? "text-slate-500 line-through"
+                                    : "text-slate-300"
+                            }`}>
+                            {buildDescriptor(
+                                entry.provider || entry.provider_placeholder || "?",
+                                entry.entry_id || entry.entry_id_placeholder || "?",
+                                entry.scope || entry.scope_placeholder || "",
+                            )}
+                        </span>
+                        <span
+                            class={`rounded border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${
+                                entry.origin === "custom"
+                                    ? "border-emerald-800/60 bg-emerald-900/40 text-emerald-100"
+                                    : entry.origin === "mixed"
+                                      ? "border-amber-800/60 bg-amber-900/40 text-amber-100"
+                                      : "border-slate-700/70 bg-slate-800/60 text-slate-100"
+                            }`}>
+                            {entry.origin === "custom"
+                                ? "Custom"
+                                : entry.origin === "mixed"
+                                  ? "Mixed"
+                                  : "Upstream"}
+                        </span>
+                        {#if entry.deleted && entry.origin !== "custom"}
+                            <span
+                                class="rounded border border-rose-800/60 bg-rose-900/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase">
+                                Disabled override
+                            </span>
+                        {/if}
+                        <span class="flex-1"></span>
+                        {#if entry.origin !== "custom"}
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-900/60 px-3 py-1 text-[12px] font-semibold text-slate-200 transition-colors hover:border-slate-500 focus:outline-none"
+                                onclick={() => revertEntry(entry.key)}>
+                                Revert to upstream
+                            </button>
+                        {/if}
+                        <button
+                            type="button"
+                            class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-emerald-200 shadow-sm transition-colors hover:border-emerald-400 hover:text-emerald-100 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-emerald-200"
+                            title="Add range"
+                            onclick={() => addRange(entry.key)}
+                            disabled={entry.deleted}>
+                            <Plus class="inline h-4 w-4" />
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-rose-200 transition-colors hover:border-rose-500 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-rose-200"
+                            title="Remove target mapping"
+                            onclick={() => removeEntry(entry.key)}
+                            disabled={entry.deleted}>
+                            <Trash2 class="inline h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                        {#each entryFields as field (field.key)}
                             <div class="relative w-full">
                                 <input
-                                    class="h-9 w-full rounded-md border border-slate-700/60 bg-slate-950 px-3 pr-10 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
-                                    placeholder={field.placeholder}
+                                    class="h-9 w-full rounded-md border border-slate-800/70 bg-slate-900 px-3 pr-10 text-[13px] text-slate-100 placeholder:text-slate-500 placeholder:opacity-70 focus:border-emerald-500 focus:outline-none"
+                                    placeholder={entry[field.placeholder] ||
+                                        field.defaultLabel}
                                     aria-label={field.aria}
-                                    bind:value={descriptor[field.field]}
-                                    disabled={mode === "edit"} />
+                                    bind:value={entry[field.key]}
+                                    disabled={entry.deleted} />
                                 <div
                                     class="absolute inset-y-0 right-2 flex items-center">
                                     <Tooltip.Root delayDuration={120}>
@@ -600,7 +729,7 @@
                                             <button
                                                 type="button"
                                                 class="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
-                                                aria-label={`${field.placeholder} info`}>
+                                                aria-label={`${field.defaultLabel} info`}>
                                                 <Info class="h-3 w-3" />
                                             </button>
                                         </Tooltip.Trigger>
@@ -618,111 +747,36 @@
                             </div>
                         {/each}
                     </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2 text-[11px]">
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-100 shadow-sm transition-colors hover:border-emerald-500 hover:text-emerald-100 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
-                        onclick={() => loadDetail()}
-                        disabled={loadingDetail || !canLoadDescriptor()}>
-                        <RefreshCcw class="inline h-3.5 w-3.5" />
-                        Load existing
-                    </button>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-100 shadow-sm transition-colors hover:border-emerald-500 hover:text-emerald-100 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
-                        onclick={addEntry}
-                        disabled={saving}>
-                        <Plus class="inline h-3.5 w-3.5" />
-                        Add Mapping
-                    </button>
-                </div>
-            </div>
-        </div>
 
-        {#if entries.length === 0}
-            <div
-                class="rounded-md border border-dashed border-slate-800 bg-slate-950/70 p-6 text-center text-sm text-slate-400">
-                Load an existing mapping or add a mapping to start.
-            </div>
-        {:else}
-            <div class="space-y-4">
-                {#each entries as entry (entry.key)}
-                    <div
-                        class={`rounded-md border p-4 shadow-md ${
-                            entry.deleted && entry.origin !== "custom"
-                                ? "border-rose-900/60 bg-slate-950/50 opacity-70"
-                                : "border-slate-800 bg-slate-950/80"
-                        }`}>
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span
-                                class={`font-mono text-xs ${
-                                    entry.deleted && entry.origin !== "custom"
-                                        ? "text-slate-500 line-through"
-                                        : "text-slate-300"
+                    <div class="mt-3 space-y-2 border-l border-slate-800/60 pl-4">
+                        {#each entry.ranges as range, idx (idx)}
+                            <div
+                                class={`flex flex-wrap items-center gap-2 ${
+                                    range.mode === "custom" &&
+                                    range.custom_value === null
+                                        ? "opacity-70"
+                                        : ""
                                 }`}>
-                                {buildDescriptor(
-                                    entry.provider || entry.provider_placeholder || "?",
-                                    entry.entry_id || entry.entry_id_placeholder || "?",
-                                    entry.scope || entry.scope_placeholder || "",
-                                )}
-                            </span>
-                            <span
-                                class={`rounded border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${
-                                    entry.origin === "custom"
-                                        ? "border-emerald-800/60 bg-emerald-900/40 text-emerald-100"
-                                        : entry.origin === "mixed"
-                                          ? "border-amber-800/60 bg-amber-900/40 text-amber-100"
-                                          : "border-slate-700/70 bg-slate-800/60 text-slate-100"
-                                }`}>
-                                {entry.origin === "custom"
-                                    ? "Custom"
-                                    : entry.origin === "mixed"
-                                      ? "Mixed"
-                                      : "Upstream"}
-                            </span>
-                            {#if entry.deleted && entry.origin !== "custom"}
-                                <span
-                                    class="rounded border border-rose-800/60 bg-rose-900/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase">
-                                    Disabled override
-                                </span>
-                            {/if}
-                            <span class="flex-1"></span>
-                            {#if entry.origin !== "custom"}
-                                <button
-                                    type="button"
-                                    class="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-900/60 px-3 py-1 text-[12px] font-semibold text-slate-200 transition-colors hover:border-slate-500 focus:outline-none"
-                                    onclick={() => revertEntry(entry.key)}>
-                                    Revert to upstream
-                                </button>
-                            {/if}
-                            <button
-                                type="button"
-                                class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-emerald-200 shadow-sm transition-colors hover:border-emerald-400 hover:text-emerald-100 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-emerald-200"
-                                title="Add range"
-                                onclick={() => addRange(entry.key)}
-                                disabled={entry.deleted}>
-                                <Plus class="inline h-4 w-4" />
-                            </button>
-                            <button
-                                type="button"
-                                class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-rose-200 transition-colors hover:border-rose-500 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-rose-200"
-                                title="Remove target mapping"
-                                onclick={() => removeEntry(entry.key)}
-                                disabled={entry.deleted}>
-                                <Trash2 class="inline h-4 w-4" />
-                            </button>
-                        </div>
-
-                        <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                            {#each entryFields as field (field.key)}
-                                <div class="relative w-full">
+                                <div class="relative w-full min-w-44 flex-1">
                                     <input
-                                        class="h-9 w-full rounded-md border border-slate-800/70 bg-slate-900 px-3 pr-10 text-[13px] text-slate-100 placeholder:text-slate-500 placeholder:opacity-70 focus:border-emerald-500 focus:outline-none"
-                                        placeholder={entry[field.placeholder] ||
-                                            field.defaultLabel}
-                                        aria-label={field.aria}
-                                        bind:value={entry[field.key]}
+                                        class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
+                                            range.mode === "custom" &&
+                                            range.custom_value === null
+                                                ? "text-slate-500 line-through"
+                                                : "text-slate-100"
+                                        }`}
+                                        value={range.mode === "custom"
+                                            ? range.source_range
+                                            : ""}
+                                        oninput={(ev) =>
+                                            setSourceRange(
+                                                entry.key,
+                                                idx,
+                                                ev.currentTarget.value,
+                                            )}
+                                        placeholder={range.source_range ||
+                                            "Source range"}
+                                        aria-label="Range source"
                                         disabled={entry.deleted} />
                                     <div
                                         class="absolute inset-y-0 right-2 flex items-center">
@@ -730,8 +784,55 @@
                                             <Tooltip.Trigger>
                                                 <button
                                                     type="button"
-                                                    class="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
-                                                    aria-label={`${field.defaultLabel} info`}>
+                                                    class="pointer-events-auto inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
+                                                    aria-label="Range source info">
+                                                    <Info class="h-3 w-3" />
+                                                </button>
+                                            </Tooltip.Trigger>
+                                            <Tooltip.Portal>
+                                                <Tooltip.Content
+                                                    side="top"
+                                                    sideOffset={6}
+                                                    class="z-50 rounded-md border border-slate-800/70 bg-slate-900/95 px-2 py-1 text-[11px] text-slate-100 shadow-xl">
+                                                    {rangeFieldInfo.source}
+                                                    <Tooltip.Arrow />
+                                                </Tooltip.Content>
+                                            </Tooltip.Portal>
+                                        </Tooltip.Root>
+                                    </div>
+                                </div>
+                                <div class="relative w-full min-w-44 flex-1">
+                                    <input
+                                        class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
+                                            range.mode === "custom" &&
+                                            range.custom_value === null
+                                                ? "text-slate-500 line-through"
+                                                : "text-slate-100"
+                                        }`}
+                                        value={range.mode === "custom"
+                                            ? (range.custom_value ?? "")
+                                            : ""}
+                                        oninput={(ev) =>
+                                            setRangeValue(
+                                                entry.key,
+                                                idx,
+                                                ev.currentTarget.value,
+                                            )}
+                                        placeholder={range.mode === "custom" &&
+                                        range.custom_value === null
+                                            ? "null (mapping removed)"
+                                            : (range.upstream_value ??
+                                              "Destination range")}
+                                        aria-label="Range destination"
+                                        disabled={entry.deleted} />
+                                    <div
+                                        class="absolute inset-y-0 right-2 flex items-center">
+                                        <Tooltip.Root delayDuration={120}>
+                                            <Tooltip.Trigger>
+                                                <button
+                                                    type="button"
+                                                    class="pointer-events-auto inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
+                                                    aria-label="Range destination info">
                                                     <Info class="h-3 w-3" />
                                                 </button>
                                             </Tooltip.Trigger>
@@ -740,167 +841,64 @@
                                                     side="top"
                                                     sideOffset={6}
                                                     class="z-50 rounded-md border border-slate-800/70 bg-slate-900/95 px-2 py-1.5 text-[11px] text-slate-100 shadow-xl">
-                                                    {field.info}
+                                                    {rangeFieldInfo.destination}
                                                     <Tooltip.Arrow />
                                                 </Tooltip.Content>
                                             </Tooltip.Portal>
                                         </Tooltip.Root>
                                     </div>
                                 </div>
-                            {/each}
-                        </div>
-
-                        <div class="mt-3 space-y-2 border-l border-slate-800/60 pl-4">
-                            {#each entry.ranges as range, idx (idx)}
-                                <div
-                                    class={`flex flex-wrap items-center gap-2 ${
-                                        range.mode === "custom" &&
-                                        range.custom_value === null
-                                            ? "opacity-70"
-                                            : ""
-                                    }`}>
-                                    <div class="relative w-full min-w-44 flex-1">
-                                        <input
-                                            class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
-                                                range.mode === "custom" &&
-                                                range.custom_value === null
-                                                    ? "text-slate-500 line-through"
-                                                    : "text-slate-100"
-                                            }`}
-                                            value={range.mode === "custom"
-                                                ? range.source_range
-                                                : ""}
-                                            oninput={(ev) =>
-                                                setSourceRange(
-                                                    entry.key,
-                                                    idx,
-                                                    ev.currentTarget.value,
-                                                )}
-                                            placeholder={range.source_range ||
-                                                "Source range"}
-                                            aria-label="Range source"
-                                            disabled={entry.deleted} />
-                                        <div
-                                            class="absolute inset-y-0 right-2 flex items-center">
-                                            <Tooltip.Root delayDuration={120}>
-                                                <Tooltip.Trigger>
-                                                    <button
-                                                        type="button"
-                                                        class="pointer-events-auto inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
-                                                        aria-label="Range source info">
-                                                        <Info class="h-3 w-3" />
-                                                    </button>
-                                                </Tooltip.Trigger>
-                                                <Tooltip.Portal>
-                                                    <Tooltip.Content
-                                                        side="top"
-                                                        sideOffset={6}
-                                                        class="z-50 rounded-md border border-slate-800/70 bg-slate-900/95 px-2 py-1 text-[11px] text-slate-100 shadow-xl">
-                                                        {rangeFieldInfo.source}
-                                                        <Tooltip.Arrow />
-                                                    </Tooltip.Content>
-                                                </Tooltip.Portal>
-                                            </Tooltip.Root>
-                                        </div>
-                                    </div>
-                                    <div class="relative w-full min-w-44 flex-1">
-                                        <input
-                                            class={`w-full min-w-0 rounded-md border border-slate-800/70 bg-slate-900 px-3 py-1 pr-10 text-[11px] placeholder:text-slate-500 placeholder:opacity-80 focus:border-emerald-500 focus:outline-none ${
-                                                range.mode === "custom" &&
-                                                range.custom_value === null
-                                                    ? "text-slate-500 line-through"
-                                                    : "text-slate-100"
-                                            }`}
-                                            value={range.mode === "custom"
-                                                ? (range.custom_value ?? "")
-                                                : ""}
-                                            oninput={(ev) =>
-                                                setRangeValue(
-                                                    entry.key,
-                                                    idx,
-                                                    ev.currentTarget.value,
-                                                )}
-                                            placeholder={range.mode === "custom" &&
-                                            range.custom_value === null
-                                                ? "null (mapping removed)"
-                                                : (range.upstream_value ??
-                                                  "Destination range")}
-                                            aria-label="Range destination"
-                                            disabled={entry.deleted} />
-                                        <div
-                                            class="absolute inset-y-0 right-2 flex items-center">
-                                            <Tooltip.Root delayDuration={120}>
-                                                <Tooltip.Trigger>
-                                                    <button
-                                                        type="button"
-                                                        class="pointer-events-auto inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-400 transition-colors hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
-                                                        aria-label="Range destination info">
-                                                        <Info class="h-3 w-3" />
-                                                    </button>
-                                                </Tooltip.Trigger>
-                                                <Tooltip.Portal>
-                                                    <Tooltip.Content
-                                                        side="top"
-                                                        sideOffset={6}
-                                                        class="z-50 rounded-md border border-slate-800/70 bg-slate-900/95 px-2 py-1.5 text-[11px] text-slate-100 shadow-xl">
-                                                        {rangeFieldInfo.destination}
-                                                        <Tooltip.Arrow />
-                                                    </Tooltip.Content>
-                                                </Tooltip.Portal>
-                                            </Tooltip.Root>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center gap-1.5">
-                                        {#if range.mode === "custom" && range.custom_value === null}
-                                            <span
-                                                class="rounded border border-rose-800/60 bg-rose-900/30 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase"
-                                                title="Explicit null: this source range is disabled for this target">
-                                                Null override
-                                            </span>
-                                        {/if}
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-rose-200 transition-colors hover:border-rose-500 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-rose-200"
-                                            title="Remove range"
-                                            onclick={() => removeRange(entry.key, idx)}
-                                            disabled={entry.deleted}>
-                                            <Trash2 class="inline h-4 w-4" />
-                                        </button>
-                                    </div>
+                                <div class="flex items-center gap-1.5">
+                                    {#if range.mode === "custom" && range.custom_value === null}
+                                        <span
+                                            class="rounded border border-rose-800/60 bg-rose-900/30 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-rose-100 uppercase"
+                                            title="Explicit null: this source range is disabled for this target">
+                                            Null override
+                                        </span>
+                                    {/if}
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center rounded-md border border-slate-700/60 bg-slate-900/60 p-1 text-[12px] font-semibold text-rose-200 transition-colors hover:border-rose-500 focus:outline-none disabled:pointer-events-none disabled:opacity-50 disabled:hover:border-slate-700/60 disabled:hover:text-rose-200"
+                                        title="Remove range"
+                                        onclick={() => removeRange(entry.key, idx)}
+                                        disabled={entry.deleted}>
+                                        <Trash2 class="inline h-4 w-4" />
+                                    </button>
                                 </div>
-                            {/each}
-                        </div>
+                            </div>
+                        {/each}
                     </div>
-                {/each}
-            </div>
-        {/if}
-
-        {#if error}
-            <div
-                class="rounded-md border border-rose-800 bg-rose-900/40 p-3 text-[12px] text-rose-100">
-                {error}
-            </div>
-        {/if}
-        <div class="flex flex-wrap items-center gap-2">
-            <button
-                type="button"
-                class="inline-flex items-center gap-2 rounded-md border border-emerald-600/60 bg-emerald-600/30 px-3 py-2 text-[12px] font-semibold text-emerald-100 shadow-sm transition-colors hover:bg-emerald-600/40 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                onclick={handleSave}
-                disabled={saving}>
-                {#if saving}
-                    <Save class="h-4 w-4 animate-spin" />
-                {:else}
-                    <Save class="h-4 w-4" />
-                {/if}
-                Save
-            </button>
-            <button
-                type="button"
-                class="inline-flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-[12px] font-semibold text-slate-100 shadow-sm transition-colors hover:border-slate-500 focus:ring-2 focus:ring-slate-500/40 focus:outline-none"
-                onclick={() => loadDetail()}
-                disabled={loadingDetail || !canLoadDescriptor()}>
-                <RefreshCcw class="h-4 w-4" />
-                Reload
-            </button>
+                </div>
+            {/each}
         </div>
-    </Modal>
+    {/if}
+
+    {#if error}
+        <div
+            class="rounded-md border border-rose-800 bg-rose-900/40 p-3 text-[12px] text-rose-100">
+            {error}
+        </div>
+    {/if}
+    <div class="flex flex-wrap items-center gap-2">
+        <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-md border border-emerald-600/60 bg-emerald-600/30 px-3 py-2 text-[12px] font-semibold text-emerald-100 shadow-sm transition-colors hover:bg-emerald-600/40 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            onclick={handleSave}
+            disabled={saving}>
+            {#if saving}
+                <Save class="h-4 w-4 animate-spin" />
+            {:else}
+                <Save class="h-4 w-4" />
+            {/if}
+            Save
+        </button>
+        <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-800/60 px-3 py-2 text-[12px] font-semibold text-slate-100 shadow-sm transition-colors hover:border-slate-500 focus:ring-2 focus:ring-slate-500/40 focus:outline-none"
+            onclick={() => loadDetail()}
+            disabled={loadingDetail || !canLoadDescriptor()}>
+            <RefreshCcw class="h-4 w-4" />
+            Reload
+        </button>
+    </div>
+</Modal>
