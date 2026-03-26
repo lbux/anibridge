@@ -8,9 +8,8 @@ from pathlib import Path
 
 import orjson
 from anibridge.utils.mappings import (
+    AnibridgeMapping,
     descriptor_key,
-    is_valid_source_range,
-    is_valid_target_range,
     parse_mapping_descriptor,
 )
 from anibridge.utils.types import MappingDescriptor
@@ -332,23 +331,15 @@ class AnimapClient:
                     if not isinstance(destination_range, str):
                         invalid_count += 1
                         continue
-                    if not is_valid_source_range(source_range):
+                    try:
+                        AnibridgeMapping.parse(source_range, destination_range)
+                    except ValueError as e:
                         log.warning(
-                            "Invalid source range $$'%s'$$ under $$'%s'$$ → "
-                            "$$'%s'$$; skipped",
+                            "Invalid mapping $$'%s'$$ under $$'%s'$$ → $$'%s'$$: %s",
                             source_range,
                             raw_source,
                             raw_target,
-                        )
-                        invalid_count += 1
-                        continue
-                    if not is_valid_target_range(destination_range):
-                        log.warning(
-                            "Invalid destination range $$'%s'$$ under $$'%s'$$ → "
-                            "$$'%s'$$; skipped",
-                            destination_range,
-                            raw_source,
-                            raw_target,
+                            e,
                         )
                         invalid_count += 1
                         continue
