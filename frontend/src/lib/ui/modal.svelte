@@ -11,6 +11,7 @@
         open: boolean;
         overlayClass?: string;
         contentClass?: string;
+        bodyClass?: string;
         headerClass?: string;
         headerWrapperClass?: string;
         footerClass?: string;
@@ -28,6 +29,7 @@
         open = $bindable(false),
         overlayClass = "fixed inset-0 z-40 bg-black/70 backdrop-blur-sm",
         contentClass = "fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-700/70 bg-slate-900/95 shadow-xl ring-1 ring-slate-700/40",
+        bodyClass = "",
         headerClass = "flex items-start justify-between gap-4",
         headerWrapperClass = "p-4",
         footerClass = "",
@@ -63,7 +65,7 @@
                 </div>
             {/if}
 
-            <div>
+            <div class={bodyClass}>
                 {@render children?.()}
             </div>
 

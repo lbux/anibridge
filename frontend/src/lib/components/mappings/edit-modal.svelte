@@ -569,9 +569,10 @@
 
 <Modal
     bind:open
-    contentClass="fixed top-1/2 left-1/2 z-50 w-full max-w-6xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/90 shadow-2xl ring-1 ring-slate-800/60 backdrop-blur"
-    headerWrapperClass="border-b border-slate-800/80 bg-slate-900/70 px-4 py-3"
-    footerClass="flex items-center justify-end gap-3 border-t border-slate-800/70 bg-slate-900/70 px-4 py-3"
+    contentClass="fixed top-1/2 left-1/2 z-50 w-full max-w-6xl max-h-[90vh] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-800 bg-slate-950/90 shadow-2xl ring-1 ring-slate-800/60 backdrop-blur flex flex-col overflow-hidden"
+    bodyClass="space-y-4 p-4 overflow-y-auto flex-1 min-w-0"
+    headerWrapperClass="border-b border-slate-800/80 bg-slate-900/70 px-4 py-3 flex-shrink-0"
+    footerClass="flex items-center justify-end gap-3 border-t border-slate-800/70 bg-slate-900/70 px-4 py-3 flex-shrink-0"
     closeButtonClass="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800/70 hover:text-slate-100">
     {#snippet titleChildren()}
         <div class="text-sm font-semibold tracking-wide text-slate-100">
@@ -579,9 +580,8 @@
         </div>
     {/snippet}
 
-    <div class="space-y-4 p-4">
-        <div
-            class="rounded-md border border-slate-800/70 bg-slate-900/70 p-4 shadow-inner">
+    <div
+        class="rounded-md border border-slate-800/70 bg-slate-900/70 p-4 shadow-inner">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="flex-1 space-y-3">
                     <div class="grid gap-3 sm:grid-cols-3">
@@ -903,5 +903,4 @@
                 Reload
             </button>
         </div>
-    </div>
-</Modal>
+    </Modal>
