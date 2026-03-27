@@ -1,6 +1,7 @@
 """Tests for the BridgeClient orchestration logic."""
 
 import asyncio
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -325,6 +326,49 @@ def test_backup_list_writes_payload(
     backup_root = tmp_path / "backups" / "default"
     assert backup_root.exists()
     assert any(path.suffix == ".json" for path in backup_root.iterdir())
+
+
+def test_backup_list_prunes_expired_backups(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Expired backups should be deleted when retention is enabled."""
+    provider = FakeLibraryProvider([], {})
+    list_provider = FakeListProvider(backup_payload="{}")
+
+    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
+    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
+
+    config = _make_profile_config(backup_retention_days=7)
+    client = BridgeClient(
+        profile_name="default",
+        profile_config=cast("bridge_module.AnibridgeProfileConfig", config),
+        global_config=cast(
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
+        ),
+        shared_animap_client=cast(Any, object()),
+    )
+
+    backup_root = tmp_path / "backups" / "default"
+    backup_root.mkdir(parents=True)
+
+    stale = backup_root / "anibridge_default_fake-list_20240101010101.json"
+    fresh = backup_root / "anibridge_default_fake-list_20260226010101.json"
+    other_provider = backup_root / "anibridge_default_other_20240101010101.json"
+
+    stale.write_text("{}", encoding="utf-8")
+    fresh.write_text("{}", encoding="utf-8")
+    other_provider.write_text("{}", encoding="utf-8")
+
+    stale_ts = (datetime.now(UTC) - timedelta(days=30)).timestamp()
+    fresh_ts = datetime.now(UTC).timestamp()
+    os.utime(stale, (stale_ts, stale_ts))
+    os.utime(fresh, (fresh_ts, fresh_ts))
+
+    asyncio.run(client._backup_list())
+
+    assert not stale.exists()
+    assert fresh.exists()
+    assert other_provider.exists()
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
 
 from anibridge.library import (
@@ -178,9 +179,12 @@ class BridgeClient:
                 self.profile_name,
             )
             return
+
+        backup_root = self.global_config.data_path / "backups" / self.profile_name
         try:
             payload = await self.list_provider.backup_list()
         except NotImplementedError:
+            self._cleanup_old_backups(backup_root)
             return
         except Exception:
             log.error("[%s] Failed to export list backup", self.profile_name)
@@ -188,6 +192,7 @@ class BridgeClient:
                 "[%s] List backup export error details",
                 self.profile_name,
             )
+            self._cleanup_old_backups(backup_root)
             return
 
         if not payload:
@@ -195,15 +200,14 @@ class BridgeClient:
                 "[%s] List provider produced an empty backup; skipping write",
                 self.profile_name,
             )
+            self._cleanup_old_backups(backup_root)
             return
 
         target_fname = (
             f"anibridge_{self.profile_name}_{self.list_provider.NAMESPACE}_"
             f"{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}.json"
         )
-        target_path = (
-            self.global_config.data_path / "backups" / self.profile_name / target_fname
-        )
+        target_path = backup_root / target_fname
 
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +222,7 @@ class BridgeClient:
                 "[%s] Backup write error details",
                 self.profile_name,
             )
+            self._cleanup_old_backups(backup_root)
             return
 
         log.info(
@@ -225,6 +230,48 @@ class BridgeClient:
             self.profile_name,
             target_path,
         )
+
+        self._cleanup_old_backups(backup_root)
+
+    def _cleanup_old_backups(self, backup_root: Path) -> None:
+        """Delete stale list backup files based on retention policy."""
+        retention_days = self.profile_config.backup_retention_days
+        if retention_days <= 0:
+            return
+
+        if not backup_root.exists():
+            return
+
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        pattern = f"anibridge_{self.profile_name}_{self.list_provider.NAMESPACE}_*.json"
+        deleted_count = 0
+
+        for path in backup_root.glob(pattern):
+            try:
+                modified_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+            except OSError:
+                continue
+
+            if modified_at >= cutoff:
+                continue
+
+            try:
+                path.unlink()
+                deleted_count += 1
+            except OSError:
+                log.warning(
+                    "[%s] Failed to remove expired backup $$'%s'$$",
+                    self.profile_name,
+                    path,
+                )
+
+        if deleted_count:
+            log.info(
+                "[%s] Removed %s expired backups older than %s days",
+                self.profile_name,
+                deleted_count,
+                retention_days,
+            )
 
     async def sync(
         self, poll: bool = False, library_keys: Sequence[str] | None = None
