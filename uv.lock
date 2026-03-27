@@ -142,12 +142,12 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "alembic", specifier = ">=1.18.4" },
-    { name = "anibridge-anilist-provider", specifier = ">=0.2.0b9,<0.3.0" },
+    { name = "anibridge-anilist-provider", git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=refactor%2Fautonomous-cache-refresh" },
     { name = "anibridge-emby-provider", specifier = ">=0.2.0b2,<0.3.0" },
     { name = "anibridge-jellyfin-provider", specifier = ">=0.2.0b6,<0.3.0" },
     { name = "anibridge-library-base", specifier = ">=0.2.0b6" },
     { name = "anibridge-list-base", specifier = ">=0.2.0b7" },
-    { name = "anibridge-mal-provider", specifier = ">=0.2.0b7,<0.3.0" },
+    { name = "anibridge-mal-provider", git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh" },
     { name = "anibridge-plex-provider", specifier = ">=0.2.0b7,<0.3.0" },
     { name = "anibridge-utils", specifier = ">=0.2.0b3" },
     { name = "bcrypt", specifier = ">=5.0.0" },
@@ -175,16 +175,13 @@ dev = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b9"
-source = { registry = "https://pypi.org/simple" }
+version = "0.2.0b10"
+source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=refactor%2Fautonomous-cache-refresh#baf596665abe3c02ee41ad8451b54c254683f4cf" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
+    { name = "anibridge-utils" },
     { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6a/d7/d77c5e3e03b8c7daeabded70b31b98e3cfca5f1244ba8ba78bac31122f78/anibridge_anilist_provider-0.2.0b9.tar.gz", hash = "sha256:f4bc34e1b91be20e3872d5f24e5f20ec6f1bc54dd8ef9c5628eddbfce32fcd2e", size = 14983, upload-time = "2026-03-13T00:40:50.866Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/40/b0e4e8696ad1369b5ea6722509feec9120ac964935ff3ed9811ea8289d21/anibridge_anilist_provider-0.2.0b9-py3-none-any.whl", hash = "sha256:669320486e470b41d72890cc3cc658524ac395aea5250c1b29cce2c8767cf1fc", size = 17621, upload-time = "2026-03-13T00:40:49.768Z" },
 ]
 
 [[package]]
@@ -245,15 +242,12 @@ wheels = [
 [[package]]
 name = "anibridge-mal-provider"
 version = "0.2.0b8"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh#07a8bf975e37f23e6f9daa0837383830715810ce" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
+    { name = "anibridge-utils" },
     { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/4a/b4d0dbe677a65896522980d765321deabdec66c3e2b9eb5f4cdde1fedc7b/anibridge_mal_provider-0.2.0b8.tar.gz", hash = "sha256:3648ac7307c0873a9b05d1eff7ffc530114131cec3ac86d77da39a55eba4117d", size = 9115, upload-time = "2026-03-22T20:15:55.651Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/e7/905237c040fcfea9f591f035b85e7f5bdba94e2780c6563780ab3eb018a5/anibridge_mal_provider-0.2.0b8-py3-none-any.whl", hash = "sha256:c43d1cf8bd7b9183bd9cea4365f6a54cb18dce3b3c29335087bb2358aa9911a0", size = 11746, upload-time = "2026-03-22T20:15:54.642Z" },
 ]
 
 [[package]]
@@ -274,16 +268,16 @@ wheels = [
 
 [[package]]
 name = "anibridge-utils"
-version = "0.2.0b3"
+version = "0.2.0b4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cachetools" },
     { name = "diskcache" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/5d/5535832893b9602c5b6dbf3be5e671fdaa37479135dedf5a8df2a0685e0e/anibridge_utils-0.2.0b3.tar.gz", hash = "sha256:ff353682ca0ebf31d196327ea248a531b1b8b0a9108095930ce34fe848a8bb29", size = 11802, upload-time = "2026-03-25T00:23:01.778Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/38/34eb5de857cfcc04eb318f1937d2681444cacb4034aca9050bd7ccdb2f1a/anibridge_utils-0.2.0b4.tar.gz", hash = "sha256:fe95cf6e0af15697444db864fd531f7d3830139c41090d580b47c43ae991f646", size = 12804, upload-time = "2026-03-27T05:39:46.576Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/dd/29c7049a0c95825d13c62fabb045a93b32cf1b35419773efdda19ab16c52/anibridge_utils-0.2.0b3-py3-none-any.whl", hash = "sha256:4ff6a6843cd2c87ad25bb0e8738237e0a96450f74d5f6e8ba67add037badf64a", size = 14639, upload-time = "2026-03-25T00:23:02.469Z" },
+    { url = "https://files.pythonhosted.org/packages/10/c8/8ec0ee3e2846847ff964e5417d665fa6645c2ea7bd6067b6611c0b09f679/anibridge_utils-0.2.0b4-py3-none-any.whl", hash = "sha256:3b19c9f9db69630376d0e4d68b3de70ed5f43656d05845ed04a23b60657557c6", size = 15521, upload-time = "2026-03-27T05:39:45.457Z" },
 ]
 
 [[package]]
