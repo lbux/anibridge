@@ -1,10 +1,10 @@
-"""Sync history service with TTL caching."""
+"""Sync history service."""
 
 from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from anibridge.utils.cache import cache, lru_cache, ttl_cache
+from anibridge.utils.cache import cache, ttl_cache
 from fastapi.param_functions import Query
 from pydantic import BaseModel
 from sqlalchemy.sql import select
@@ -174,7 +174,7 @@ class HistoryService:
 
         return dto_items
 
-    @lru_cache(maxsize=64)
+    @ttl_cache(ttl=60)
     async def _fetch_list_metadata_batch(
         self,
         profile: str,
@@ -204,7 +204,7 @@ class HistoryService:
             )
         return metadata
 
-    @lru_cache(maxsize=64)
+    @ttl_cache(ttl=60)
     async def _fetch_library_metadata_batch(
         self,
         profile: str,
@@ -238,7 +238,6 @@ class HistoryService:
             )
         return metadata
 
-    @ttl_cache(ttl=60)
     async def _fetch_profile_stats(
         self,
         profile: str,
@@ -366,9 +365,6 @@ class HistoryService:
                 raise HistoryItemNotFoundError("Not found")
             ctx.session.delete(row)
             ctx.session.commit()
-
-        # Invalidate related caches after deletion
-        await self.clear_profile_cache(profile)
 
     async def undo_item(self, profile: str, item_id: int) -> HistoryItem:
         """Undo a history item by reverting or deleting the AniList entry.
@@ -506,7 +502,7 @@ class HistoryService:
             ctx.session.commit()
             ctx.session.refresh(undo_row)
 
-        self._fetch_profile_stats.cache_clear()
+        await self.clear_cache()
 
         dto_items = await self._build_history_items(profile, [undo_row])
         return dto_items[0]
@@ -557,32 +553,20 @@ class HistoryService:
             name=f"retry_history_item:{profile}:{item_id}",
         )
 
-    async def clear_profile_cache(self, profile: str) -> None:
-        """Clear all cached data for a specific profile.
-
-        Args:
-            profile: Profile name to clear cache for
-        """
+    async def clear_cache(self) -> None:
+        """Clear cached provider metadata batches."""
         self._fetch_list_metadata_batch.cache_clear()
         self._fetch_library_metadata_batch.cache_clear()
-        self._fetch_profile_stats.cache_clear()
-
-    async def clear_all_caches(self) -> None:
-        """Clear all caches."""
-        self._fetch_list_metadata_batch.cache_clear()
-        self._fetch_library_metadata_batch.cache_clear()
-        self._fetch_profile_stats.cache_clear()
 
     def get_cache_info(self) -> dict[str, Any]:
         """Get cache statistics for monitoring.
 
         Returns:
-            Dictionary with cache hit/miss statistics
+            Dictionary with cache hit/miss statistics.
         """
         return {
             "list_cache": self._fetch_list_metadata_batch.cache_info(),
             "library_cache": self._fetch_library_metadata_batch.cache_info(),
-            "stats_cache": self._fetch_profile_stats.cache_info(),
         }
 
 

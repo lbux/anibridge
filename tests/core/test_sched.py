@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +22,7 @@ class FakeProfileConfig:
 
     poll_interval: int = 60
     scan_interval: int = 10
-    scan_modes: list[Any] = None  # type: ignore[assignment]
+    scan_modes: list[Any] = field(default_factory=list)  # type: ignore[assignment]
     full_scan: bool = False
     destructive_sync: bool = False
 
@@ -557,7 +557,7 @@ async def test_daily_db_sync_loop_runs(
 
 @pytest.mark.asyncio
 async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
-    """Database sync entrypoint should sync mappings and refresh profile providers."""
+    """Database sync entrypoint should sync mappings and run profile backups."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
     scheduler.shared_animap_client = FakeAnimapClient()
@@ -568,7 +568,6 @@ async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
     await scheduler.trigger_database_sync(source="test:database")
 
     assert scheduler.shared_animap_client.synced is True
-    assert bridge.list_provider.cleared is True
     assert bridge.backed_up is True
 
 
@@ -735,7 +734,7 @@ async def test_profile_scheduler_run_loop_cancellation() -> None:
         await asyncio.Event().wait()
 
     scheduler._running = True
-    scheduler.sync = _sync  # type: ignore[method-assign]
+    scheduler.sync = _sync  # # ty:ignore[invalid-assignment]
 
     task = asyncio.create_task(
         scheduler._run_loop(name="periodic", interval=1, poll=False)
@@ -906,7 +905,7 @@ async def test_scheduler_context_manager_calls_stop(tmp_path: Path) -> None:
     async def _stop() -> None:
         called["stop"] = True
 
-    scheduler.stop = _stop  # type: ignore[method-assign]
+    scheduler.stop = _stop  # ty:ignore[invalid-assignment]
 
     async with scheduler:
         pass

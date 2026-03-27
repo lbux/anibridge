@@ -180,7 +180,7 @@ async def test_load_mappings_merges_custom_and_upstream(tmp_path: Path) -> None:
             return {"anilist:1": {"tmdb:1": {"1": None}}, "$meta": {"x": 1}}
         return {"anilist:1": {"tmdb:2": {"1": None}}}
 
-    client._load_mappings = fake_load_mappings  # type: ignore[method-assign]
+    client._load_mappings = fake_load_mappings  # ty:ignore[invalid-assignment]
 
     merged = await client.load_mappings()
 
@@ -200,7 +200,7 @@ async def test_load_mappings_handles_multiple_custom_files(tmp_path: Path) -> No
     async def fake_load_mappings(_src: str):
         return {"anilist:1": {"tmdb:1": {"1": None}}}
 
-    client._load_mappings = fake_load_mappings  # type: ignore[method-assign]
+    client._load_mappings = fake_load_mappings  # ty:ignore[invalid-assignment]
 
     merged = await client.load_mappings()
 
@@ -283,7 +283,7 @@ async def test_load_includes_handles_exceptions(tmp_path: Path) -> None:
     async def _boom(_src: str, _chain: set[str]):
         raise RuntimeError("boom")
 
-    client._load_mappings = _boom  # type: ignore[method-assign]
+    client._load_mappings = _boom  # ty:ignore[invalid-assignment]
 
     result = await client._load_includes(["bad.json"], set(), "root.json")
 
@@ -299,12 +299,35 @@ async def test_load_source_resets_provenance(tmp_path: Path) -> None:
     async def _load(_src: str, _chain: set[str] | None = None):
         return {"anilist:1": {"tmdb:2": {"1": None}}}
 
-    client._load_mappings = _load  # type: ignore[method-assign]
+    client._load_mappings = _load  # ty:ignore[invalid-assignment]
 
     result = await client.load_source("source.json")
 
     assert "anilist:1" in result
     assert client.get_provenance() == {}
+
+
+@pytest.mark.asyncio
+async def test_load_source_cache_hit_restores_matching_provenance(
+    tmp_path: Path,
+) -> None:
+    """Cached load_source calls should restore the provenance for that source."""
+    client = _make_client(tmp_path)
+
+    async def _load(src: str, _chain: set[str] | None = None):
+        client._loaded_sources = {src}
+        client._provenance = {src: [src]}
+        return {src: {"tmdb:1": {"1": None}}}
+
+    client._load_mappings = _load  # ty:ignore[invalid-assignment]
+
+    first = await client.load_source("a.json")
+    await client.load_source("b.json")
+    third = await client.load_source("a.json")
+
+    assert first == third
+    assert first is not third
+    assert client.get_provenance() == {"a.json": ["a.json"]}
 
 
 @pytest.mark.asyncio

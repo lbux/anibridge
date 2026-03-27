@@ -172,7 +172,7 @@ class BridgeClient:
             ctx.session.commit()
 
     async def _backup_list(self) -> None:
-        """Persist an initial list backup when supported by the provider."""
+        """Persist a list backup snapshot when supported by the provider."""
         if self.profile_config.backup_retention_days == -1:
             log.debug(
                 "[%s] List backup creation is disabled by configuration; skipping",
@@ -326,9 +326,6 @@ class BridgeClient:
             dry_run=self.profile_config.dry_run,
             profile_name=self.profile_name,
         )
-
-        await movie_sync.clear_cache()
-        await show_sync.clear_cache()
 
         sections = list(await self.library_provider.get_sections())
         log.debug(

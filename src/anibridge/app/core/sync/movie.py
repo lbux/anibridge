@@ -22,6 +22,11 @@ __all__ = ["MovieSyncClient"]
 class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
     """Synchronize movie items between a library provider and a list provider."""
 
+    async def clear_cache(self) -> None:
+        """Clear all sync client caches."""
+        await super().clear_cache()
+        self._get_history.cache_clear()
+
     async def map_media(
         self, item: LibraryMovie
     ) -> AsyncIterator[

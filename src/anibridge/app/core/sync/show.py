@@ -43,6 +43,14 @@ class _SeasonGroup:
 class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode]):
     """Synchronize show items between a library provider and a list provider."""
 
+    async def clear_cache(self) -> None:
+        """Clear all sync client caches."""
+        await super().clear_cache()
+        self._calculate_progress.cache_clear()
+        self.__get_wanted_episodes.cache_clear()
+        self.__get_wanted_seasons.cache_clear()
+        self._filter_history_by_episodes.cache_clear()
+
     async def map_media(
         self, item: LibraryShow
     ) -> AsyncIterator[

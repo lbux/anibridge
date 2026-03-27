@@ -140,10 +140,6 @@ class BaseSyncClient[
             None: This method clears manager caches and decorated function caches.
         """
         self._cache.clear()
-        for v in dir(self):
-            attr = getattr(self, v)
-            if callable(attr) and hasattr(attr, "cache_clear"):
-                attr.cache_clear()
 
     async def prefetch_entries(self, items: Sequence[ParentMediaT]) -> None:
         """Prefetch list entries for a batch of library items.

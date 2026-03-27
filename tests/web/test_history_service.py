@@ -37,16 +37,23 @@ class DummyMedia:
 class DummyListEntry:
     """List provider entry that exposes rich media."""
 
-    def __init__(self, key: str) -> None:
+    def __init__(self, key: str, title: str | None = None) -> None:
         """Store the derived media information for a given key."""
         self._media = DummyMedia(
             key=key,
-            title=f"List {key}",
+            title=title or f"List {key}",
             poster_image=f"L-{key}",
             external_url=f"http://list/{key}",
             labels={"format": "movie"},
         )
         self.title = self._media.title
+        self.status = None
+        self.progress = None
+        self.repeats = None
+        self.review = None
+        self.user_rating = None
+        self.started_at = None
+        self.finished_at = None
 
     def media(self) -> DummyMedia:
         """Return the provider-native media object."""
@@ -61,18 +68,46 @@ class DummyListProvider:
     def __init__(self) -> None:
         """Initialize deletion tracking for undo operations."""
         self.deleted_entries: list[str] = []
+        self.updated_entries: list[tuple[str, DummyListEntry]] = []
+        self.entries: dict[str, DummyListEntry] = {}
+        self.titles: dict[str, str] = {}
+        self._missing_keys: set[str] = set()
 
     def user(self):
         """Return pseudo user metadata."""
         return SimpleNamespace(title="ListUser")
 
+    def _get_or_create_entry(self, key: str) -> DummyListEntry | None:
+        key = str(key)
+        if key in self._missing_keys:
+            return None
+        entry = self.entries.get(key)
+        if entry is None:
+            entry = DummyListEntry(key, title=self.titles.get(key))
+            self.entries[key] = entry
+        return entry
+
     async def get_entries_batch(self, keys):
         """Return entries for all requested keys."""
-        return [DummyListEntry(key) for key in keys]
+        return [self._get_or_create_entry(key) for key in keys]
+
+    async def get_entry(self, key: str):
+        """Return one entry by key."""
+        return self._get_or_create_entry(key)
+
+    async def update_entry(self, key: str, entry: DummyListEntry):
+        """Track updated entries requested by undo operations."""
+        key = str(key)
+        self._missing_keys.discard(key)
+        self.entries[key] = entry
+        self.updated_entries.append((key, entry))
 
     async def delete_entry(self, key: str):
         """Track deletions requested by undo operations."""
+        key = str(key)
         self.deleted_entries.append(key)
+        self.entries.pop(key, None)
+        self._missing_keys.add(key)
 
 
 @dataclass
@@ -105,6 +140,7 @@ class DummyLibraryProvider:
     def __init__(self) -> None:
         """Initialize the provider with one default section."""
         self.sections = [DummyLibrarySection(key="1", title="Movies")]
+        self.titles: dict[str, str] = {}
 
     async def get_sections(self):
         """Return available sections."""
@@ -115,10 +151,10 @@ class DummyLibraryProvider:
         return [
             DummyLibraryItem(
                 key=k,
-                title=f"Library {k}",
+                title=self.titles.get(k, f"Library {k}"),
                 _media=DummyMedia(
                     key=k,
-                    title=f"Library {k}",
+                    title=self.titles.get(k, f"Library {k}"),
                     poster_image=f"P-{k}",
                     external_url=f"http://library/{k}",
                     labels={"genre": "drama"},
@@ -213,7 +249,7 @@ async def test_history_service_get_page_enriches_metadata(history_env):
 
     cache_info = service.get_cache_info()
     assert cache_info["list_cache"].hits >= 0
-    await service.clear_profile_cache("profile")
+    await service.clear_cache()
 
 
 @pytest.mark.asyncio
@@ -276,6 +312,43 @@ async def test_history_service_get_page_filters_by_outcome(history_env):
 
 
 @pytest.mark.asyncio
+async def test_history_service_get_page_stats_are_fresh_after_write(history_env):
+    """Stats should reflect newly written rows without requiring cache clears."""
+    _seed_history_row(outcome=SyncOutcome.SYNCED)
+    service = HistoryService()
+
+    first_page = await service.get_page(
+        profile="profile",
+        page=1,
+        per_page=10,
+        include_library_media=False,
+        include_list_media=False,
+    )
+
+    _seed_history_row(
+        clear=False,
+        library_media_key="lib2",
+        list_media_key="lst2",
+        outcome=SyncOutcome.FAILED,
+    )
+
+    second_page = await service.get_page(
+        profile="profile",
+        page=1,
+        per_page=10,
+        include_library_media=False,
+        include_list_media=False,
+    )
+
+    assert first_page.stats == {SyncOutcome.SYNCED.value: 1}
+    assert second_page.total == 2
+    assert second_page.stats == {
+        SyncOutcome.SYNCED.value: 1,
+        SyncOutcome.FAILED.value: 1,
+    }
+
+
+@pytest.mark.asyncio
 async def test_history_service_delete_item_missing_row(history_env):
     """delete_item raises when the record does not exist."""
     service = HistoryService()
@@ -323,6 +396,40 @@ async def test_history_service_undo_item_records_info(history_env):
 
 
 @pytest.mark.asyncio
+async def test_history_service_undo_item_clears_cached_list_metadata(history_env):
+    """Undoing a deletion should evict cached metadata for removed list entries."""
+    history_env.bridge.profile_config.destructive_sync = True
+    row_id = _seed_history_row(before_state=None)
+    service = HistoryService()
+
+    page_before = await service.get_page(
+        profile="profile",
+        page=1,
+        per_page=10,
+        include_library_media=False,
+        include_list_media=True,
+    )
+    assert page_before.items[0].list_media is not None
+
+    await service.undo_item("profile", row_id)
+
+    page_after = await service.get_page(
+        profile="profile",
+        page=1,
+        per_page=10,
+        include_library_media=False,
+        include_list_media=True,
+    )
+
+    assert history_env.list_provider.deleted_entries == ["lst1"]
+    assert all(
+        item.list_media is None
+        for item in page_after.items
+        if item.list_media_key == "lst1"
+    )
+
+
+@pytest.mark.asyncio
 async def test_history_service_fetch_helpers_handle_mismatches(history_env):
     """Metadata helpers should return list metadata and filter library sections."""
     service = HistoryService()
@@ -337,17 +444,21 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
     )
     assert library_result == {}
 
-    await service.clear_all_caches()
+    await service.clear_cache()
 
 
 @pytest.mark.asyncio
 async def test_history_service_clear_all_caches(history_env):
     """clear_all_caches resets cache state metrics."""
     service = HistoryService()
-    await service._fetch_profile_stats("profile", "_dummy-library", "alist")
-    await service.clear_all_caches()
+    await service._fetch_list_metadata_batch("profile", "alist", ("lst1",))
+    await service._fetch_library_metadata_batch(
+        "profile", "_dummy-library", "1", ("lib1",)
+    )
+    await service.clear_cache()
     info = service.get_cache_info()
-    assert info["stats_cache"].currsize == 0
+    assert info["list_cache"].currsize == 0
+    assert info["library_cache"].currsize == 0
 
 
 def test_get_history_service_returns_singleton():

@@ -102,8 +102,6 @@ class SchedulerClient:
         if initialize_tasks:
             await asyncio.gather(*initialize_tasks)
 
-        self.get_profiles_for_library_provider.cache_clear()
-
         log.info(
             "Application scheduler initialized with %s profile(s)",
             len(self.bridge_clients),
@@ -393,30 +391,28 @@ class SchedulerClient:
         }
 
     async def trigger_database_sync(self, source: str = "manual:database") -> None:
-        """Trigger a globally coordinated database sync and provider refresh."""
+        """Trigger a globally coordinated database sync and daily profile backups."""
 
-        async def _sync_and_refresh() -> None:
+        async def _sync_and_backup() -> None:
             await self.shared_animap_client.sync_db()
             log.success("Database sync completed (source=%s)", source)
 
-            log.info("Reinitializing all list providers")
-            refresh_tasks = []
+            log.info("Starting daily list provider backups")
+            backup_tasks = []
             profile_names = []
             for profile_name, bridge_client in self.bridge_clients.items():
-                refresh_tasks.append(
-                    self._refresh_profile_provider_cache(bridge_client)
-                )
+                backup_tasks.append(bridge_client._backup_list())
                 profile_names.append(profile_name)
 
-            if not refresh_tasks:
+            if not backup_tasks:
                 return
 
-            results = await asyncio.gather(*refresh_tasks, return_exceptions=True)
+            results = await asyncio.gather(*backup_tasks, return_exceptions=True)
             exceptions: list[Exception] = []
             for profile_name, result in zip(profile_names, results, strict=False):
                 if isinstance(result, Exception):
                     log.error(
-                        "[%s] Provider refresh failed after database sync: %s",
+                        "[%s] List backup failed: %s",
                         profile_name,
                         result,
                     )
@@ -424,12 +420,12 @@ class SchedulerClient:
 
             if exceptions:
                 raise ExceptionGroup(
-                    "One or more provider refreshes failed",
+                    "One or more daily profile backups failed",
                     exceptions,
                 )
 
         log.info("Starting database sync (source=%s)", source)
-        await self._sync_coordinator.run_maintenance(_sync_and_refresh)
+        await self._sync_coordinator.run_maintenance(_sync_and_backup)
 
     def _get_next_1am_utc(self, now: datetime) -> datetime:
         """Calculate the next 1:00 AM UTC, handling DST transitions properly.
@@ -534,13 +530,6 @@ class SchedulerClient:
             await bridge_client.sync(poll=poll, library_keys=library_keys)
         finally:
             await self._sync_coordinator.release_profile_slot(profile_name)
-
-    async def _refresh_profile_provider_cache(
-        self, bridge_client: BridgeClient
-    ) -> None:
-        """Refresh list provider cache and persist a backup snapshot."""
-        await bridge_client.list_provider.clear_cache()
-        await bridge_client._backup_list()
 
     async def __aenter__(self):
         """Async context manager entry."""

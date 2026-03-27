@@ -1,6 +1,7 @@
 """Mappings Client Module."""
 
 import asyncio
+import copy
 from compression import zstd
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -445,12 +446,29 @@ class MappingsClient:
         return {k: v for k, v in merged_mappings.items() if not k.startswith("$")}
 
     @ttl_cache(ttl=300)
+    async def _load_source_snapshot(
+        self, src: str
+    ) -> tuple[AnimapDict, dict[str, tuple[str, ...]], tuple[str, ...]]:
+        """Load one source and capture the provenance snapshot for cache reuse."""
+        self._loaded_sources = set()
+        self._provenance = {}
+        mappings = await self._load_mappings(src)
+        return (
+            copy.deepcopy(mappings),
+            {
+                str(descriptor): tuple(sources)
+                for descriptor, sources in self._provenance.items()
+            },
+            tuple(sorted(self._loaded_sources)),
+        )
+
     async def load_source(self, src: str) -> AnimapDict:
         """Load mappings from a single source without merging.
 
         This resets internal provenance and loaded-source tracking so callers can
         inspect the raw payload and provenance produced by that specific source
-        (plus any of its includes).
+        (plus any of its includes), including when the underlying payload is served
+        from the TTL cache.
 
         Args:
             src (str): File path or URL to load.
@@ -458,9 +476,15 @@ class MappingsClient:
         Returns:
             AnimapDict: Parsed mapping payload, or an empty dict on failure.
         """
-        self._loaded_sources = set()
-        self._provenance = {}
-        return await self._load_mappings(src)
+        mappings, cached_provenance, loaded_sources = await self._load_source_snapshot(
+            src
+        )
+        self._loaded_sources = set(loaded_sources)
+        self._provenance = {
+            str(descriptor): list(sources)
+            for descriptor, sources in cached_provenance.items()
+        }
+        return copy.deepcopy(mappings)
 
     def get_provenance(self) -> dict[str, list[str]]:
         """Return a copy of the provenance map collected during the last load."""

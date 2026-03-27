@@ -176,7 +176,7 @@ dev = [
 [[package]]
 name = "anibridge-anilist-provider"
 version = "0.2.0b10"
-source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=refactor%2Fautonomous-cache-refresh#baf596665abe3c02ee41ad8451b54c254683f4cf" }
+source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=refactor%2Fautonomous-cache-refresh#55cf10c646905409f646da7b61d6c0ea627f644e" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
@@ -242,7 +242,7 @@ wheels = [
 [[package]]
 name = "anibridge-mal-provider"
 version = "0.2.0b8"
-source = { git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh#07a8bf975e37f23e6f9daa0837383830715810ce" }
+source = { git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh#d3fa9f0c1302a6531a3e589d1ac95babd663b5dd" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
