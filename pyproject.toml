@@ -123,8 +123,8 @@ anibridge-anilist-provider = { git = "https://github.com/anibridge/anibridge-ani
 # anibridge-list-base = { git = "https://github.com/anibridge/anibridge-list-base.git", tag = "main" }
 anibridge-mal-provider = { git = "https://github.com/anibridge/anibridge-mal-provider.git", tag = "feat/autonomous-cache-refresh" }
 # anibridge-plex-provider = { git = "https://github.com/anibridge/anibridge-plex-provider.git", tag = "main" }
-# anibridge-utils = { git = "https://github.com/anibridge/anibridge-utils.git", tag = "main" }
-py-spy = { git = "https://github.com/czardoz/py-spy.git" } # Until upstream suports Python 3.14
+anibridge-utils = { git = "https://github.com/anibridge/anibridge-utils.git", tag = "main" }
+py-spy = { git = "https://github.com/czardoz/py-spy.git" }                                   # Until upstream suports Python 3.14
 
 [build-system]
 requires = ["uv_build>=0.10.9,<0.11.0"]

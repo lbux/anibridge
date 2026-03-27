@@ -149,7 +149,7 @@ requires-dist = [
     { name = "anibridge-list-base", specifier = ">=0.2.0b7" },
     { name = "anibridge-mal-provider", git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh" },
     { name = "anibridge-plex-provider", specifier = ">=0.2.0b7,<0.3.0" },
-    { name = "anibridge-utils", specifier = ">=0.2.0b3" },
+    { name = "anibridge-utils", git = "https://github.com/anibridge/anibridge-utils.git?tag=main" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "croniter", specifier = ">=6.2.2" },
@@ -269,15 +269,11 @@ wheels = [
 [[package]]
 name = "anibridge-utils"
 version = "0.2.0b4"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/anibridge/anibridge-utils.git?tag=main#9c087c2142bbaa0b0fadf8f100d56990f737ce9e" }
 dependencies = [
     { name = "cachetools" },
     { name = "diskcache" },
     { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/00/38/34eb5de857cfcc04eb318f1937d2681444cacb4034aca9050bd7ccdb2f1a/anibridge_utils-0.2.0b4.tar.gz", hash = "sha256:fe95cf6e0af15697444db864fd531f7d3830139c41090d580b47c43ae991f646", size = 12804, upload-time = "2026-03-27T05:39:46.576Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/10/c8/8ec0ee3e2846847ff964e5417d665fa6645c2ea7bd6067b6611c0b09f679/anibridge_utils-0.2.0b4-py3-none-any.whl", hash = "sha256:3b19c9f9db69630376d0e4d68b3de70ed5f43656d05845ed04a23b60657557c6", size = 15521, upload-time = "2026-03-27T05:39:45.457Z" },
 ]
 
 [[package]]
@@ -1414,7 +1410,7 @@ wheels = [
 
 [[package]]
 name = "textual"
-version = "8.1.1"
+version = "8.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py", extra = ["linkify"] },
@@ -1424,9 +1420,9 @@ dependencies = [
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/72/23/8c709655c5f2208ee82ab81b8104802421865535c278a7649b842b129db1/textual-8.1.1.tar.gz", hash = "sha256:eef0256a6131f06a20ad7576412138c1f30f92ddeedd055953c08d97044bc317", size = 1843002, upload-time = "2026-03-10T10:01:38.493Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/41/fd22435b96a50f24472af31f15e9874ce0ffef0edabb74fcf3d598ab8e53/textual-8.2.0.tar.gz", hash = "sha256:a06201a732b2d2683d2ea11c2538eeb7315c4c7138ed8c8bdb48150b805eaf1e", size = 1847670, upload-time = "2026-03-27T09:28:29.976Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/21/421b02bf5943172b7a9320712a5e0d74a02a8f7597284e3f8b5b06c70b8d/textual-8.1.1-py3-none-any.whl", hash = "sha256:6712f96e335cd782e76193dee16b9c8875fe0699d923bc8d3f1228fd23e773a6", size = 719598, upload-time = "2026-03-10T10:01:48.318Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/41/ed1f3e47b71b9e0bae23445189274048332a423798627d47e30314c739a0/textual-8.2.0-py3-none-any.whl", hash = "sha256:0478fed6e945bcadd6f3841e10d05213d318cdb5c4345c04ae78f7ec32e7b63d", size = 723752, upload-time = "2026-03-27T09:28:32.705Z" },
 ]
 
 [[package]]
