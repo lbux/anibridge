@@ -50,6 +50,36 @@
         };
     });
 
+    async function fetchWithTimeout(
+        input: RequestInfo | URL,
+        init: RequestInit = {},
+        timeoutMs = 5_000,
+    ): Promise<Response> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(input, {
+                ...init,
+                cache: "no-store",
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    async function checkServerHealth(): Promise<boolean> {
+        const response = await fetchWithTimeout(`/healthz?t=${Date.now()}`, {
+            headers: { Accept: "application/json" },
+        });
+        if (!response.ok) return false;
+
+        const payload = (await response.json().catch(() => null)) as {
+            status?: string;
+        } | null;
+        return payload?.status === "ok";
+    }
+
     async function waitForServerAndRefresh() {
         const generation = ++restartPollGeneration;
         const deadline = Date.now() + 90_000;
@@ -62,15 +92,13 @@
             if (generation !== restartPollGeneration) return;
 
             try {
-                const response = await apiFetch("/api/system/meta", undefined, {
-                    silent: true,
-                });
-                if (!response.ok) continue;
+                const healthy = await checkServerHealth();
+                if (!healthy) continue;
 
                 restarting = false;
                 restartNotice = null;
                 toast("AniBridge is back online.", "success");
-                await loadConfig();
+                window.location.reload();
                 return;
             } catch {}
         }
