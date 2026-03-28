@@ -12,7 +12,6 @@ from anibridge.utils.mappings import (
     AnibridgeDescriptorMapping,
     descriptor_key,
 )
-from anibridge.utils.types import MappingDescriptor
 
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
@@ -33,7 +32,6 @@ class _SeasonGroup:
     episodes: list[LibraryEpisode]
     entry: ListEntry
     media_key: str
-    mapping_descriptors: dict[MappingDescriptor, None]
     mappings: dict[
         tuple[str, str, tuple[tuple[str, str], ...]],
         AnibridgeDescriptorMapping,
@@ -157,7 +155,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                         episodes=filtered,
                         entry=entry,
                         media_key=media_key,
-                        mapping_descriptors=dict.fromkeys(target.mapping_descriptors),
                         mappings={
                             self._mapping_signature(mapping_rule): mapping_rule
                             for mapping_rule in target.mappings
@@ -169,8 +166,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     group.child_item, group.first_index = season, season_index
                 group.episodes.extend(filtered)
                 group.entry = entry
-                for descriptor in target.mapping_descriptors:
-                    group.mapping_descriptors.setdefault(descriptor, None)
                 for mapping_rule in target.mappings:
                     group.mappings.setdefault(
                         self._mapping_signature(mapping_rule),
@@ -185,7 +180,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 SyncTarget(
                     list_media_key=group.media_key,
                     entry=group.entry,
-                    mapping_descriptors=tuple(group.mapping_descriptors),
                     mappings=tuple(group.mappings.values()),
                 ),
             )

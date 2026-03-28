@@ -35,7 +35,7 @@ class SyncCacheManager:
         self._pin_cache: dict[tuple[str, str], list[str]] = {}
         self._prefetched_entries: dict[str, ListEntry] = {}
 
-    def clear(self) -> None:
+    def clear_cache(self) -> None:
         """Clear all cached pins and prefetched entries.
 
         Returns:

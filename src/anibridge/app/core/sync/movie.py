@@ -64,7 +64,6 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
                     SyncTarget(
                         list_media_key=list_media_key,
                         entry=entry,
-                        mapping_descriptors=target.mapping_descriptors,
                         mappings=target.mappings,
                     ),
                 )

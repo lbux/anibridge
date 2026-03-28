@@ -11,7 +11,7 @@ from typing import Any
 from anibridge.library import LibraryEntry, LibraryProvider
 from anibridge.list import ListEntry, ListProvider, ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
-from anibridge.utils.types import Comparable, MappingDescriptor
+from anibridge.utils.types import Comparable
 
 from anibridge.app import log
 from anibridge.app.config.database import db
@@ -145,7 +145,8 @@ class BaseSyncClient[
         Returns:
             None: This method clears manager caches and decorated function caches.
         """
-        self._cache.clear()
+        self._cache.clear_cache()
+        self._history.clear_cache()
 
     async def prefetch_entries(self, items: Sequence[ParentMediaT]) -> None:
         """Prefetch list entries for a batch of library items.
@@ -231,7 +232,6 @@ class BaseSyncClient[
                     grandchild_items=grandchildren,
                     entry=entry,
                     list_media_key=list_media_key,
-                    mapping_descriptors=target.mapping_descriptors,
                     mappings=target.mappings,
                 )
                 self.sync_stats.track_items(grandchild_ids, outcome)
@@ -283,7 +283,7 @@ class BaseSyncClient[
                     "reason": "no_matching_list_entry",
                     "trackable_items": str(len(remaining_trackable)),
                     "mapping_descriptor_count": str(len(attempted_descriptors)),
-                    "mapping_descriptors": ", ".join(
+                    "mapping_sources": ", ".join(
                         descriptor_key(d) for d in attempted_descriptors
                     ),
                 },
@@ -331,7 +331,6 @@ class BaseSyncClient[
         grandchild_items: Sequence[GrandchildMediaT],
         entry: ListEntry,
         list_media_key: str | None,
-        mapping_descriptors: Sequence[MappingDescriptor] | None = None,
         mappings: Sequence[AnibridgeDescriptorMapping] | None = None,
     ) -> SyncOutcome:
         """Synchronize a mapped media item with the list provider.
@@ -343,8 +342,6 @@ class BaseSyncClient[
                 used for field calculation.
             entry (ListEntry): Current list entry to update.
             list_media_key (str | None): Resolved list media key for the target entry.
-            mapping_descriptors (Sequence[MappingDescriptor] | None): Mapping
-                descriptors used to find the target.
             mappings (Sequence[AnibridgeDescriptorMapping] | None): Source mapping
                 metadata used to
                 resolve the target.
@@ -396,7 +393,6 @@ class BaseSyncClient[
                 child_item=child_item,
                 grandchild_items=grandchild_items,
                 list_media_key=resolved_list_key,
-                mapping_descriptors=mapping_descriptors,
                 required_media_fields=self._sync_rule_engine.context_media_fields(
                     SyncField.STATUS.value
                 ),
@@ -430,7 +426,7 @@ class BaseSyncClient[
                         grandchild_items=grandchild_items,
                         snapshots=(before_snapshot, None),
                         list_media_key=resolved_list_key,
-                        mapping_descriptors=mapping_descriptors,
+                        mappings=mappings,
                         outcome=SyncOutcome.DELETED,
                         info={
                             "operation": "delete_entry",
@@ -438,7 +434,7 @@ class BaseSyncClient[
                             "destructive_sync": self.destructive_sync,
                             "disabled_fields": sorted(disabled_fields),
                             "pinned_fields": ", ".join(sorted(skip_fields)),
-                            "mapping_descriptor_count": len(mapping_descriptors or ()),
+                            "mapping_count": len(mappings or ()),
                             "dry_run": True,
                         },
                     )
@@ -451,7 +447,7 @@ class BaseSyncClient[
                     grandchild_items=grandchild_items,
                     snapshots=(before_snapshot, None),
                     list_media_key=resolved_list_key,
-                    mapping_descriptors=mapping_descriptors,
+                    mappings=mappings,
                     outcome=SyncOutcome.DELETED,
                     info={
                         "operation": "delete_entry",
@@ -459,7 +455,7 @@ class BaseSyncClient[
                         "destructive_sync": self.destructive_sync,
                         "disabled_fields": sorted(disabled_fields),
                         "pinned_fields": ", ".join(sorted(skip_fields)),
-                        "mapping_descriptor_count": len(mapping_descriptors or ()),
+                        "mapping_count": len(mappings or ()),
                     },
                 )
                 return SyncOutcome.DELETED
@@ -507,7 +503,6 @@ class BaseSyncClient[
             child_item=child_item,
             grandchild_items=grandchild_items,
             list_media_key=resolved_list_key,
-            mapping_descriptors=mapping_descriptors,
             entry=planned_entry,
             final_status=planned_entry.status,
             current_values=current_values,
@@ -581,7 +576,7 @@ class BaseSyncClient[
                 entry=planned_entry,
                 source_entry=original_entry,
                 list_media_key=resolved_list_key,
-                mapping_descriptors=tuple(mapping_descriptors or ()),
+                mappings=tuple(mappings or ()),
                 diagnostics=sync_diagnostics,
             ),
             self._format_diff(diff),
@@ -624,7 +619,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 list_media_key=plan.list_media_key,
-                mapping_descriptors=plan.mapping_descriptors,
+                mappings=plan.mappings,
                 outcome=SyncOutcome.SYNCED,
                 info={
                     **plan.diagnostics,
@@ -656,7 +651,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 list_media_key=plan.list_media_key,
-                mapping_descriptors=plan.mapping_descriptors,
+                mappings=plan.mappings,
                 outcome=SyncOutcome.SYNCED,
                 info={
                     **plan.diagnostics,
@@ -681,7 +676,7 @@ class BaseSyncClient[
                 grandchild_items=plan.grandchildren,
                 snapshots=(plan.before, plan.after),
                 list_media_key=plan.list_media_key,
-                mapping_descriptors=plan.mapping_descriptors,
+                mappings=plan.mappings,
                 outcome=SyncOutcome.FAILED,
                 error_message=str(exc),
                 info={
@@ -700,7 +695,6 @@ class BaseSyncClient[
         child_item,
         grandchild_items,
         list_media_key,
-        mapping_descriptors,
         entry: ListEntry,
         final_status: ListStatus | None,
         current_values: Mapping[str, Any],
@@ -731,7 +725,6 @@ class BaseSyncClient[
                 child_item=child_item,
                 grandchild_items=grandchild_items,
                 list_media_key=list_media_key,
-                mapping_descriptors=mapping_descriptors,
                 required_media_fields=self._sync_rule_engine.context_media_fields(
                     sync_field.value
                 ),
@@ -792,7 +785,6 @@ class BaseSyncClient[
         child_item,
         grandchild_items,
         list_media_key,
-        mapping_descriptors,
         required_media_fields: frozenset[str],
     ) -> dict[str, Any]:
         """Build the shimmed `ctx` object exposed to sync rule expressions."""
@@ -887,7 +879,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
-                    mapping_descriptors=update.mapping_descriptors,
+                    mappings=update.mappings,
                     outcome=SyncOutcome.SYNCED,
                     info={
                         **update.diagnostics,
@@ -922,7 +914,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
-                    mapping_descriptors=update.mapping_descriptors,
+                    mappings=update.mappings,
                     outcome=outcome,
                     info={
                         **update.diagnostics,
@@ -947,7 +939,7 @@ class BaseSyncClient[
                     grandchild_items=update.grandchildren,
                     snapshots=(update.before, update.after),
                     list_media_key=update.list_media_key,
-                    mapping_descriptors=update.mapping_descriptors,
+                    mappings=update.mappings,
                     outcome=SyncOutcome.FAILED,
                     error_message=str(exc),
                     info={
@@ -975,7 +967,7 @@ class BaseSyncClient[
         grandchild_items,
         snapshots,
         list_media_key,
-        mapping_descriptors=None,
+        mappings=None,
         outcome,
         error_message=None,
         info=None,
@@ -987,7 +979,7 @@ class BaseSyncClient[
             grandchild_items=grandchild_items,
             snapshots=snapshots,
             list_media_key=list_media_key,
-            mapping_descriptors=mapping_descriptors,
+            mappings=mappings,
             outcome=outcome,
             error_message=error_message,
             info=info,

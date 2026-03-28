@@ -17,6 +17,7 @@ from anibridge.utils.mappings import AnibridgeDescriptorMapping
 import anibridge.app.core.sync.show as show_module
 from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.targeting import ResolvedListTarget
+from anibridge.app.models.db.animap import AnimapEntry
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from tests.core.sync.conftest import (
     FakeAnimapClient,
@@ -1033,7 +1034,7 @@ async def test_map_media_merges_groups_across_seasons(
     mapped_season, mapped_eps, target = results[0]
     assert mapped_season in seasons
     assert len(mapped_eps) == len(episodes)
-    assert len(target.mapping_descriptors) == 2
+    assert target.list_media_key == "903"
 
 
 def test_filter_episodes_by_ranges_deduplicates(
@@ -1055,6 +1056,99 @@ def test_filter_episodes_by_ranges_deduplicates(
     )
 
     assert [ep.index for ep in filtered] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_history_entry_id_matches_descriptor_from_list_resolution(
+    show_client: ShowSyncClient,
+    sync_db,
+) -> None:
+    """History animap id should follow descriptor priority from resolved mappings."""
+    provider = cast(FakeListProvider, show_client.list_provider)
+    show, _season, episodes = build_show(
+        view_counts=[1, 1],
+        show_kwargs={"mapping_descriptors": [("tvdb_show", "tvdb-1", None)]},
+        season_kwargs={"mapping_descriptors": [("tmdb_show", "tmdb-1", "s1")]},
+    )
+
+    target_descriptor = ("anilist", "9001", None)
+    provider.resolved_targets = {target_descriptor: ["anilist-9001"]}
+    provider.entries["anilist-9001"] = FakeListEntry(
+        provider=provider,
+        key="anilist-9001",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=len(episodes),
+    )
+
+    resolve_calls: list[tuple[tuple[str, str, str | None], ...]] = []
+    original_resolve = provider.resolve_mapping_descriptors
+
+    async def _resolve_with_spy(
+        descriptors: Sequence[tuple[str, str, str | None]],
+    ) -> Sequence[Any]:
+        resolve_calls.append(tuple(descriptors))
+        return await original_resolve(descriptors)
+
+    provider.resolve_mapping_descriptors = _resolve_with_spy  # ty:ignore[invalid-assignment]
+
+    class _AnimapWithEdges(FakeAnimapClient):
+        def resolve_edges_grouped(
+            self,
+            descriptors: Sequence[tuple[str, str, str | None]],
+            *,
+            target_providers: set[str] | frozenset[str] | None = None,
+        ) -> dict[
+            tuple[str, str, str | None],
+            dict[tuple[str, str, str | None], list[tuple[str, str | None]]],
+        ]:
+            del descriptors, target_providers
+            return {
+                target_descriptor: {
+                    ("tvdb_show", "tvdb-1", None): [("1-2", "1-2")],
+                    ("tmdb_show", "tmdb-1", "s1"): [("1-2", "1-2")],
+                }
+            }
+
+    show_client.animap_client = cast(Any, _AnimapWithEdges())
+
+    with sync_db as ctx:
+        preferred = AnimapEntry(
+            provider="tmdb_show",
+            entry_id="tmdb-1",
+            entry_scope="s1",
+        )
+        secondary = AnimapEntry(
+            provider="tvdb_show",
+            entry_id="tvdb-1",
+            entry_scope=None,
+        )
+        ctx.session.add_all([preferred, secondary])
+        ctx.session.commit()
+        preferred_id = preferred.id
+
+    results = [
+        result
+        async for result in show_client.map_media(cast(LibraryShowProtocol, show))
+    ]
+    assert len(results) == 1
+    assert resolve_calls
+    assert target_descriptor in resolve_calls[0]
+
+    mapped_season, mapped_eps, target = results[0]
+    outcome = await show_client.sync_media(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, mapped_season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], mapped_eps),
+        entry=cast(ListEntryProtocol, provider.entries[target.list_media_key]),
+        list_media_key=target.list_media_key,
+        mappings=target.mappings,
+    )
+    assert outcome is SyncOutcome.SYNCED
+
+    with sync_db as ctx:
+        row = ctx.session.query(SyncHistory).one()
+        assert row.animap_entry_id == preferred_id
 
 
 @pytest.mark.asyncio

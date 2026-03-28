@@ -6,9 +6,8 @@ from typing import Any
 
 from anibridge.library import LibraryEntry
 from anibridge.list import ListStatus
-from anibridge.utils.mappings import descriptor_key
-from anibridge.utils.types import MappingDescriptor
-from sqlalchemy import tuple_
+from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
+from sqlalchemy.sql import tuple_
 
 from anibridge.app import log
 from anibridge.app.core.sync.stats import EntrySnapshot
@@ -45,6 +44,10 @@ class SyncHistoryManager:
         self.list_namespace = list_namespace
         self._db_factory = db_factory
         self._failure_history_cleanup_queue: set[tuple[str, str, str | None]] = set()
+
+    def clear_cache(self) -> None:
+        """Clear all history manager caches."""
+        pass
 
     @staticmethod
     def stringify_info_value(value: Any) -> str | None:
@@ -110,7 +113,7 @@ class SyncHistoryManager:
         grandchild_items: Sequence[LibraryEntry] | None,
         snapshots: tuple[EntrySnapshot | None, EntrySnapshot | None],
         list_media_key: str | None,
-        mapping_descriptors: Sequence[MappingDescriptor] | None = None,
+        mappings: Sequence[AnibridgeDescriptorMapping] | None = None,
         outcome: SyncOutcome,
         error_message: str | None = None,
         info: Mapping[str, Any] | None = None,
@@ -127,8 +130,8 @@ class SyncHistoryManager:
             snapshots (tuple[EntrySnapshot | None, EntrySnapshot | None]): Before
                 and after entry snapshots.
             list_media_key (str | None): Resolved list media key.
-            mapping_descriptors (Sequence[MappingDescriptor] | None): Mapping
-                descriptors used to resolve the item.
+            mappings (Sequence[AnibridgeDescriptorMapping] | None): Source-to-target
+                descriptor mappings used to resolve the target entry.
             outcome (SyncOutcome): Final synchronization outcome.
             error_message (str | None): Optional failure message.
             info (Mapping[str, Any] | None): Additional diagnostic metadata.
@@ -154,9 +157,8 @@ class SyncHistoryManager:
 
         library_section_key = item.section().key
         library_media_key = str(item.key)
-        mapping_target_descriptors = sorted(
-            set(mapping_descriptors or ()),
-            key=descriptor_key,
+        mapping_source_descriptors = tuple(
+            dict.fromkeys(mapping.source for mapping in mappings or ())
         )
 
         base_info = self.normalize_info(
@@ -165,11 +167,11 @@ class SyncHistoryManager:
                 "library_section_key": library_section_key,
                 "library_media_key": library_media_key,
                 "list_media_key": resolved_list_media_key,
-                "mapping_targets": [
+                "mapping_sources": [
                     descriptor_key(descriptor)
-                    for descriptor in mapping_target_descriptors
+                    for descriptor in mapping_source_descriptors
                 ],
-                "mapping_count": len(mapping_target_descriptors),
+                "mapping_count": len(mapping_source_descriptors),
                 "grandchild_count": (
                     len(grandchild_items) if grandchild_items is not None else None
                 ),
@@ -192,7 +194,7 @@ class SyncHistoryManager:
                 return
 
             mapping_entry_id = self._get_mapping_entry_id(
-                mapping_descriptors=mapping_descriptors,
+                mappings=mappings,
                 session=ctx.session,
             )
 
@@ -336,13 +338,14 @@ class SyncHistoryManager:
     def _get_mapping_entry_id(
         self,
         *,
-        mapping_descriptors: Sequence[MappingDescriptor] | None,
+        mappings: Sequence[AnibridgeDescriptorMapping] | None,
         session: Any,
     ) -> int | None:
-        """Return the Animap entry id for the first mapping descriptor."""
-        if not mapping_descriptors:
+        """Return the Animap entry id for the first ordered source descriptor."""
+        if not mappings:
             return None
-        descriptor = sorted(mapping_descriptors, key=descriptor_key)[0]
+        descriptor = mappings[0].source
+
         provider, entry_id, scope = descriptor
         entry = (
             session.query(AnimapEntry)

@@ -53,7 +53,6 @@ class SyncTarget:
 
     list_media_key: str
     entry: ListEntry
-    mapping_descriptors: tuple[MappingDescriptor, ...] = ()
     mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
 
 

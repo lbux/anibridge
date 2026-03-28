@@ -13,10 +13,10 @@ from anibridge.utils.mappings import (
     parse_mapping_descriptor,
 )
 from anibridge.utils.types import MappingDescriptor
-from sqlalchemy import func
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql import delete, select, tuple_
+from sqlalchemy.sql.functions import func
 
 from anibridge.app import log
 from anibridge.app.config.database import db

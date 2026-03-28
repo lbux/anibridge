@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import ListEntry, ListStatus
-from anibridge.utils.types import MappingDescriptor
+from anibridge.utils.mappings import AnibridgeDescriptorMapping
 from pydantic import BaseModel
 
 from anibridge.app.models.db.sync_history import SyncOutcome
@@ -390,5 +390,5 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     entry: ListEntry
     source_entry: ListEntry | None
     list_media_key: str | None
-    mapping_descriptors: tuple[MappingDescriptor, ...] = ()
+    mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
     diagnostics: dict[str, str] = field(default_factory=dict)

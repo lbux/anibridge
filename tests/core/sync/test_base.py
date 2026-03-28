@@ -319,7 +319,6 @@ async def test_sync_media_deletes_entry_when_destructive(
         grandchild_items=(),
         entry=cast(ListEntryProtocol, entry),
         list_media_key="200",
-        mapping_descriptors=None,
     )
 
     assert outcome is SyncOutcome.DELETED
@@ -562,7 +561,6 @@ async def test_sync_media_deletes_entry_evicts_cache(
         grandchild_items=(),
         entry=cast(ListEntryProtocol, entry),
         list_media_key="200-cache",
-        mapping_descriptors=None,
     )
 
     assert outcome is SyncOutcome.DELETED
@@ -597,7 +595,6 @@ async def test_sync_media_empty_sync_wins_over_destructive_delete(
         grandchild_items=(),
         entry=cast(ListEntryProtocol, entry),
         list_media_key="200-empty",
-        mapping_descriptors=None,
     )
 
     assert outcome is SyncOutcome.SYNCED
@@ -634,7 +631,6 @@ async def test_sync_media_skips_sync_rule_disabled_field_calculator(
         grandchild_items=(),
         entry=cast(ListEntryProtocol, entry),
         list_media_key="205b",
-        mapping_descriptors=None,
     )
 
     assert outcome in (SyncOutcome.SKIPPED, SyncOutcome.SYNCED)
@@ -661,7 +657,6 @@ async def test_sync_media_skips_when_no_status(
         grandchild_items=(),
         entry=cast(ListEntryProtocol, entry),
         list_media_key="201",
-        mapping_descriptors=None,
     )
 
     assert outcome is SyncOutcome.SKIPPED
@@ -694,7 +689,6 @@ async def test_apply_update_dry_run_records_ephemeral_history(
         entry=cast(ListEntryProtocol, entry),
         source_entry=cast(ListEntryProtocol, entry),
         list_media_key="300",
-        mapping_descriptors=(),
     )
 
     stub_client.dry_run = True
@@ -746,7 +740,6 @@ async def test_batch_sync_dry_run_clears_queue_and_records_history(
             entry=cast(ListEntryProtocol, entry),
             source_entry=cast(ListEntryProtocol, entry),
             list_media_key="400",
-            mapping_descriptors=(),
         )
     ]
     stub_client.dry_run = True
@@ -791,7 +784,6 @@ async def test_batch_sync_failure_raises(stub_client: StubSyncClient, sync_db) -
             entry=cast(ListEntryProtocol, entry),
             source_entry=cast(ListEntryProtocol, entry),
             list_media_key="500",
-            mapping_descriptors=(),
         )
     ]
 
@@ -830,7 +822,6 @@ def test_render_diff_includes_changes(stub_client: StubSyncClient) -> None:
         entry=cast(ListEntryProtocol, entry),
         source_entry=cast(ListEntryProtocol, entry),
         list_media_key="600",
-        mapping_descriptors=(),
     )
 
     diff = stub_client._render_diff(plan)
@@ -864,7 +855,6 @@ async def test_batch_sync_success(stub_client: StubSyncClient, sync_db) -> None:
             entry=cast(ListEntryProtocol, entry),
             source_entry=cast(ListEntryProtocol, entry),
             list_media_key="700",
-            mapping_descriptors=(),
         )
     ]
 
@@ -901,7 +891,6 @@ async def test_apply_update_raises_on_provider_error(
         entry=cast(ListEntryProtocol, entry),
         source_entry=cast(ListEntryProtocol, entry),
         list_media_key="800",
-        mapping_descriptors=(),
     )
 
     async def _boom(_key, _entry):
