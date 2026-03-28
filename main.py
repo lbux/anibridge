@@ -1,6 +1,7 @@
 """AniBridge Main Application."""
 
 import asyncio
+import contextlib
 import os
 import signal
 import sys
@@ -14,32 +15,6 @@ from anibridge.app.core.sched import SchedulerClient
 from anibridge.app.utils.terminal import supports_color
 from anibridge.app.web.app import create_app
 from anibridge.app.web.state import get_app_state
-
-
-def _setup_signal_handlers_for_scheduler(scheduler: SchedulerClient) -> None:
-    """Install SIGINT/SIGTERM handlers that request scheduler shutdown."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
-
-    def _on_signal(sig):
-        name = signal.Signals(sig).name if sig else "UNKNOWN"
-        log.info(f"AniBridge - Received {name} signal, initiating graceful shutdown...")
-        try:
-            scheduler.request_shutdown()
-        except Exception:
-            log.debug(
-                "Failed to request scheduler shutdown from signal handler",
-                exc_info=True,
-            )
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, lambda s=sig: _on_signal(s))
-        except NotImplementedError:
-            # Fallback for environments that don't support add_signal_handler
-            signal.signal(sig, lambda s, f: _on_signal(s))
 
 
 def validate_configuration():
@@ -156,11 +131,6 @@ async def run() -> int:
         _setup_signal_handlers_for_scheduler(app_scheduler)
 
         await app_scheduler.wait_for_completion()
-
-        # Signal uvicorn server to stop and wait for it
-        if server and server_task:
-            server.should_exit = True
-            await server_task
     except KeyboardInterrupt:
         log.info("AniBridge - Keyboard interrupt received, shutting down...")
     except ValidationError as e:
@@ -179,10 +149,6 @@ async def run() -> int:
         log.error(f"AniBridge - Unexpected application error: {e}", exc_info=True)
         return 1
     finally:
-        if server and server_task and not server_task.done():
-            server.should_exit = True
-            await server_task
-
         if app_scheduler:
             log.info("AniBridge - Shutting down application...")
             try:
@@ -195,6 +161,9 @@ async def run() -> int:
                 log.error(f"AniBridge - Error during shutdown: {e}", exc_info=True)
                 ret = 1
 
+        if server and server_task and not server_task.done():
+            await _shutdown_web_server(server, server_task)
+
     app_state = get_app_state()
     if app_state.restart_requested:
         log.info("AniBridge - Restart requested, re-executing process...")
@@ -206,6 +175,67 @@ async def run() -> int:
             ret = 1
 
     return ret
+
+
+def _setup_signal_handlers_for_scheduler(scheduler: SchedulerClient) -> None:
+    """Install SIGINT/SIGTERM handlers that request scheduler shutdown."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+
+    def _on_signal(sig):
+        name = signal.Signals(sig).name if sig else "UNKNOWN"
+        log.info(f"AniBridge - Received {name} signal, initiating graceful shutdown...")
+        try:
+            scheduler.request_shutdown()
+        except Exception:
+            log.debug(
+                "Failed to request scheduler shutdown from signal handler",
+                exc_info=True,
+            )
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda s=sig: _on_signal(s))
+        except NotImplementedError:
+            # Fallback for environments that don't support add_signal_handler
+            signal.signal(sig, lambda s, f: _on_signal(s))
+
+
+async def _shutdown_web_server(
+    server: uvicorn.Server | None,
+    server_task: asyncio.Task | None,
+    *,
+    timeout: float = 10.0,
+    force_timeout: float = 5.0,
+) -> None:
+    """Attempt a graceful, then forced, shutdown of the web server."""
+    if server is None or server_task is None:
+        return
+
+    server.should_exit = True
+    try:
+        await asyncio.wait_for(asyncio.shield(server_task), timeout=timeout)
+        return
+    except TimeoutError:
+        log.warning(
+            "AniBridge - Web server shutdown timed out after %.1fs; forcing exit",
+            timeout,
+        )
+
+    server.force_exit = True
+    try:
+        await asyncio.wait_for(asyncio.shield(server_task), timeout=force_timeout)
+    except TimeoutError:
+        log.error(
+            "AniBridge - Forced web server shutdown timed out after %.1fs; "
+            "cancelling server task",
+            force_timeout,
+        )
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
 
 
 def main(argv: list[str] | None = None) -> int:
