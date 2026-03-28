@@ -20,7 +20,7 @@
     import TimelineItem from "$lib/components/timeline/timeline-item.svelte";
     import TimelineOutcomeFilters from "$lib/components/timeline/timeline-outcome-filters.svelte";
     import type { ItemDiffUi } from "$lib/components/timeline/types";
-    import type { CurrentSync, HistoryItem } from "$lib/types/api";
+    import type { CurrentSync, GetHistoryResponse, HistoryItem } from "$lib/types/api";
     import { apiFetch } from "$lib/utils/api";
     import { toast } from "$lib/utils/notify";
 
@@ -30,13 +30,17 @@
     let stats: Record<string, number> = $state({});
     let loadingInitial = $state(true);
     let loadingMore = $state(false);
-    let page = $state(1);
-    let pages = $state(1);
-    let perPage = $state(50);
+    let loadingNew = $state(false);
+    let limit = $state(25);
+    let hasMore = $state(false);
+    let nextBeforeId: number | null = $state(null);
+    let latestId: number | null = $state(null);
     let outcomeFilter: string | null = $state("synced");
     let showJump = $state(false);
     let newItemsCount = $state(0);
     let ws: WebSocket | null = null;
+    let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let wsShouldReconnect = true;
     let statusWs: WebSocket | null = null;
     let knownIds = new SvelteSet<number>();
     let sentinel: HTMLDivElement | null = $state(null);
@@ -101,14 +105,44 @@
         );
     }
 
-    const buildQuery = (p: number) => {
+    const buildQuery = (opts?: {
+        beforeId?: number | null;
+        afterId?: number | null;
+        includeStats?: boolean;
+        limitOverride?: number;
+    }) => {
         const u = new SvelteURLSearchParams({
-            page: String(p),
-            per_page: String(perPage),
+            limit: String(opts?.limitOverride ?? limit),
         });
+        if (typeof opts?.beforeId === "number") {
+            u.set("before_id", String(opts.beforeId));
+        }
+        if (typeof opts?.afterId === "number") {
+            u.set("after_id", String(opts.afterId));
+        }
         if (outcomeFilter) u.set("outcome", outcomeFilter);
+        if (opts?.includeStats) u.set("include_stats", "true");
         return `/api/history/${params.profile}?${u}`;
     };
+
+    const resetWsReconnectTimer = () => {
+        if (!wsReconnectTimer) return;
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    };
+
+    function mergeNewest(itemsToPrepend: HistoryItem[]): number {
+        let added = 0;
+        const deduped: HistoryItem[] = [];
+        for (const item of itemsToPrepend) {
+            if (knownIds.has(item.id)) continue;
+            knownIds.add(item.id);
+            deduped.push(item);
+            added++;
+        }
+        if (deduped.length) items = [...deduped, ...items];
+        return added;
+    }
 
     function displayTitle(item: HistoryItem) {
         return (
@@ -150,10 +184,13 @@
     }
 
     function canUndo(item: HistoryItem): boolean {
-        if (!item) return false;
-        if (item.ephemeral) return false;
-        if (!item.list_media_key || !item.list_namespace) return false;
-        return item.outcome === "synced" || item.outcome === "deleted";
+        return !!(
+            item &&
+            !item.ephemeral &&
+            item.list_media_key &&
+            item.list_namespace &&
+            (item.outcome === "synced" || item.outcome === "deleted")
+        );
     }
 
     async function undoHistory(item: HistoryItem) {
@@ -181,8 +218,7 @@
     }
 
     function canRetry(item: HistoryItem): boolean {
-        if (!item) return false;
-        return item.outcome === "failed" || item.outcome === "not_found";
+        return !!(item && (item.outcome === "failed" || item.outcome === "not_found"));
     }
 
     async function retryHistory(item: HistoryItem) {
@@ -205,9 +241,11 @@
 
     function canShowDiff(item: HistoryItem): boolean {
         // Diff panel should be available for original sync changes and subsequent undo entries
-        if (!item) return false;
-        if (!(item.before_state || item.after_state)) return false;
-        return item.outcome === "synced" || item.outcome === "undone";
+        return !!(
+            item &&
+            (item.before_state || item.after_state) &&
+            (item.outcome === "synced" || item.outcome === "undone")
+        );
     }
 
     function diffCountFor(item: HistoryItem): number {
@@ -289,14 +327,17 @@
     async function loadFirst() {
         loadingInitial = true;
         try {
-            const r = await apiFetch(buildQuery(1));
+            const r = await apiFetch(buildQuery({ includeStats: true }));
             if (!r.ok) throw new Error("HTTP " + r.status);
-            const d = await r.json();
+            const d = (await r.json()) as GetHistoryResponse;
             items = d.items || [];
             stats = d.stats || {};
-            page = d.page || 1;
-            pages = d.pages || 1;
-            perPage = d.per_page || perPage;
+            limit = d.limit || 25;
+            hasMore = !!d.has_more;
+            latestId = d.latest_id ?? items[0]?.id ?? null;
+            nextBeforeId =
+                d.next_before_id ??
+                (hasMore && items.length ? items[items.length - 1].id : null);
             knownIds = new SvelteSet(items.map((i) => i.id));
             openPins = {};
             pinDraftCounts = {};
@@ -310,22 +351,20 @@
     }
 
     async function loadMore() {
-        if (loadingMore || page >= pages) return;
+        if (loadingMore || !hasMore || nextBeforeId === null) return;
         loadingMore = true;
-        const next = page + 1;
         try {
-            const r = await apiFetch(buildQuery(next));
+            const r = await apiFetch(
+                buildQuery({ beforeId: nextBeforeId, includeStats: false }),
+            );
             if (!r.ok) throw new Error("HTTP " + r.status);
-            const d = await r.json();
-            const existing = new SvelteSet(items.map((i: HistoryItem) => i.id));
+            const d = (await r.json()) as GetHistoryResponse;
             const newOnes = (d.items || []).filter(
-                (i: HistoryItem) => !existing.has(i.id),
+                (i: HistoryItem) => !knownIds.has(i.id),
             );
             items = [...items, ...newOnes];
-            stats = d.stats || stats;
-            page = d.page || next;
-            pages = d.pages || pages;
-            perPage = d.per_page || perPage;
+            hasMore = !!d.has_more;
+            nextBeforeId = d.next_before_id ?? null;
             newOnes.forEach((i: HistoryItem) => knownIds.add(i.id));
         } catch (e) {
             console.error(e);
@@ -334,36 +373,70 @@
         }
     }
 
+    async function loadNewer() {
+        if (loadingNew) return;
+        const currentTopId = items[0]?.id;
+        if (!currentTopId) return;
+
+        loadingNew = true;
+        try {
+            const r = await apiFetch(
+                buildQuery({
+                    afterId: currentTopId,
+                    includeStats: true,
+                    limitOverride: 250,
+                }),
+            );
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const d = (await r.json()) as GetHistoryResponse;
+            const added = mergeNewest(d.items || []);
+            if (added && !isNearTop) newItemsCount += added;
+            if (d.stats) stats = d.stats;
+            if (typeof d.latest_id === "number") latestId = d.latest_id;
+            handleScroll();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            loadingNew = false;
+        }
+    }
+
     function toggleOutcomeFilter(k: string) {
         outcomeFilter = outcomeFilter === k ? null : k;
         loadFirst();
+        initWs();
     }
 
     function initWs() {
         try {
             ws?.close();
         } catch {}
+        resetWsReconnectTimer();
+
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
-        ws = new WebSocket(`${proto}//${location.host}/ws/history/${params.profile}`);
+        const query = new SvelteURLSearchParams();
+        if (outcomeFilter) query.set("outcome", outcomeFilter);
+        const querySuffix = query.toString() ? `?${query}` : "";
+        ws = new WebSocket(
+            `${proto}//${location.host}/ws/history/${params.profile}${querySuffix}`,
+        );
         ws.onmessage = (ev) => {
             try {
                 const d = JSON.parse(ev.data);
-                if (!Array.isArray(d.items)) return;
-                let added = 0;
-                for (const it of d.items) {
-                    if (
-                        !knownIds.has(it.id) &&
-                        (!outcomeFilter || it.outcome === outcomeFilter)
-                    ) {
-                        // Apply outcomeFilter to WebSocket data
-                        items = [it, ...items];
-                        knownIds.add(it.id);
-                        added++;
-                    }
+                if (typeof d.latest_id !== "number") return;
+                if (latestId === null) {
+                    latestId = d.latest_id;
+                    void loadFirst();
+                    return;
                 }
-                if (added && !isNearTop) newItemsCount += added;
-                handleScroll();
+                if (d.latest_id <= latestId) return;
+                latestId = d.latest_id;
+                void loadNewer();
             } catch {}
+        };
+        ws.onclose = () => {
+            if (!wsShouldReconnect) return;
+            wsReconnectTimer = setTimeout(initWs, 2000);
         };
     }
 
@@ -379,9 +452,7 @@
                 const prof = data?.profiles?.[params.profile];
                 const cs = prof?.status?.current_sync;
                 currentSync = cs ?? null;
-                isProfileRunning = !!(
-                    prof && prof.status?.current_sync?.state === "running"
-                );
+                isProfileRunning = prof?.status?.current_sync?.state === "running";
             } catch {}
         };
         statusWs.onclose = () => {
@@ -414,6 +485,7 @@
     }
 
     onMount(() => {
+        wsShouldReconnect = true;
         loadFirst();
         initWs();
         initStatusWs();
@@ -423,10 +495,12 @@
         if (sentinel) io.observe(sentinel);
         addEventListener("scroll", handleScroll, { passive: true });
         return () => {
+            wsShouldReconnect = false;
             try {
                 ws?.close();
                 statusWs?.close();
             } catch {}
+            resetWsReconnectTimer();
             removeEventListener("scroll", handleScroll);
             io.disconnect();
         };
@@ -449,7 +523,7 @@
         {stats}
         active={outcomeFilter}
         onToggle={toggleOutcomeFilter}
-        onClear={() => ((outcomeFilter = null), loadFirst())} />
+        onClear={() => ((outcomeFilter = null), loadFirst(), initWs())} />
 
     <div
         class="flex items-center gap-2 text-[11px] text-slate-500"
@@ -460,7 +534,7 @@
             <span class="inline-flex items-center gap-1 text-sky-300"
                 ><LoaderCircle class="inline h-4 w-4 animate-spin" /> Loading…</span>
         {/if}
-        {#if !loadingMore && page >= pages}
+        {#if !loadingMore && !hasMore}
             <span class="inline-flex items-center gap-1 text-emerald-400"
                 ><Check class="inline h-4 w-4" /> All loaded</span>
         {/if}

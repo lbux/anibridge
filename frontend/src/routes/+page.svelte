@@ -258,7 +258,7 @@
                     <div class="flex flex-wrap items-start gap-2">
                         {#if profileDisabled}
                             <span
-                                class="inline-flex items-center gap-1 rounded-md border border-indigo-600/40 bg-indigo-600/20 px-2 py-1 text-[11px] font-medium text-indigo-200/70 shadow-sm opacity-70"
+                                class="inline-flex items-center gap-1 rounded-md border border-indigo-600/40 bg-indigo-600/20 px-2 py-1 text-[11px] font-medium text-indigo-200/70 opacity-70 shadow-sm"
                                 aria-disabled="true"
                                 title="Timeline unavailable while profile initialization is failing">
                                 <span>Timeline</span>
@@ -286,18 +286,17 @@
                                 (e.preventDefault(),
                                 e.stopPropagation(),
                                 !isProfileRunning(p) &&
-                                !profileDisabled &&
-                                syncProfile(name, false))}
+                                    !profileDisabled &&
+                                    syncProfile(name, false))}
                             class="inline-flex items-center gap-1 rounded-md border border-emerald-600/60 bg-emerald-600/30 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-600/40"
                             class:opacity-50={isProfileRunning(p) || profileDisabled}
-                            class:cursor-not-allowed={
-                                isProfileRunning(p) || profileDisabled
-                            }
+                            class:cursor-not-allowed={isProfileRunning(p) ||
+                                profileDisabled}
                             title={profileDisabled
                                 ? "Profile unavailable while initialization is failing"
                                 : isProfileRunning(p)
-                                ? "Sync in progress. Please wait."
-                                : "Full sync this profile"}>
+                                  ? "Sync in progress. Please wait."
+                                  : "Full sync this profile"}>
                             <RefreshCcw class="inline h-3 w-3" />
                             <span>Full</span>
                         </span>
@@ -315,18 +314,17 @@
                                 (e.preventDefault(),
                                 e.stopPropagation(),
                                 !isProfileRunning(p) &&
-                                !profileDisabled &&
-                                syncProfile(name, true))}
+                                    !profileDisabled &&
+                                    syncProfile(name, true))}
                             class="inline-flex items-center gap-1 rounded-md border border-sky-600/60 bg-sky-600/30 px-2 py-1 text-[11px] font-medium text-sky-200 hover:bg-sky-600/40"
                             class:opacity-50={isProfileRunning(p) || profileDisabled}
-                            class:cursor-not-allowed={
-                                isProfileRunning(p) || profileDisabled
-                            }
+                            class:cursor-not-allowed={isProfileRunning(p) ||
+                                profileDisabled}
                             title={profileDisabled
                                 ? "Profile unavailable while initialization is failing"
                                 : isProfileRunning(p)
-                                ? "Sync in progress. Please wait."
-                                : "Poll sync this profile"}>
+                                  ? "Sync in progress. Please wait."
+                                  : "Poll sync this profile"}>
                             <CloudDownload class="inline h-3 w-3" />
                             <span>Poll</span>
                         </span>
@@ -334,7 +332,7 @@
                 </div>
                 {#if profileInitError}
                     <div
-                        class="mt-3 cursor-text select-text rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        class="mt-3 cursor-text rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 select-text">
                         <span class="font-medium">Initialization failed:</span>
                         <span class="ml-1">{profileInitError}</span>
                     </div>

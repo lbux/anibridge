@@ -36,8 +36,18 @@ class RetryResponse(BaseModel):
 @router.get("/{profile}", response_model=GetHistoryResponse)
 async def get_history(
     profile: str,
-    page: int = 1,
-    per_page: int = 25,
+    limit: int = Query(25, ge=1, le=250),
+    before_id: int | None = Query(
+        None,
+        ge=1,
+        description="Return rows with id < before_id",
+    ),
+    after_id: int | None = Query(
+        None,
+        ge=1,
+        description="Return rows with id > after_id",
+    ),
+    include_stats: bool = Query(True, description="Include grouped outcome stats"),
     outcome: str | None = Query(None, description="Filter by outcome"),
     library_namespace: str | None = Query(
         None, description="Filter by library provider namespace"
@@ -50,8 +60,10 @@ async def get_history(
 
     Args:
         profile (str): The profile name.
-        page (int): The page number.
-        per_page (int): The number of items per page.
+        limit (int): Maximum number of items to return.
+        before_id (int | None): Cursor for loading older items.
+        after_id (int | None): Cursor for loading newer items.
+        include_stats (bool): Include grouped outcome stats when true.
         outcome (str | None): Filter by outcome.
         library_namespace (str | None): Filter by library provider namespace.
         list_namespace (str | None): Filter by list provider namespace.
@@ -65,11 +77,13 @@ async def get_history(
     """
     return await get_history_service().get_page(
         profile=profile,
-        page=page,
-        per_page=per_page,
+        limit=limit,
+        before_id=before_id,
+        after_id=after_id,
         outcome=outcome,
         library_namespace=library_namespace,
         list_namespace=list_namespace,
+        include_stats=include_stats,
     )
 
 

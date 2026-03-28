@@ -16,36 +16,30 @@ router = APIRouter()
 async def history_websocket(websocket: WebSocket, profile: str) -> None:
     """Stream live history updates to client.
 
-    Polls for changes every 5 seconds and pushes updates when items change.
+    Polls for latest id and pushes only cursor updates when it changes.
     """
     await websocket.accept()
 
-    last_item_ids: set[int] = set()
+    outcome = websocket.query_params.get("outcome") or None
+    last_latest_id: int | None = None
+    history_service = get_history_service()
 
     try:
         while True:
-            page_data = await get_history_service().get_page(
-                profile=profile, page=1, per_page=25, outcome=None
+            latest_id = await history_service.get_latest_id(
+                profile=profile, outcome=outcome
             )
-
-            # Check if items have changed
-            current_ids = {item.id for item in page_data.items}
-
-            if current_ids != last_item_ids:
-                last_item_ids = current_ids
-
+            if latest_id != last_latest_id:
+                last_latest_id = latest_id
                 await websocket.send_json(
                     {
-                        "items": [
-                            item.model_dump(mode="json") for item in page_data.items
-                        ],
-                        "stats": page_data.stats,
                         "profile": profile,
-                        "total": page_data.total,
+                        "outcome": outcome,
+                        "latest_id": latest_id,
                     }
                 )
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
 
     except WebSocketDisconnect:
         pass

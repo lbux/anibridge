@@ -277,11 +277,11 @@ export interface HistoryItem {
 
 export interface GetHistoryResponse {
     items: HistoryItem[];
-    page: number;
-    per_page: number;
-    total: number;
-    pages: number;
-    stats: Record<string, number>;
+    limit: number;
+    has_more: boolean;
+    next_before_id?: number | null;
+    latest_id?: number | null;
+    stats?: Record<string, number> | null;
 }
 
 export interface UndoResponse {

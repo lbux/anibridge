@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from anibridge.utils.cache import cache, ttl_cache
-from fastapi.param_functions import Query
 from pydantic import BaseModel
 from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import func
@@ -52,14 +51,14 @@ class HistoryItem(BaseModel):
 
 
 class HistoryPage(BaseModel):
-    """Pagination wrapper for history items."""
+    """Cursor-based history slice wrapper."""
 
     items: list[HistoryItem]
-    total: int
-    page: int
-    per_page: int
-    pages: int
-    stats: dict[str, int]
+    limit: int
+    has_more: bool
+    next_before_id: int | None = None
+    latest_id: int | None = None
+    stats: dict[str, int] | None = None
 
 
 class HistoryService:
@@ -254,39 +253,17 @@ class HistoryService:
                 .group_by(SyncHistory.outcome)
                 .all()
             )
-            stats = {str(outcome): count for outcome, count in stats_rows}
-            return stats
+            return {str(outcome): count for outcome, count in stats_rows}
 
-    async def get_page(
+    async def _resolve_filters(
         self,
         profile: str,
-        page: int = Query(1, ge=1),
-        per_page: int = Query(20, ge=1, le=250),
+        *,
         outcome: str | None = None,
         library_namespace: str | None = None,
         list_namespace: str | None = None,
-        include_library_media: bool = True,
-        include_list_media: bool = True,
-    ) -> HistoryPage:
-        """Return paginated history entries enriched as requested.
-
-        Args:
-            profile (str): The profile name to filter history entries.
-            page (int): The page number to retrieve.
-            per_page (int): The number of entries per page.
-            outcome (str | None): Optional filter for the sync outcome.
-            library_namespace (str | None): Optional filter for library provider.
-            list_namespace (str | None): Optional filter for list provider.
-            include_library_media (bool): Include library provider metadata when True.
-            include_list_media (bool): Include list provider metadata when True.
-
-        Returns:
-            HistoryPage: The paginated history entries.
-
-        Raises:
-            SchedulerNotInitializedError: If the scheduler is not running.
-            ProfileNotFoundError: If the profile is unknown.
-        """
+    ) -> tuple[str, str, list[Any]]:
+        """Resolve provider filters and produce common SQLAlchemy predicates."""
         bridge = get_bridge(profile)
         effective_library_namespace = (
             library_namespace or bridge.library_provider.NAMESPACE
@@ -301,26 +278,107 @@ class HistoryService:
         if outcome:
             base_filters.append(SyncHistory.outcome == outcome)
 
-        with db() as ctx:
-            stats = await self._fetch_profile_stats(
-                profile,
-                effective_library_namespace,
-                effective_list_namespace,
-            )
+        return effective_library_namespace, effective_list_namespace, base_filters
 
-            count_stmt = (
-                select(func.count()).select_from(SyncHistory).where(*base_filters)
-            )
-            total = ctx.session.execute(count_stmt).scalar_one()
+    async def get_latest_id(
+        self,
+        profile: str,
+        *,
+        outcome: str | None = None,
+        library_namespace: str | None = None,
+        list_namespace: str | None = None,
+    ) -> int | None:
+        """Return the most recent history row id for the requested filter scope."""
+        _, _, base_filters = await self._resolve_filters(
+            profile,
+            outcome=outcome,
+            library_namespace=library_namespace,
+            list_namespace=list_namespace,
+        )
+        with db() as ctx:
+            latest_stmt = select(func.max(SyncHistory.id)).where(*base_filters)
+            return ctx.session.execute(latest_stmt).scalar_one_or_none()
+
+    async def get_page(
+        self,
+        profile: str,
+        limit: int = 25,
+        before_id: int | None = None,
+        after_id: int | None = None,
+        outcome: str | None = None,
+        library_namespace: str | None = None,
+        list_namespace: str | None = None,
+        include_library_media: bool = True,
+        include_list_media: bool = True,
+        include_stats: bool = False,
+    ) -> HistoryPage:
+        """Return cursor-based history slice enriched as requested.
+
+        Args:
+            profile (str): The profile name to filter history entries.
+            limit (int): The max number of entries to return.
+            before_id (int | None): If provided, only return rows where id < before_id.
+            after_id (int | None): If provided, only return rows where id > after_id.
+            outcome (str | None): Optional filter for the sync outcome.
+            library_namespace (str | None): Optional filter for library provider.
+            list_namespace (str | None): Optional filter for list provider.
+            include_library_media (bool): Include library provider metadata when True.
+            include_list_media (bool): Include list provider metadata when True.
+            include_stats (bool): Include grouped outcome counts when True.
+
+        Returns:
+            HistoryPage: The history slice response.
+
+        Raises:
+            SchedulerNotInitializedError: If the scheduler is not running.
+            ProfileNotFoundError: If the profile is unknown.
+        """
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        if limit > 250:
+            raise ValueError("limit must be <= 250")
+        if before_id is not None and after_id is not None:
+            raise ValueError("before_id and after_id are mutually exclusive")
+
+        (
+            effective_library_namespace,
+            effective_list_namespace,
+            base_filters,
+        ) = await self._resolve_filters(
+            profile,
+            outcome=outcome,
+            library_namespace=library_namespace,
+            list_namespace=list_namespace,
+        )
+
+        if before_id is not None:
+            base_filters.append(SyncHistory.id < before_id)
+        if after_id is not None:
+            base_filters.append(SyncHistory.id > after_id)
+
+        latest_filters = [
+            SyncHistory.profile_name == profile,
+            SyncHistory.library_namespace == effective_library_namespace,
+            SyncHistory.list_namespace == effective_list_namespace,
+        ]
+        if outcome:
+            latest_filters.append(SyncHistory.outcome == outcome)
+
+        with db() as ctx:
+            latest_stmt = select(func.max(SyncHistory.id)).where(*latest_filters)
+            latest_id = ctx.session.execute(latest_stmt).scalar_one_or_none()
 
             stmt = (
                 select(SyncHistory)
                 .where(*base_filters)
                 .order_by(SyncHistory.timestamp.desc())
-                .offset((page - 1) * per_page)
-                .limit(per_page)
+                .limit(limit + 1)
             )
             rows = ctx.session.execute(stmt).scalars().all()
+
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
         dto_items = await self._build_history_items(
             profile,
             rows,
@@ -328,12 +386,22 @@ class HistoryService:
             include_list_media=include_list_media,
         )
 
+        stats: dict[str, int] | None = None
+        if include_stats:
+            stats = await self._fetch_profile_stats(
+                profile,
+                effective_library_namespace,
+                effective_list_namespace,
+            )
+
+        next_before_id = rows[-1].id if rows and has_more else None
+
         page_obj = HistoryPage.model_construct(
             items=dto_items,
-            total=total,
-            page=page,
-            per_page=per_page,
-            pages=(total + per_page - 1) // per_page,
+            limit=limit,
+            has_more=has_more,
+            next_before_id=next_before_id,
+            latest_id=latest_id,
             stats=stats,
         )
         return page_obj

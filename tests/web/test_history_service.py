@@ -233,12 +233,14 @@ async def test_history_service_get_page_enriches_metadata(history_env):
 
     page = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=True,
         include_list_media=True,
+        include_stats=True,
     )
-    assert page.total == 1
+    assert len(page.items) == 1
+    assert page.has_more is False
+    assert page.latest_id is not None
     item = page.items[0]
     assert item.library_media is not None
     assert item.library_media.title == "Library lib1"
@@ -261,13 +263,12 @@ async def test_history_service_get_page_includes_ephemeral_flag(history_env):
 
     page = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=False,
         include_list_media=False,
     )
 
-    assert page.total == 1
+    assert len(page.items) == 1
     assert page.items[0].ephemeral is True
 
 
@@ -319,14 +320,13 @@ async def test_history_service_get_page_filters_by_outcome(history_env):
 
     page = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         outcome=SyncOutcome.SKIPPED.value,
         include_library_media=False,
         include_list_media=False,
     )
 
-    assert page.total == 1
+    assert len(page.items) == 1
     assert all(item.outcome == SyncOutcome.SKIPPED.value for item in page.items)
 
 
@@ -338,10 +338,10 @@ async def test_history_service_get_page_stats_are_fresh_after_write(history_env)
 
     first_page = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=False,
         include_list_media=False,
+        include_stats=True,
     )
 
     _seed_history_row(
@@ -353,14 +353,14 @@ async def test_history_service_get_page_stats_are_fresh_after_write(history_env)
 
     second_page = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=False,
         include_list_media=False,
+        include_stats=True,
     )
 
     assert first_page.stats == {SyncOutcome.SYNCED.value: 1}
-    assert second_page.total == 2
+    assert len(second_page.items) == 2
     assert second_page.stats == {
         SyncOutcome.SYNCED.value: 1,
         SyncOutcome.FAILED.value: 1,
@@ -439,8 +439,7 @@ async def test_history_service_undo_item_clears_cached_list_metadata(history_env
 
     page_before = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=False,
         include_list_media=True,
     )
@@ -450,8 +449,7 @@ async def test_history_service_undo_item_clears_cached_list_metadata(history_env
 
     page_after = await service.get_page(
         profile="profile",
-        page=1,
-        per_page=10,
+        limit=10,
         include_library_media=False,
         include_list_media=True,
     )
