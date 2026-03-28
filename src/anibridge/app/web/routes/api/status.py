@@ -34,6 +34,7 @@ class ProfileRuntimeStatusModel(BaseModel):
     running: bool
     last_synced: str | None = None
     current_sync: dict | None = None
+    initialization_error: str | None = None
 
 
 class ProfileStatusModel(BaseModel):
@@ -87,5 +88,6 @@ def construct_profile_status(data: dict) -> ProfileStatusModel:
             running=bool(st.get("running")),
             last_synced=st.get("last_synced"),
             current_sync=st.get("current_sync"),
+            initialization_error=st.get("initialization_error"),
         ),
     )

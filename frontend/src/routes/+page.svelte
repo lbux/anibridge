@@ -29,6 +29,24 @@
         return p?.status?.current_sync?.state === "running";
     }
 
+    function getProfileInitError(p?: ProfileStatus): string | null {
+        const msg = p?.status?.initialization_error;
+        if (!msg) return null;
+        const trimmed = msg.trim();
+        return trimmed.length > 0 ? trimmed : null;
+    }
+
+    function isProfileDisabled(p?: ProfileStatus): boolean {
+        return getProfileInitError(p) !== null;
+    }
+
+    function profileCardClass(profileDisabled: boolean): string {
+        if (profileDisabled) {
+            return "group rounded-md border border-slate-800/80 bg-slate-900/50 p-4 text-left transition-colors focus:ring-2 focus:ring-sky-600/40 focus:outline-none cursor-not-allowed opacity-70";
+        }
+        return "group rounded-md border border-slate-800/80 bg-slate-900/50 p-4 text-left transition-colors focus:ring-2 focus:ring-sky-600/40 focus:outline-none cursor-pointer hover:bg-slate-900/70";
+    }
+
     function anyRunning(): boolean {
         for (const [, p] of Object.entries(profiles)) {
             if (isProfileRunning(p)) return true;
@@ -202,11 +220,17 @@
             {/each}
         {/if}
         {#each profileEntries() as [name, p] (name)}
+            {@const profileDisabled = isProfileDisabled(p)}
+            {@const profileInitError = getProfileInitError(p)}
             <button
                 type="button"
-                class="group cursor-pointer rounded-md border border-slate-800/80 bg-slate-900/50 p-4 text-left transition-colors hover:bg-slate-900/70 focus:ring-2 focus:ring-sky-600/40 focus:outline-none"
-                onclick={() => goTimeline(name)}
-                title={`Open timeline for ${name}`}>
+                class={profileCardClass(profileDisabled)}
+                onclick={() => {
+                    if (!profileDisabled) goTimeline(name);
+                }}
+                title={profileDisabled
+                    ? `${name} is unavailable due to a profile initialization error`
+                    : `Open timeline for ${name}`}>
                 <div
                     class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -232,29 +256,46 @@
                         </div>
                     </div>
                     <div class="flex flex-wrap items-start gap-2">
-                        <a
-                            href={resolve(`/timeline/${name}`)}
-                            class="inline-flex items-center gap-1 rounded-md border border-indigo-600/60 bg-indigo-600/30 px-2 py-1 text-[11px] font-medium text-indigo-200 shadow-sm hover:bg-indigo-600/40">
-                            <span>Timeline</span>
-                            <ChevronRight class="inline h-3 w-3" />
-                        </a>
+                        {#if profileDisabled}
+                            <span
+                                class="inline-flex items-center gap-1 rounded-md border border-indigo-600/40 bg-indigo-600/20 px-2 py-1 text-[11px] font-medium text-indigo-200/70 shadow-sm opacity-70"
+                                aria-disabled="true"
+                                title="Timeline unavailable while profile initialization is failing">
+                                <span>Timeline</span>
+                                <ChevronRight class="inline h-3 w-3" />
+                            </span>
+                        {:else}
+                            <a
+                                href={resolve(`/timeline/${name}`)}
+                                class="inline-flex items-center gap-1 rounded-md border border-indigo-600/60 bg-indigo-600/30 px-2 py-1 text-[11px] font-medium text-indigo-200 shadow-sm hover:bg-indigo-600/40">
+                                <span>Timeline</span>
+                                <ChevronRight class="inline h-3 w-3" />
+                            </a>
+                        {/if}
                         <span
                             role="button"
                             tabindex="0"
-                            aria-disabled={isProfileRunning(p)}
+                            aria-disabled={isProfileRunning(p) || profileDisabled}
                             onclick={(e) => {
                                 e.stopPropagation();
-                                if (!isProfileRunning(p)) syncProfile(name, false);
+                                if (!isProfileRunning(p) && !profileDisabled)
+                                    syncProfile(name, false);
                             }}
                             onkeydown={(e) =>
                                 (e.key === "Enter" || e.key === " ") &&
                                 (e.preventDefault(),
                                 e.stopPropagation(),
-                                !isProfileRunning(p) && syncProfile(name, false))}
+                                !isProfileRunning(p) &&
+                                !profileDisabled &&
+                                syncProfile(name, false))}
                             class="inline-flex items-center gap-1 rounded-md border border-emerald-600/60 bg-emerald-600/30 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-600/40"
-                            class:opacity-50={isProfileRunning(p)}
-                            class:cursor-not-allowed={isProfileRunning(p)}
-                            title={isProfileRunning(p)
+                            class:opacity-50={isProfileRunning(p) || profileDisabled}
+                            class:cursor-not-allowed={
+                                isProfileRunning(p) || profileDisabled
+                            }
+                            title={profileDisabled
+                                ? "Profile unavailable while initialization is failing"
+                                : isProfileRunning(p)
                                 ? "Sync in progress. Please wait."
                                 : "Full sync this profile"}>
                             <RefreshCcw class="inline h-3 w-3" />
@@ -263,20 +304,27 @@
                         <span
                             role="button"
                             tabindex="0"
-                            aria-disabled={isProfileRunning(p)}
+                            aria-disabled={isProfileRunning(p) || profileDisabled}
                             onclick={(e) => {
                                 e.stopPropagation();
-                                if (!isProfileRunning(p)) syncProfile(name, true);
+                                if (!isProfileRunning(p) && !profileDisabled)
+                                    syncProfile(name, true);
                             }}
                             onkeydown={(e) =>
                                 (e.key === "Enter" || e.key === " ") &&
                                 (e.preventDefault(),
                                 e.stopPropagation(),
-                                !isProfileRunning(p) && syncProfile(name, true))}
+                                !isProfileRunning(p) &&
+                                !profileDisabled &&
+                                syncProfile(name, true))}
                             class="inline-flex items-center gap-1 rounded-md border border-sky-600/60 bg-sky-600/30 px-2 py-1 text-[11px] font-medium text-sky-200 hover:bg-sky-600/40"
-                            class:opacity-50={isProfileRunning(p)}
-                            class:cursor-not-allowed={isProfileRunning(p)}
-                            title={isProfileRunning(p)
+                            class:opacity-50={isProfileRunning(p) || profileDisabled}
+                            class:cursor-not-allowed={
+                                isProfileRunning(p) || profileDisabled
+                            }
+                            title={profileDisabled
+                                ? "Profile unavailable while initialization is failing"
+                                : isProfileRunning(p)
                                 ? "Sync in progress. Please wait."
                                 : "Poll sync this profile"}>
                             <CloudDownload class="inline h-3 w-3" />
@@ -284,6 +332,13 @@
                         </span>
                     </div>
                 </div>
+                {#if profileInitError}
+                    <div
+                        class="mt-3 cursor-text select-text rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        <span class="font-medium">Initialization failed:</span>
+                        <span class="ml-1">{profileInitError}</span>
+                    </div>
+                {/if}
                 {#if p.status?.current_sync?.state === "running"}
                     <div class="mt-3 space-y-2">
                         <div

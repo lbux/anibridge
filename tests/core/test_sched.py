@@ -20,6 +20,8 @@ from anibridge.app.exceptions import ProfileNotFoundError, SchedulerUnavailableE
 class FakeProfileConfig:
     """Minimal profile config stub."""
 
+    library_provider: str = "lib"
+    list_provider: str = "list"
     poll_interval: int = 60
     scan_interval: int = 10
     scan_modes: list[Any] = field(default_factory=list)
@@ -292,6 +294,7 @@ async def test_scheduler_initialize_and_start(
     assert cast(FakeAnimapClient, scheduler.shared_animap_client).initialized is True
     assert "good" in scheduler.bridge_clients
     assert "bad" not in scheduler.bridge_clients
+    assert scheduler.failed_profile_errors.get("bad") == "boom"
 
 
 @pytest.mark.asyncio
@@ -496,8 +499,13 @@ def test_scheduler_get_next_database_sync_at(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_scheduler_get_status(tmp_path: Path) -> None:
-    """Status should include profile and runtime data."""
-    profiles = {"one": FakeProfileConfig(scan_modes=[])}
+    """Status should include profile runtime data and init failures."""
+    profiles = {
+        "one": FakeProfileConfig(scan_modes=[]),
+        "broken": FakeProfileConfig(
+            library_provider="jellyfin", list_provider="anilist", scan_modes=[]
+        ),
+    }
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
@@ -514,11 +522,16 @@ async def test_scheduler_get_status(tmp_path: Path) -> None:
     scheduler.profile_schedulers["one"] = cast(
         "sched_module.ProfileScheduler", SchedulerStub()
     )
+    scheduler.failed_profile_errors["broken"] = "Provider auth failed"
 
     status = await scheduler.get_status()
 
     assert status["one"]["config"]["library_namespace"] == "Lib"
     assert status["one"]["status"]["last_synced"] == "2025-01-01T00:00:00+00:00"
+    assert status["one"]["status"]["initialization_error"] is None
+    assert status["broken"]["config"]["library_namespace"] == "Jellyfin"
+    assert status["broken"]["config"]["list_namespace"] == "Anilist"
+    assert status["broken"]["status"]["initialization_error"] == "Provider auth failed"
 
 
 @pytest.mark.asyncio

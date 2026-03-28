@@ -39,6 +39,7 @@ class SchedulerClient:
             global_config.data_path, global_config.mappings_url
         )
         self.bridge_clients: dict[str, BridgeClient] = {}
+        self.failed_profile_errors: dict[str, str] = {}
         self.profile_schedulers: dict[str, ProfileScheduler] = {}
         self._sync_coordinator = GlobalSyncCoordinator()
         self.stop_event = asyncio.Event()
@@ -74,6 +75,7 @@ class SchedulerClient:
         log.info("Initializing anime mapping database")
         await self.shared_animap_client.initialize()
         log.success("Anime mapping database ready")
+        self.failed_profile_errors.clear()
 
         async def init_bridge(profile_name: str, profile_config: Any) -> None:
             try:
@@ -86,8 +88,11 @@ class SchedulerClient:
                 )
                 await bridge_client.initialize()
                 self.bridge_clients[profile_name] = bridge_client
+                self.failed_profile_errors.pop(profile_name, None)
                 log.info("[%s] Bridge client initialized", profile_name)
-            except Exception:
+            except Exception as exc:
+                detail = str(exc).strip() or "Failed to initialize profile"
+                self.failed_profile_errors[profile_name] = detail
                 log.error("[%s] Bridge client setup failed", profile_name)
                 log.exception(
                     "[%s] Bridge setup error details",
@@ -325,8 +330,7 @@ class SchedulerClient:
         """
         status = {}
 
-        for profile_name in self.bridge_clients:
-            profile_config = self.global_config.get_profile(profile_name)
+        for profile_name, profile_config in self.global_config.profiles.items():
             bridge_client = self.bridge_clients.get(profile_name)
             scheduler = self.profile_schedulers.get(profile_name)
 
@@ -349,8 +353,10 @@ class SchedulerClient:
 
             status[profile_name] = {
                 "config": {
-                    "library_namespace": library_namespace,
-                    "list_namespace": list_namespace,
+                    "library_namespace": library_namespace
+                    or profile_config.library_provider.title(),
+                    "list_namespace": list_namespace
+                    or profile_config.list_provider.title(),
                     "library_user": library_user_title,
                     "list_user": list_user_title,
                     "scan_interval": profile_config.scan_interval,
@@ -370,6 +376,9 @@ class SchedulerClient:
                         bridge_client.current_sync.model_dump(mode="json")
                         if bridge_client and bridge_client.current_sync is not None
                         else None
+                    ),
+                    "initialization_error": self.failed_profile_errors.get(
+                        profile_name
                     ),
                     "scheduler": await scheduler.get_runtime_metrics()
                     if scheduler is not None

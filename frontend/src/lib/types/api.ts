@@ -162,6 +162,7 @@ export interface ProfileRuntimeStatus {
     running: boolean;
     last_synced?: string | null;
     current_sync?: CurrentSync | null;
+    initialization_error?: string | null;
 }
 
 export interface ProfileStatus {

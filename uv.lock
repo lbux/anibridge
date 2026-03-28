@@ -245,7 +245,7 @@ dependencies = [
 [[package]]
 name = "anibridge-plex-provider"
 version = "0.2.0b11"
-source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#05a6e97a5d175ecc318ff14c7d0e7d1c47c09187" }
+source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#eef009b948595ac75537321758250629e29d45ea" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-library-base" },

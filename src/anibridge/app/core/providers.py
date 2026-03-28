@@ -108,7 +108,7 @@ def build_library_provider(profile: AnibridgeProfileConfig) -> LibraryProvider:
         return library_registry.create(namespace, logger=log, config=config)
     except LookupError as exc:
         raise ProfileConfigError(
-            f"No library provider registered for namespace '{namespace}'. "
+            f"No library provider registered for namespace '{namespace or 'None'}'. "
             "Ensure the provider package is installed and listed under "
             "provider_classes."
         ) from exc
