@@ -51,6 +51,7 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "pydantic>=2.12.5",
     "pyparsing>=3.3.2",
+    "pyyaml>=6.0.3",
     "rapidfuzz>=3.14.3",
     "sqlalchemy>=2.0.47",
 ]
@@ -127,7 +128,7 @@ anibridge-utils = { git = "https://github.com/anibridge/anibridge-utils.git", ta
 py-spy = { git = "https://github.com/czardoz/py-spy.git" }                                                                          # Until upstream suports Python 3.14
 
 [build-system]
-requires = ["uv_build>=0.10.9,<0.11.0"]
+requires = ["uv_build>=0.11.0,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]

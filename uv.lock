@@ -123,6 +123,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyparsing" },
+    { name = "pyyaml" },
     { name = "rapidfuzz" },
     { name = "sqlalchemy" },
 ]
@@ -158,6 +159,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "pyparsing", specifier = ">=3.3.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rapidfuzz", specifier = ">=3.14.3" },
     { name = "sqlalchemy", specifier = ">=2.0.47" },
 ]
