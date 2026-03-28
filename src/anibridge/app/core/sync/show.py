@@ -471,7 +471,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         scores = [
             episode.user_rating for episode in grandchild_items if episode.user_rating
         ]
-        if scores:
+        # If more than half of the episodes have ratings, calculate an average.
+        # Otherwise, defer to season/show rating.
+        if len(scores) >= (len(grandchild_items) + 1) / 2:
             return round(sum(scores) / len(scores))
         if child_item.user_rating:
             return child_item.user_rating

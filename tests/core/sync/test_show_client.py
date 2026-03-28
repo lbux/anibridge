@@ -1231,6 +1231,120 @@ async def test_calculate_user_rating_prefers_sources(
 
 
 @pytest.mark.asyncio
+async def test_calculate_user_rating_majority_episode_average(
+    show_client: ShowSyncClient,
+) -> None:
+    """Returns average if more than half episodes have ratings."""
+    show, season, episodes = build_show(
+        view_counts=[1, 1, 1, 1],
+        episode_kwargs={"user_rating": 6},
+        season_kwargs={"user_rating": 2},
+        show_kwargs={"user_rating": 1},
+    )
+    # Only 3 of 4 episodes have ratings
+    episodes[0]._user_rating = 10
+    episodes[1]._user_rating = 8
+    episodes[2]._user_rating = 6
+    episodes[3]._user_rating = None
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=4,
+    )
+    rating = await show_client._calculate_user_rating(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+    )
+    # (10+8+6)/3 = 8
+    assert rating == 8
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_rating_fallback_season(
+    show_client: ShowSyncClient,
+) -> None:
+    """Returns season rating if not enough episode ratings."""
+    show, season, episodes = build_show(
+        view_counts=[1, 1, 1, 1],
+        episode_kwargs={"user_rating": None},
+        season_kwargs={"user_rating": 7},
+        show_kwargs={"user_rating": 2},
+    )
+    # Only 1 of 4 episodes has a rating
+    episodes[2]._user_rating = 9
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=4,
+    )
+    rating = await show_client._calculate_user_rating(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+    )
+    assert rating == 7
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_rating_fallback_show(show_client: ShowSyncClient) -> None:
+    """Returns show rating if not enough episode/season ratings."""
+    show, season, episodes = build_show(
+        view_counts=[1, 1, 1],
+        episode_kwargs={"user_rating": None},
+        season_kwargs={"user_rating": None},
+        show_kwargs={"user_rating": 5},
+    )
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=3,
+    )
+    rating = await show_client._calculate_user_rating(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+    )
+    assert rating == 5
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_rating_none_when_no_ratings(
+    show_client: ShowSyncClient,
+) -> None:
+    """Returns None if no ratings are present anywhere."""
+    show, season, episodes = build_show(
+        view_counts=[1, 1],
+        episode_kwargs={"user_rating": None},
+        season_kwargs={"user_rating": None},
+        show_kwargs={"user_rating": None},
+    )
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=2,
+    )
+    rating = await show_client._calculate_user_rating(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+    )
+    assert rating is None
+
+
+@pytest.mark.asyncio
 async def test_calculate_progress_and_repeats(
     show_client: ShowSyncClient,
 ) -> None:
