@@ -187,7 +187,7 @@ dependencies = [
 [[package]]
 name = "anibridge-emby-provider"
 version = "0.2.0b2"
-source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#7294b15ce082c83f68e377079db9ad6226ddb5f6" }
+source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#cb7dc111412e70288faf077b77550e2f6aa6d2b1" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "embyclient" },
@@ -198,7 +198,7 @@ dependencies = [
 [[package]]
 name = "anibridge-jellyfin-provider"
 version = "0.2.0b7"
-source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#ca36ef978f4f4a4cda802db812bed3dbb6ec8410" }
+source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#c4497bb5917cd670618effb5deea4913efae7898" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "jellyfin-sdk" },
@@ -245,7 +245,7 @@ dependencies = [
 [[package]]
 name = "anibridge-plex-provider"
 version = "0.2.0b11"
-source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#c3e3341fb886b4022218968178e26cd82388906c" }
+source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#77f762c3e06f5c8b994f8565811f53edffd9b128" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-library-base" },
