@@ -12,7 +12,7 @@ from anibridge.list import ListMediaType, ListProvider, ListStatus
 
 from anibridge.app.core.sync.movie import MovieSyncClient
 from anibridge.app.models.db.sync_history import SyncHistory
-from tests.core.sync.fakes import (
+from tests.core.sync.conftest import (
     FakeAnimapClient,
     FakeLibraryMovie,
     FakeLibraryProvider,

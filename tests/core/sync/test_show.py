@@ -18,7 +18,7 @@ import anibridge.app.core.sync.show as show_module
 from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.targeting import ResolvedListTarget
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
-from tests.core.sync.fakes import (
+from tests.core.sync.conftest import (
     FakeAnimapClient,
     FakeLibraryEpisode,
     FakeLibraryProvider,

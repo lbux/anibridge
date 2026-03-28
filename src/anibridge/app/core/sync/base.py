@@ -497,9 +497,7 @@ class BaseSyncClient[
         )
         if status_should_apply:
             setattr(planned_entry, SyncField.STATUS.value, status_rule.value)
-            field_state.mark_applied_rule(
-                SyncField.STATUS.value, status_rule.reason
-            )
+            field_state.mark_applied_rule(SyncField.STATUS.value, status_rule.reason)
         else:
             field_state.mark_block(SyncField.STATUS.value, status_reason)
         considered_attrs.add(SyncField.STATUS.value)

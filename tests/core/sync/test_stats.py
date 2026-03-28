@@ -17,7 +17,7 @@ from anibridge.app.core.sync.stats import (
     SyncOutcome,
     SyncStats,
 )
-from tests.core.sync.fakes import (
+from tests.core.sync.conftest import (
     FakeLibraryEpisode,
     FakeLibrarySeason,
     FakeLibraryShow,

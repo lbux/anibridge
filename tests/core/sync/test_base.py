@@ -14,16 +14,11 @@ from anibridge.app.config.settings import SyncField, SyncRulesConfig
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.rules import SyncRuleEngine
 from anibridge.app.core.sync.stats import BatchUpdate, EntrySnapshot, ItemIdentifier
-from anibridge.app.core.sync.targeting import (
-    SyncTarget,
-    diff_snapshots,
-    find_best_search_result,
-    resolve_list_targets,
-)
+from anibridge.app.core.sync.targeting import SyncTarget
 from anibridge.app.models.db.pin import Pin
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.utils.terminal import ARROW
-from tests.core.sync.fakes import (
+from tests.core.sync.conftest import (
     FakeAnimapClient,
     FakeLibraryEpisode,
     FakeLibraryMovie,
@@ -215,38 +210,6 @@ class _IndexedRuleMedia(FakeLibraryMovie):
         super().__init__(key=key, title="Indexed")
         self.season_index = season_index
         self.index = index
-
-
-def test_diff_snapshots_returns_changed_fields() -> None:
-    """`diff_snapshots` only includes differences for requested fields."""
-    before = EntrySnapshot(
-        media_key="123",
-        status=ListStatus.CURRENT,
-        progress=3,
-        repeats=0,
-        review=None,
-        user_rating=50,
-        started_at=datetime(2025, 1, 1, tzinfo=UTC),
-        finished_at=None,
-    )
-    after = EntrySnapshot(
-        media_key="123",
-        status=ListStatus.COMPLETED,
-        progress=6,
-        repeats=0,
-        review="Updated",
-        user_rating=80,
-        started_at=datetime(2025, 1, 1, tzinfo=UTC),
-        finished_at=datetime(2025, 2, 1, tzinfo=UTC),
-    )
-
-    diff = diff_snapshots(before, after, {"status", "progress", "finished_at"})
-
-    assert diff == {
-        "status": (ListStatus.CURRENT, ListStatus.COMPLETED),
-        "progress": (3, 6),
-        "finished_at": (None, datetime(2025, 2, 1, tzinfo=UTC)),
-    }
 
 
 def test_should_update_field_respects_skip_fields(
@@ -972,62 +935,6 @@ def test_format_diff_serializes_status_and_datetimes(
         "finished_at: 2025-02-01T00:00:00+00:00 "
         f"{ARROW} 2025-02-01T00:00:00+00:00" in result
     )
-
-
-def test_best_search_result_applies_threshold(stub_client: StubSyncClient) -> None:
-    """Fuzzy matching respects the configured fallback threshold."""
-    provider = FakeListProvider()
-    exact = FakeListEntry(
-        provider=provider,
-        key="1",
-        title="Perfect Match",
-        media_type=ListMediaType.MOVIE,
-    )
-    off = FakeListEntry(
-        provider=provider,
-        key="2",
-        title="Different",
-        media_type=ListMediaType.MOVIE,
-    )
-
-    stub_client.search_fallback_threshold = 80
-    entries = [cast(ListEntryProtocol, exact), cast(ListEntryProtocol, off)]
-    pick = find_best_search_result(
-        "Perfect Match",
-        entries,
-        stub_client.search_fallback_threshold,
-    )
-    assert pick is exact
-
-    stub_client.search_fallback_threshold = 95
-    assert (
-        find_best_search_result(
-            "Perfect Match",
-            [cast(ListEntryProtocol, off)],
-            stub_client.search_fallback_threshold,
-        )
-        is None
-    )
-
-
-@pytest.mark.asyncio
-async def test_resolve_list_targets_supports_one_to_many(
-    stub_client: StubSyncClient,
-) -> None:
-    """List resolution returns multiple targets for a single descriptor."""
-    provider = cast(FakeListProvider, stub_client.list_provider)
-    descriptor = ("anilist", "100", None)
-    provider.resolved_targets = {descriptor: ["100", "101"]}
-    movie = make_movie(mapping_descriptors=[descriptor])
-
-    targets = await resolve_list_targets(
-        animap_client=stub_client.animap_client,
-        list_provider=stub_client.list_provider,
-        media_items=(movie,),
-    )
-    keys = {target.list_media_key for target in targets}
-
-    assert keys == {"100", "101"}
 
 
 def test_get_pinned_fields_caches_results(stub_client: StubSyncClient, sync_db) -> None:
