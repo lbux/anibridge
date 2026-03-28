@@ -143,12 +143,12 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "alembic", specifier = ">=1.18.4" },
     { name = "anibridge-anilist-provider", git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=refactor%2Fautonomous-cache-refresh" },
-    { name = "anibridge-emby-provider", specifier = ">=0.2.0b2,<0.3.0" },
-    { name = "anibridge-jellyfin-provider", specifier = ">=0.2.0b6,<0.3.0" },
+    { name = "anibridge-emby-provider", git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main" },
+    { name = "anibridge-jellyfin-provider", git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main" },
     { name = "anibridge-library-base", specifier = ">=0.2.0b6" },
     { name = "anibridge-list-base", specifier = ">=0.2.0b7" },
     { name = "anibridge-mal-provider", git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=feat%2Fautonomous-cache-refresh" },
-    { name = "anibridge-plex-provider", specifier = ">=0.2.0b7,<0.3.0" },
+    { name = "anibridge-plex-provider", git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main" },
     { name = "anibridge-utils", git = "https://github.com/anibridge/anibridge-utils.git?tag=main" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "colorama", specifier = ">=0.4.6" },
@@ -187,31 +187,23 @@ dependencies = [
 [[package]]
 name = "anibridge-emby-provider"
 version = "0.2.0b2"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#7294b15ce082c83f68e377079db9ad6226ddb5f6" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "embyclient" },
     { name = "pydantic" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/31/8cdd8dcc39b899ec62d2eaa734d85487a563c4ee2d53fc633938fb00c27a/anibridge_emby_provider-0.2.0b2.tar.gz", hash = "sha256:e0a6509d2f325528035b7c6aa7ed8d15536c397ea5584ffb1ed11bcb11db3b6e", size = 11874, upload-time = "2026-03-13T00:45:28.4Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/c4/758ebc71f3d2dc43bcc495214712c96f70467cb8268d38d651902fdbb923/anibridge_emby_provider-0.2.0b2-py3-none-any.whl", hash = "sha256:92fef163860a915741d53f6c2d3981729a3c85d789041efd0076e1005fdde41c", size = 14588, upload-time = "2026-03-13T00:45:27.402Z" },
-]
 
 [[package]]
 name = "anibridge-jellyfin-provider"
 version = "0.2.0b7"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#ca36ef978f4f4a4cda802db812bed3dbb6ec8410" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "jellyfin-sdk" },
     { name = "pydantic" },
     { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f4/90/6553a4e3c70b00c78d224901c38c837c8ae337ca364ccab6956b9640e580/anibridge_jellyfin_provider-0.2.0b7.tar.gz", hash = "sha256:ff00413a6d9e160d84c70c33007edc42eeeb73029687cc1384b50de3aa1feff9", size = 12208, upload-time = "2026-03-17T21:39:59.071Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/e4/2293798e89a4a02fcd16d4a2b8970547dffde4d695d6f48bbda909449afb/anibridge_jellyfin_provider-0.2.0b7-py3-none-any.whl", hash = "sha256:6b26fc561563c3cd7ed2b272dd24cde5af2901bd20bde3cf83cc314cf69345fb", size = 15101, upload-time = "2026-03-17T21:39:59.703Z" },
 ]
 
 [[package]]
@@ -253,17 +245,13 @@ dependencies = [
 [[package]]
 name = "anibridge-plex-provider"
 version = "0.2.0b11"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#05a6e97a5d175ecc318ff14c7d0e7d1c47c09187" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-library-base" },
     { name = "plexapi" },
     { name = "pydantic" },
     { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/96/8cbb4a6912fb6595b41878ace3039113f154d3b1ba3b7dac736294b7b83a/anibridge_plex_provider-0.2.0b11.tar.gz", hash = "sha256:10083b57005d17800225d0cce08d2819016fc8a4053ffec4e9a152d681ce5c2e", size = 16579, upload-time = "2026-03-26T19:26:58.963Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/30/de6c6b56a9c692c2855a2fb46097da813620c05174a417383bd31bda0eaf/anibridge_plex_provider-0.2.0b11-py3-none-any.whl", hash = "sha256:df1ea13358f8d77677b4168a7d34a75e67337c717aaeb53fd2cab24d53c583a4", size = 20140, upload-time = "2026-03-26T19:26:58.063Z" },
 ]
 
 [[package]]
