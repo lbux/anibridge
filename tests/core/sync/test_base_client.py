@@ -1140,6 +1140,52 @@ async def test_sync_media_info_reports_rule_and_status_blocks(
 
 
 @pytest.mark.asyncio
+async def test_sync_media_info_reports_applied_sync_rules(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Sync diagnostics should include rules that supplied applied values."""
+    movie = make_movie(view_count=1)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    set_sync_rules(
+        stub_client,
+        {
+            "status": [
+                {
+                    "name": "Promote completed movie",
+                    "if": "computed.status == 'current' and computed.progress == 1",
+                    "set": "completed",
+                }
+            ]
+        },
+    )
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert result is SyncOutcome.SYNCED
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert record.info.get("applied_sync_rules") == (
+            "status(Promote completed movie)"
+        )
+        assert "status" in (record.info.get("applied_fields") or "")
+
+
+@pytest.mark.asyncio
 async def test_sync_media_skips_when_entry_up_to_date(
     stub_client: StubSyncClient,
 ) -> None:

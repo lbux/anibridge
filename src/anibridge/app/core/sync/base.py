@@ -38,6 +38,7 @@ class _FieldApplicationState:
     """Track why individual sync fields were blocked during planning."""
 
     pinned_blocked_fields: set[str] = dataclass_field(default_factory=set)
+    applied_sync_rules: dict[str, str] = dataclass_field(default_factory=dict)
     sync_rules_blocked: dict[str, str] = dataclass_field(default_factory=dict)
     status_gate_blocked: dict[str, str] = dataclass_field(default_factory=dict)
     destructive_blocked_fields: set[str] = dataclass_field(default_factory=set)
@@ -55,6 +56,11 @@ class _FieldApplicationState:
             self.destructive_blocked_fields.add(field_name)
         elif reason.startswith("sync_rules"):
             self.sync_rules_blocked[field_name] = reason.partition(":")[2]
+
+    def mark_applied_rule(self, field_name: str, reason: str | None) -> None:
+        """Record which sync rule supplied an applied field value."""
+        if reason and reason != "default":
+            self.applied_sync_rules[field_name] = reason
 
 
 class BaseSyncClient[
@@ -491,6 +497,9 @@ class BaseSyncClient[
         )
         if status_should_apply:
             setattr(planned_entry, SyncField.STATUS.value, status_rule.value)
+            field_state.mark_applied_rule(
+                SyncField.STATUS.value, status_rule.reason
+            )
         else:
             field_state.mark_block(SyncField.STATUS.value, status_reason)
         considered_attrs.add(SyncField.STATUS.value)
@@ -518,6 +527,10 @@ class BaseSyncClient[
                 "computed_status": status_rule.value,
                 "final_status": planned_entry.status,
                 "disabled_fields": sorted(disabled_fields),
+                "applied_sync_rules": [
+                    f"{k}({v})" if v else k
+                    for k, v in sorted(field_state.applied_sync_rules.items())
+                ],
                 "pinned_blocked": sorted(field_state.pinned_blocked_fields),
                 "sync_rules_blocked": [
                     f"{k}({v})" if v else k
@@ -749,6 +762,7 @@ class BaseSyncClient[
                 continue
 
             setattr(entry, sync_field.value, rule_decision.value)
+            field_state.mark_applied_rule(sync_field.value, rule_decision.reason)
             considered_attrs.add(sync_field.value)
 
     async def _calculate_computed_values(
