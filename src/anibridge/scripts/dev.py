@@ -354,7 +354,7 @@ def lint() -> None:
 
     try:
         if target in ("both", "backend"):
-            print_info("Running ruff linter on Python code...")
+            print_info("Running ruff linter and ty type checker on Python code...")
             subprocess.run(
                 [_python_tool("ruff"), "check", "."], cwd=ROOT_DIR, check=True
             )
@@ -363,6 +363,7 @@ def lint() -> None:
                 cwd=ROOT_DIR,
                 check=True,
             )
+            subprocess.run([_python_tool("ty"), "check", "."], cwd=ROOT_DIR, check=True)
             print_success("Python code linting passed!")
 
             for package_dir in _iter_package_dirs():
