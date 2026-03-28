@@ -245,10 +245,11 @@ dependencies = [
 [[package]]
 name = "anibridge-plex-provider"
 version = "0.2.0b11"
-source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#eef009b948595ac75537321758250629e29d45ea" }
+source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#c3e3341fb886b4022218968178e26cd82388906c" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-library-base" },
+    { name = "anibridge-utils" },
     { name = "plexapi" },
     { name = "pydantic" },
     { name = "requests" },
@@ -256,8 +257,8 @@ dependencies = [
 
 [[package]]
 name = "anibridge-utils"
-version = "0.2.0b4"
-source = { git = "https://github.com/anibridge/anibridge-utils.git?tag=main#9c087c2142bbaa0b0fadf8f100d56990f737ce9e" }
+version = "0.2.0b5"
+source = { git = "https://github.com/anibridge/anibridge-utils.git?tag=main#3e5b8cf64e1d579da329bbe13904b3240a9f3b80" }
 dependencies = [
     { name = "cachetools" },
     { name = "diskcache" },

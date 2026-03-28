@@ -4,7 +4,9 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from anibridge.utils.cache import cache, ttl_cache
+from anibridge.library.base import LibraryMedia
+from anibridge.list.base import ListMedia
+from anibridge.utils.cache import cache
 from pydantic import BaseModel
 from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import func
@@ -106,7 +108,7 @@ class HistoryService:
                         for pin in pin_rows
                     }
 
-        list_metadata_map: dict[tuple[str, str], ProviderMediaMetadata] = {}
+        list_media_map: dict[tuple[str, str], ListMedia] = {}
         if include_list_media:
             for namespace, keys in list_pairs.items():
                 if not keys:
@@ -115,9 +117,9 @@ class HistoryService:
                     profile, namespace, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
-                    list_metadata_map[(namespace, key)] = payload
+                    list_media_map[(namespace, key)] = payload
 
-        library_metadata_map: dict[tuple[str, str], ProviderMediaMetadata] = {}
+        library_media_map: dict[tuple[str, str], LibraryMedia] = {}
         if include_library_media:
             for (namespace, section_key), keys in library_pairs.items():
                 if not keys:
@@ -126,19 +128,43 @@ class HistoryService:
                     profile, namespace, section_key, tuple(sorted(keys))
                 )
                 for key, payload in metadata.items():
-                    library_metadata_map[(namespace, key)] = payload
+                    library_media_map[(namespace, key)] = payload
 
         dto_items: list[HistoryItem] = []
         for row in rows:
-            list_metadata = None
+            list_media: ListMedia | None = None
             if row.list_namespace and row.list_media_key:
-                list_metadata = list_metadata_map.get(
+                list_media = list_media_map.get(
                     (row.list_namespace, row.list_media_key)
                 )
-            library_metadata = None
+            library_media: LibraryMedia | None = None
             if row.library_namespace and row.library_media_key:
-                library_metadata = library_metadata_map.get(
+                library_media = library_media_map.get(
                     (row.library_namespace, row.library_media_key)
+                )
+
+            list_metadata: ProviderMediaMetadata | None = None
+            if list_media:
+                list_metadata = ProviderMediaMetadata.model_construct(
+                    namespace=row.list_namespace,
+                    key=row.list_media_key,
+                    title=list_media.title,
+                    poster_url=list_media.poster_image,
+                    external_url=list_media.external_url,
+                    labels=list_media.labels,
+                )
+            library_metadata: ProviderMediaMetadata | None = None
+            if library_media:
+                library_metadata = ProviderMediaMetadata.model_construct(
+                    namespace=row.library_namespace,
+                    key=row.library_media_key,
+                    title=library_media.title,
+                    # Special condition for posters since it's known to be expensive.
+                    # Only include if list media doesn't have a poster.
+                    poster_url=library_media.poster_image
+                    if not list_media or not list_media.poster_image
+                    else None,
+                    external_url=library_media.external_url,
                 )
 
             dto_items.append(
@@ -171,13 +197,12 @@ class HistoryService:
 
         return dto_items
 
-    @ttl_cache(ttl=60)
     async def _fetch_list_metadata_batch(
         self,
         profile: str,
         namespace: str,
         media_keys: tuple[str, ...],
-    ) -> dict[str, ProviderMediaMetadata]:
+    ) -> dict[str, ListMedia]:
         """Fetch list provider metadata for a batch of media keys."""
         if not media_keys:
             return {}
@@ -186,29 +211,21 @@ class HistoryService:
             return {}
 
         entries = await bridge.list_provider.get_entries_batch(media_keys)
-        metadata: dict[str, ProviderMediaMetadata] = {}
+        metadata: dict[str, ListMedia] = {}
         for entry in entries:
             if entry is None:
                 continue
             media = entry.media()
-            metadata[media.key] = ProviderMediaMetadata(
-                namespace=bridge.list_provider.NAMESPACE,
-                key=media.key,
-                title=media.title,
-                poster_url=media.poster_image,
-                external_url=media.external_url,
-                labels=(list(media.labels) if media.labels else None),
-            )
+            metadata[media.key] = media
         return metadata
 
-    @ttl_cache(ttl=60)
     async def _fetch_library_metadata_batch(
         self,
         profile: str,
         namespace: str,
         section_key: str | None,
         media_keys: tuple[str, ...],
-    ) -> dict[str, ProviderMediaMetadata]:
+    ) -> dict[str, LibraryMedia]:
         if not media_keys:
             return {}
         if section_key is None:
@@ -222,17 +239,11 @@ class HistoryService:
         if section is None:
             return {}
 
-        metadata: dict[str, ProviderMediaMetadata] = {}
+        metadata: dict[str, LibraryMedia] = {}
         items = await bridge.library_provider.list_items(section, keys=list(media_keys))
         for item in items:
-            key = str(item.key)
-            metadata[key] = ProviderMediaMetadata(
-                namespace=bridge.library_provider.NAMESPACE,
-                key=key,
-                title=item.title,
-                poster_url=item.media().poster_image,
-                external_url=item.media().external_url,
-            )
+            media = item.media()
+            metadata[media.key] = media
         return metadata
 
     async def _fetch_profile_stats(
@@ -569,8 +580,6 @@ class HistoryService:
             ctx.session.commit()
             ctx.session.refresh(undo_row)
 
-        await self.clear_cache()
-
         dto_items = await self._build_history_items(profile, [undo_row])
         return dto_items[0]
 
@@ -620,11 +629,6 @@ class HistoryService:
             name=f"retry_history_item:{profile}:{item_id}",
         )
 
-    async def clear_cache(self) -> None:
-        """Clear cached provider metadata batches."""
-        self._fetch_list_metadata_batch.cache_clear()
-        self._fetch_library_metadata_batch.cache_clear()
-
     async def purge_ephemeral_items(self) -> int:
         """Delete ephemeral history rows."""
         with db() as ctx:
@@ -641,19 +645,7 @@ class HistoryService:
                 .delete(synchronize_session=False)
             )
             ctx.session.commit()
-        await self.clear_cache()
         return count
-
-    def get_cache_info(self) -> dict[str, Any]:
-        """Get cache statistics for monitoring.
-
-        Returns:
-            Dictionary with cache hit/miss statistics.
-        """
-        return {
-            "list_cache": self._fetch_list_metadata_batch.cache_info(),
-            "library_cache": self._fetch_library_metadata_batch.cache_info(),
-        }
 
 
 @cache

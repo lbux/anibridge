@@ -250,10 +250,6 @@ async def test_history_service_get_page_enriches_metadata(history_env):
     assert item.info == {"source": "test-seed"}
     assert item.ephemeral is False
 
-    cache_info = service.get_cache_info()
-    assert cache_info["list_cache"].hits >= 0
-    await service.clear_cache()
-
 
 @pytest.mark.asyncio
 async def test_history_service_get_page_includes_ephemeral_flag(history_env):
@@ -476,22 +472,6 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
         "profile", "_dummy-library", "missing", ("lib1",)
     )
     assert library_result == {}
-
-    await service.clear_cache()
-
-
-@pytest.mark.asyncio
-async def test_history_service_clear_all_caches(history_env):
-    """clear_all_caches resets cache state metrics."""
-    service = HistoryService()
-    await service._fetch_list_metadata_batch("profile", "alist", ("lst1",))
-    await service._fetch_library_metadata_batch(
-        "profile", "_dummy-library", "1", ("lib1",)
-    )
-    await service.clear_cache()
-    info = service.get_cache_info()
-    assert info["list_cache"].currsize == 0
-    assert info["library_cache"].currsize == 0
 
 
 @pytest.mark.asyncio
