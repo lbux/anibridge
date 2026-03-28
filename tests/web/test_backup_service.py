@@ -12,6 +12,7 @@ from anibridge.app.web.services.backup_service import (
     InvalidBackupFilenameError,
     ProfileNotFoundError,
     SchedulerNotInitializedError,
+    SchedulerUnavailableError,
 )
 from anibridge.app.web.state import get_app_state
 
@@ -52,6 +53,8 @@ class DummyScheduler(SimpleNamespace):
     """Scheduler stub exposing the bridge mapping used by the service."""
 
     bridge_clients: dict[str, DummyBridge]
+    global_config: Any
+    failed_profile_errors: dict[str, str]
 
 
 @pytest.fixture()
@@ -62,7 +65,17 @@ def configured_scheduler(tmp_path: Path):
         global_config=SimpleNamespace(data_path=tmp_path),
         list_provider=provider,
     )
-    scheduler = DummyScheduler(bridge_clients={"primary": bridge})
+    scheduler = DummyScheduler(
+        bridge_clients={"primary": bridge},
+        global_config=SimpleNamespace(
+            data_path=tmp_path,
+            profiles={
+                "primary": SimpleNamespace(list_provider="alist"),
+                "errored": SimpleNamespace(list_provider="alist"),
+            },
+        ),
+        failed_profile_errors={},
+    )
     state = get_app_state()
     state.scheduler = cast(Any, scheduler)
     yield tmp_path, provider, scheduler
@@ -123,9 +136,61 @@ def test_backup_service_requires_scheduler_and_known_profiles():
     with pytest.raises(SchedulerNotInitializedError):
         service.list_backups("primary")
 
-    scheduler = DummyScheduler(bridge_clients={})
+    scheduler = DummyScheduler(
+        bridge_clients={},
+        global_config=SimpleNamespace(data_path=Path("."), profiles={}),
+        failed_profile_errors={},
+    )
     state.scheduler = cast(Any, scheduler)
     with pytest.raises(ProfileNotFoundError):
         service.list_backups("unknown")
 
     state.scheduler = None
+
+
+def test_list_backups_allows_errored_profiles(configured_scheduler):
+    """Errored profiles should still list backups from disk."""
+    tmp_path, _, scheduler = configured_scheduler
+    service = BackupService()
+
+    file_path = tmp_path / "backups" / "errored"
+    file_path.mkdir(parents=True, exist_ok=True)
+    backup_name = "anibridge_errored_alist_20240303030303.json"
+    (file_path / backup_name).write_bytes(orjson.dumps({"entries": []}))
+
+    scheduler.failed_profile_errors["errored"] = "Provider auth failed"
+
+    items = service.list_backups("errored")
+    assert [item.filename for item in items] == [backup_name]
+
+
+def test_errored_profile_raw_preview_is_allowed(configured_scheduler):
+    """Raw preview should still work for errored profiles."""
+    tmp_path, _, scheduler = configured_scheduler
+    service = BackupService()
+
+    file_path = tmp_path / "backups" / "errored"
+    file_path.mkdir(parents=True, exist_ok=True)
+    backup_name = "anibridge_errored_alist_20240303030303.json"
+    (file_path / backup_name).write_bytes(orjson.dumps({"entries": []}))
+
+    scheduler.failed_profile_errors["errored"] = "Provider auth failed"
+
+    assert service.read_backup_raw("errored", backup_name) == {"entries": []}
+
+
+@pytest.mark.asyncio
+async def test_errored_profile_restore_is_blocked(configured_scheduler):
+    """Restore endpoint logic should reject errored profiles."""
+    tmp_path, _, scheduler = configured_scheduler
+    service = BackupService()
+
+    file_path = tmp_path / "backups" / "errored"
+    file_path.mkdir(parents=True, exist_ok=True)
+    backup_name = "anibridge_errored_alist_20240303030303.json"
+    (file_path / backup_name).write_bytes(orjson.dumps({"entries": []}))
+
+    scheduler.failed_profile_errors["errored"] = "Provider auth failed"
+
+    with pytest.raises(SchedulerUnavailableError):
+        await service.restore_backup("errored", backup_name)

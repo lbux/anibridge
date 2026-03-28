@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import orjson
 from anibridge.utils.cache import cache
@@ -15,11 +15,9 @@ from anibridge.app.exceptions import (
     InvalidBackupFilenameError,
     ProfileNotFoundError,
     SchedulerNotInitializedError,
+    SchedulerUnavailableError,
 )
 from anibridge.app.web.state import get_app_state
-
-if TYPE_CHECKING:
-    from anibridge.app.core.bridge import BridgeClient
 
 __all__ = ["BackupService", "get_backup_service"]
 
@@ -38,21 +36,6 @@ class BackupMeta(BaseModel):
 class BackupService:
     """Service for listing and restoring provider-managed backups."""
 
-    def _get_profile_bridge(self, profile: str) -> BridgeClient:
-        """Get the scheduler bridge client for a profile."""
-        scheduler = get_app_state().scheduler
-        if not scheduler:
-            raise SchedulerNotInitializedError("Scheduler not available")
-        bridge = scheduler.bridge_clients.get(profile)
-        if not bridge:
-            raise ProfileNotFoundError(f"Unknown profile: {profile}")
-        return bridge
-
-    def _backup_dir(self, profile: str) -> Path:
-        """Get the backup directory for a profile."""
-        bridge = self._get_profile_bridge(profile)
-        return bridge.global_config.data_path / "backups"
-
     def list_backups(self, profile: str) -> list[BackupMeta]:
         """Enumerate available backups for a profile.
 
@@ -66,20 +49,36 @@ class BackupService:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
         """
+        scheduler = get_app_state().scheduler
+        if not scheduler:
+            raise SchedulerNotInitializedError("Scheduler not available")
+        profile_config = scheduler.global_config.profiles.get(profile)
+        if profile_config is None:
+            raise ProfileNotFoundError(f"Unknown profile: {profile}")
+
         log.debug("Listing backups for profile $$'%s'$$", profile)
-        bdir = self._backup_dir(profile) / profile
+        bdir = scheduler.global_config.data_path / "backups" / profile
         if not bdir.exists():
             log.debug("Backup directory $$'%s'$$ does not exist", bdir)
             return []
         metas: list[BackupMeta] = []
         now = datetime.now(UTC)
 
-        bridge = self._get_profile_bridge(profile)
-        list_provider = bridge.list_provider
-        provider_user = list_provider.user()
+        bridge = scheduler.bridge_clients.get(profile)
+        list_provider = bridge.list_provider if bridge is not None else None
+        provider_user = list_provider.user() if list_provider is not None else None
 
         count = 0
-        pattern = f"anibridge_{profile}_{list_provider.NAMESPACE}_*.json"
+        provider_namespace = (
+            list_provider.NAMESPACE if list_provider is not None else None
+        )
+        pattern = (
+            f"anibridge_{profile}_{provider_namespace}_*.json"
+            if provider_namespace
+            else f"anibridge_{profile}_{profile_config.list_provider}_*.json"
+        )
+        if scheduler.failed_profile_errors.get(profile):
+            pattern = f"anibridge_{profile}_*.json"
         for f in sorted(bdir.glob(pattern)):
             try:
                 parts = f.name.split(".")
@@ -130,18 +129,24 @@ class BackupService:
             InvalidBackupFilenameError: If the filename is invalid.
             BackupFileNotFoundError: If the file does not exist.
         """
+        scheduler = get_app_state().scheduler
+        if not scheduler:
+            raise SchedulerNotInitializedError("Scheduler not available")
+        if profile not in scheduler.global_config.profiles:
+            raise ProfileNotFoundError(f"Unknown profile: {profile}")
+
         log.debug(
             "Reading raw backup $$'%s'$$ for profile $$'%s'$$",
             filename,
             profile,
         )
-        path = self._resolve_backup_path(profile, filename)
+        bdir = scheduler.global_config.data_path / "backups" / profile
+        path = self._resolve_backup_path(bdir, filename)
 
         return orjson.loads(path.read_bytes())
 
-    def _resolve_backup_path(self, profile: str, filename: str) -> Path:
+    def _resolve_backup_path(self, bdir: Path, filename: str) -> Path:
         """Resolve and validate a backup filename for a profile."""
-        bdir = self._backup_dir(profile) / profile
         path = (bdir / filename).resolve()
 
         if path.parent != bdir.resolve():
@@ -161,17 +166,34 @@ class BackupService:
         Raises:
             SchedulerNotInitializedError: If the scheduler is not running.
             ProfileNotFoundError: If the profile is unknown.
+            SchedulerUnavailableError: If the profile failed initialization.
             InvalidBackupFilenameError: If the filename is invalid.
             BackupFileNotFoundError: If the file does not exist.
             BackupParseError: If there was an error parsing or restoring the backup.
         """
+        scheduler = get_app_state().scheduler
+        if not scheduler:
+            raise SchedulerNotInitializedError("Scheduler not available")
+        if profile not in scheduler.global_config.profiles:
+            raise ProfileNotFoundError(f"Unknown profile: {profile}")
+        init_error = scheduler.failed_profile_errors.get(profile)
+        if init_error:
+            raise SchedulerUnavailableError(
+                f"Profile '{profile}' is unavailable: {init_error}"
+            )
+
         log.info(
             "Restoring backup $$'%s'$$ for profile $$'%s'$$",
             filename,
             profile,
         )
-        bridge = self._get_profile_bridge(profile)
-        path = self._resolve_backup_path(profile, filename)
+        bridge = scheduler.bridge_clients.get(profile)
+        if bridge is None:
+            raise SchedulerUnavailableError(
+                f"Profile '{profile}' is unavailable for restore"
+            )
+        bdir = scheduler.global_config.data_path / "backups" / profile
+        path = self._resolve_backup_path(bdir, filename)
 
         raw_backup = path.read_text(encoding="utf-8")
         try:
