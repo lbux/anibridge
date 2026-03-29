@@ -40,3 +40,8 @@ export async function loadCapabilities(): Promise<FieldCapability[] | null> {
 
     return inFlight;
 }
+
+export function clearCapabilitiesCache(): void {
+    cachedCapabilities = undefined;
+    inFlight = null;
+}

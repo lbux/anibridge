@@ -8,6 +8,7 @@
     import { browser } from "$app/environment";
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
+    import { clearCapabilitiesCache } from "$lib/components/mappings/capabilities-cache";
     import {
         COLUMNS_STORAGE_KEY,
         STATIC_COLUMNS,
@@ -37,6 +38,7 @@
     let editorTarget = $state<Mapping | null>(null);
 
     let pendingReplaceState: boolean | null = null;
+    let searchBarKey = $state(0);
 
     function queuePushState() {
         pendingReplaceState = false;
@@ -136,6 +138,8 @@
 
     async function handleSaved() {
         editorOpen = false;
+        clearCapabilitiesCache();
+        searchBarKey += 1;
         await load();
     }
 
@@ -242,15 +246,17 @@
                 Browse and override external ID mappings
             </p>
         </div>
-        <SearchBar
-            bind:query
-            bind:customOnly
-            bind:page
-            {loading}
-            onLoad={load}
-            onCancel={cancelLoad}
-            onCreate={openCreateEditor}
-            onSubmit={handleSearchSubmit} />
+        {#key searchBarKey}
+            <SearchBar
+                bind:query
+                bind:customOnly
+                bind:page
+                {loading}
+                onLoad={load}
+                onCancel={cancelLoad}
+                onCreate={openCreateEditor}
+                onSubmit={handleSearchSubmit} />
+        {/key}
     </div>
     <div
         class="relative flex h-[70vh] flex-col overflow-hidden rounded-md border border-slate-800/70 bg-slate-900/40 backdrop-blur-sm">

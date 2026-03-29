@@ -1,12 +1,14 @@
 """Query field specifications for mapping graph search."""
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
 
 from anibridge.utils.cache import cache
+from sqlalchemy.sql import select
 
+from anibridge.app.config.database import db
 from anibridge.app.models.db.animap import AnimapEntry
 from anibridge.app.models.schemas.anilist import MediaFormat, MediaStatus
 
@@ -264,7 +266,27 @@ def get_query_field_specs() -> list[QueryFieldSpec]:
     Returns:
         list[QueryFieldSpec]: All available query field specifications.
     """
-    return list(_QUERY_FIELDS)
+    # Collect dynamic `source.provider` and `target.provider` values from the database.
+    with db() as ctx:
+        stmt = (
+            select(AnimapEntry.provider)
+            .where(AnimapEntry.provider != "")
+            .distinct()
+            .order_by(AnimapEntry.provider)
+        )
+        provider_values = tuple(
+            provider.strip()
+            for provider in ctx.session.execute(stmt).scalars()
+            if provider and provider.strip()
+        )
+
+    # Inject these values into the relevant field specs.
+    return [
+        replace(spec, values=provider_values)
+        if spec.key in ("source.provider", "target.provider")
+        else spec
+        for spec in _QUERY_FIELDS
+    ]
 
 
 def get_query_field_map() -> Mapping[str, QueryFieldSpec]:
@@ -273,4 +295,4 @@ def get_query_field_map() -> Mapping[str, QueryFieldSpec]:
     Returns:
         Mapping[str, QueryFieldSpec]: Mapping of field keys and aliases to specs.
     """
-    return _FIELD_MAP
+    return dict(_FIELD_MAP)
