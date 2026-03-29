@@ -14,7 +14,7 @@ from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.core.sched.coord import GlobalSyncCoordinator
 from anibridge.app.core.sched.profile import ProfileScheduler
-from anibridge.app.exceptions import ProfileNotFoundError
+from anibridge.app.exceptions import ProfileNotFoundError, SchedulerUnavailableError
 from anibridge.app.utils.cron import format_interval, is_enabled_interval
 from anibridge.app.utils.human import human_duration
 
@@ -79,25 +79,14 @@ class SchedulerClient:
 
         async def init_bridge(profile_name: str, profile_config: Any) -> None:
             try:
-                log.info("[%s] Setting up bridge client", profile_name)
-                bridge_client = BridgeClient(
-                    profile_name=profile_name,
-                    profile_config=profile_config,
-                    global_config=self.global_config,
-                    shared_animap_client=self.shared_animap_client,
+                bridge_client = await self._initialize_bridge_client(
+                    profile_name, profile_config
                 )
-                await bridge_client.initialize()
                 self.bridge_clients[profile_name] = bridge_client
                 self.failed_profile_errors.pop(profile_name, None)
-                log.info("[%s] Bridge client initialized", profile_name)
             except Exception as exc:
                 detail = str(exc).strip() or "Failed to initialize profile"
                 self.failed_profile_errors[profile_name] = detail
-                log.error("[%s] Bridge client setup failed", profile_name)
-                log.exception(
-                    "[%s] Bridge setup error details",
-                    profile_name,
-                )
 
         initialize_tasks: list[asyncio.Task] = []
         for profile_name, profile_config in self.global_config.profiles.items():
@@ -111,6 +100,83 @@ class SchedulerClient:
             "Application scheduler initialized with %s profile(s)",
             len(self.bridge_clients),
         )
+
+    async def _initialize_bridge_client(
+        self, profile_name: str, profile_config: Any
+    ) -> BridgeClient:
+        """Build and initialize a bridge client for the given profile."""
+        log.info("[%s] Setting up bridge client", profile_name)
+
+        bridge_client: BridgeClient | None = None
+        try:
+            bridge_client = BridgeClient(
+                profile_name=profile_name,
+                profile_config=profile_config,
+                global_config=self.global_config,
+                shared_animap_client=self.shared_animap_client,
+            )
+            await bridge_client.initialize()
+        except Exception:
+            log.error("[%s] Bridge client setup failed", profile_name)
+            log.exception(
+                "[%s] Bridge setup error details",
+                profile_name,
+            )
+            if bridge_client is not None:
+                with contextlib.suppress(Exception):
+                    await bridge_client.close()
+            raise
+
+        log.info("[%s] Bridge client initialized", profile_name)
+        return bridge_client
+
+    async def _start_profile_scheduler(
+        self, profile_name: str, bridge_client: BridgeClient
+    ) -> None:
+        """Create and start the runtime scheduler for a single profile."""
+        profile_config = self.global_config.get_profile(profile_name)
+
+        log.info(
+            "[%s] Starting scheduler: poll_interval=%s, scan_interval=%s, "
+            "modes=%s, full_scan=%s, destructive=%s",
+            profile_name,
+            format_interval(profile_config.poll_interval),
+            format_interval(profile_config.scan_interval),
+            profile_config.scan_modes,
+            "enabled" if profile_config.full_scan else "disabled",
+            "enabled" if profile_config.destructive_sync else "disabled",
+        )
+
+        scheduler = ProfileScheduler(
+            profile_name=profile_name,
+            bridge_client=bridge_client,
+            poll_interval=profile_config.poll_interval,
+            scan_interval=profile_config.scan_interval,
+            scan_modes=profile_config.scan_modes,
+            before_sync=self._sync_coordinator.acquire_profile_slot,
+            after_sync=self._sync_coordinator.release_profile_slot,
+            stop_event=self.stop_event,
+        )
+
+        self.profile_schedulers[profile_name] = scheduler
+        await scheduler.start()
+
+        if profile_config.scan_modes:
+            next_sync_time = "in progress"
+            if (
+                ScanMode.PERIODIC in profile_config.scan_modes
+                and is_enabled_interval(profile_config.scan_interval)
+            ):
+                next_sync = datetime.now(UTC).astimezone()
+                next_sync_time = "at {}".format(
+                    next_sync.strftime("%Y-%m-%d %H:%M:%S")
+                )
+
+            log.info(
+                "[%s] Scheduler started, next sync: %s",
+                profile_name,
+                next_sync_time,
+            )
 
     async def start(self) -> None:
         """Start all profile schedulers and global tasks."""
@@ -127,49 +193,7 @@ class SchedulerClient:
         self._daily_sync_task = asyncio.create_task(self._daily_db_sync_loop())
 
         for profile_name, bridge_client in self.bridge_clients.items():
-            profile_config = self.global_config.get_profile(profile_name)
-
-            log.info(
-                "[%s] Starting scheduler: poll_interval=%s, scan_interval=%s, "
-                "modes=%s, full_scan=%s, destructive=%s",
-                profile_name,
-                format_interval(profile_config.poll_interval),
-                format_interval(profile_config.scan_interval),
-                profile_config.scan_modes,
-                "enabled" if profile_config.full_scan else "disabled",
-                "enabled" if profile_config.destructive_sync else "disabled",
-            )
-
-            scheduler = ProfileScheduler(
-                profile_name=profile_name,
-                bridge_client=bridge_client,
-                poll_interval=profile_config.poll_interval,
-                scan_interval=profile_config.scan_interval,
-                scan_modes=profile_config.scan_modes,
-                before_sync=self._sync_coordinator.acquire_profile_slot,
-                after_sync=self._sync_coordinator.release_profile_slot,
-                stop_event=self.stop_event,
-            )
-
-            self.profile_schedulers[profile_name] = scheduler
-            await scheduler.start()
-
-            if profile_config.scan_modes:
-                next_sync_time = "in progress"
-                if (
-                    ScanMode.PERIODIC in profile_config.scan_modes
-                    and is_enabled_interval(profile_config.scan_interval)
-                ):
-                    next_sync = datetime.now(UTC).astimezone()
-                    next_sync_time = "at {}".format(
-                        next_sync.strftime("%Y-%m-%d %H:%M:%S")
-                    )
-
-                log.info(
-                    "[%s] Scheduler started, next sync: %s",
-                    profile_name,
-                    next_sync_time,
-                )
+            await self._start_profile_scheduler(profile_name, bridge_client)
 
         if self.profile_schedulers and all(
             not self.global_config.get_profile(name).scan_modes
@@ -492,6 +516,61 @@ class SchedulerClient:
                 await asyncio.sleep(3600)  # Retry after 1 hour on error
 
         log.info("Daily database sync scheduler stopped")
+
+    async def reinitialize_failed_profile(self, profile_name: str) -> None:
+        """Retry bridge initialization for a profile that previously failed."""
+        if profile_name not in self.global_config.profiles:
+            raise ProfileNotFoundError(f"Profile '{profile_name}' not found")
+
+        async def _reinitialize() -> None:
+            if (
+                profile_name in self.bridge_clients
+                and profile_name not in self.failed_profile_errors
+            ):
+                log.info(
+                    "[%s] Profile already initialized; skipping reinitialization",
+                    profile_name,
+                )
+                return
+
+            if profile_name not in self.failed_profile_errors:
+                raise SchedulerUnavailableError(
+                    f"Profile '{profile_name}' is not in a failed initialization "
+                    "state"
+                )
+
+            log.info("[%s] Retrying failed profile initialization", profile_name)
+
+            existing_scheduler = self.profile_schedulers.pop(profile_name, None)
+            if existing_scheduler is not None:
+                await existing_scheduler.stop()
+
+            existing_bridge = self.bridge_clients.pop(profile_name, None)
+            if existing_bridge is not None:
+                await existing_bridge.close()
+
+            profile_config = self.global_config.get_profile(profile_name)
+            try:
+                bridge_client = await self._initialize_bridge_client(
+                    profile_name, profile_config
+                )
+            except Exception as exc:
+                detail = str(exc).strip() or "Failed to initialize profile"
+                self.failed_profile_errors[profile_name] = detail
+                raise SchedulerUnavailableError(
+                    f"Failed to reinitialize profile '{profile_name}': {detail}"
+                ) from exc
+
+            self.bridge_clients[profile_name] = bridge_client
+            self.failed_profile_errors.pop(profile_name, None)
+
+            if self._running:
+                await self._start_profile_scheduler(profile_name, bridge_client)
+
+            self.get_profiles_for_library_provider.cache_clear()
+            log.success("[%s] Profile reinitialized successfully", profile_name)
+
+        await self._sync_coordinator.run_maintenance(_reinitialize)
 
     @lru_cache(maxsize=128)
     def get_profiles_for_library_provider(self, namespace: str) -> Sequence[str]:

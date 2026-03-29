@@ -298,6 +298,77 @@ async def test_scheduler_initialize_and_start(
 
 
 @pytest.mark.asyncio
+async def test_scheduler_reinitialize_failed_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failed profiles should be reinitialized into active bridge clients."""
+    profiles = {"broken": FakeProfileConfig(scan_modes=[])}
+    config = FakeConfig(profiles=profiles, data_path=tmp_path)
+
+    monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
+    monkeypatch.setattr(
+        sched_module,
+        "BridgeClient",
+        lambda profile_name, *_args, **_kwargs: FakeBridgeClient(profile_name),
+    )
+
+    class StubScheduler:
+        def __init__(self, *_, **__):
+            self.started = False
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def stop(self) -> None:
+            return None
+
+    monkeypatch.setattr(sched_module, "ProfileScheduler", StubScheduler)
+
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler._running = True
+    scheduler.failed_profile_errors["broken"] = "Provider auth failed"
+
+    await scheduler.reinitialize_failed_profile("broken")
+
+    assert "broken" in scheduler.bridge_clients
+    assert scheduler.failed_profile_errors.get("broken") is None
+    assert (
+        cast(FakeBridgeClient, scheduler.bridge_clients["broken"]).initialized is True
+    )
+    assert cast(StubScheduler, scheduler.profile_schedulers["broken"]).started is True
+
+
+@pytest.mark.asyncio
+async def test_scheduler_reinitialize_failed_profile_preserves_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Retrying a failed profile should surface and store the latest error."""
+    profiles = {"broken": FakeProfileConfig(scan_modes=[])}
+    config = FakeConfig(profiles=profiles, data_path=tmp_path)
+
+    monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
+
+    class BrokenBridge(FakeBridgeClient):
+        async def initialize(self) -> None:
+            raise RuntimeError("still broken")
+
+    monkeypatch.setattr(
+        sched_module,
+        "BridgeClient",
+        lambda profile_name, *_args, **_kwargs: BrokenBridge(profile_name),
+    )
+
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler.failed_profile_errors["broken"] = "Provider auth failed"
+
+    with pytest.raises(SchedulerUnavailableError, match="still broken"):
+        await scheduler.reinitialize_failed_profile("broken")
+
+    assert scheduler.failed_profile_errors["broken"] == "still broken"
+    assert "broken" not in scheduler.bridge_clients
+
+
+@pytest.mark.asyncio
 async def test_scheduler_start_and_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
