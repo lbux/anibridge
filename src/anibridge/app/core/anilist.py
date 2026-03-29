@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import aiohttp
-from anibridge.providers.list.anilist.client import anilist_limiter
+from anibridge.providers.list.anilist.client import global_anilist_limiter
 from anibridge.utils.cache import cache, ttl_cache
 
 from anibridge.app import __version__, log
@@ -352,7 +352,7 @@ class AniListClient:
 
         return result
 
-    @anilist_limiter
+    @global_anilist_limiter
     async def _make_request(
         self, query: str, variables: dict | None = None, retry_count: int = 0
     ) -> dict:
