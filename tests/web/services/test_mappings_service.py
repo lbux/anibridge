@@ -399,3 +399,38 @@ async def test_attach_anilist_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     assert enriched[0].anilist is not None
     assert enriched[0].anilist.title is not None
     assert enriched[0].anilist.title.romaji == "Mock"
+
+
+@pytest.mark.asyncio
+async def test_list_mappings_with_anilist_degrades_when_metadata_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AniList enrichment failures should not break mappings listing."""
+    service = MappingsService()
+
+    class DummyClient:
+        async def batch_get_anime(self, ids: list[int]) -> list[Media]:
+            raise RuntimeError(f"boom: {ids}")
+
+    class DummyState:
+        async def ensure_public_anilist(self) -> DummyClient:
+            return DummyClient()
+
+    monkeypatch.setattr(
+        "anibridge.app.web.services.mappings_service.get_app_state",
+        lambda: DummyState(),
+    )
+
+    with _fresh_tables():
+        _seed_graph()
+        items, total = await service.list_mappings(
+            page=1,
+            per_page=10,
+            q=None,
+            custom_only=False,
+            with_anilist=True,
+        )
+
+    assert total == 2
+    assert len(items) == 2
+    assert all(item["anilist"] is None for item in items)

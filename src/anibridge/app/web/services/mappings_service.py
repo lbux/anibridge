@@ -12,6 +12,7 @@ from anibridge.utils.cache import cache
 from anibridge.utils.mappings import descriptor_key, parse_mapping_descriptor
 from sqlalchemy.sql import func, or_, select
 
+from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import (
@@ -731,8 +732,17 @@ class MappingsService:
         if not anilist_ids:
             return items
 
-        client = await get_app_state().ensure_public_anilist()
-        metadata = await client.batch_get_anime(anilist_ids)
+        try:
+            client = await get_app_state().ensure_public_anilist()
+            metadata = await client.batch_get_anime(anilist_ids)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.debug(
+                "AniList metadata unavailable; returning items without enrichment"
+            )
+            return items
+
         by_id = {m.id: m for m in metadata}
 
         return [
