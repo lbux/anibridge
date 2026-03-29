@@ -7,6 +7,15 @@ import Ajv, { type ValidateFunction } from "ajv";
 import { stringify } from "yaml";
 
 export type SchemaObject = Record<string, unknown>;
+export type SchemaExtraBehavior = "allow" | "ignore" | "forbid";
+export type SchemaPropertyBehavior =
+    | "defined"
+    | "allowed-extra"
+    | "ignored-extra"
+    | "forbidden-extra"
+    | "unknown";
+
+const EXTRA_BEHAVIOR_KEY = "x-anibridge-extraBehavior";
 
 export type SchemaDoc = {
     title?: string;
@@ -59,6 +68,14 @@ function getSchemaType(schema: SchemaObject): string | undefined {
         }
     }
     return undefined;
+}
+
+function getExtraBehavior(schema: SchemaObject): SchemaExtraBehavior | null {
+    const value = schema[EXTRA_BEHAVIOR_KEY];
+    if (value === "allow" || value === "ignore" || value === "forbid") {
+        return value;
+    }
+    return null;
 }
 
 function formatScalarValue(value: unknown): string {
@@ -211,6 +228,23 @@ function getPathCandidates(
     return candidates;
 }
 
+function matchesPatternProperties(node: SchemaObject, key: string): boolean {
+    const patternProperties = asSchemaObject(node["patternProperties"]);
+    if (!patternProperties) return false;
+
+    for (const pattern of Object.keys(patternProperties)) {
+        try {
+            if (new RegExp(pattern).test(key)) {
+                return true;
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    return false;
+}
+
 function collectPropertySchemas(
     root: SchemaObject,
     path: Array<string | number>,
@@ -237,9 +271,7 @@ function collectPropertySchemas(
 function extractSchemaDoc(schema: SchemaObject): SchemaDoc {
     const title = typeof schema["title"] === "string" ? schema["title"] : undefined;
     const description =
-        typeof schema["description"] === "string"
-            ? schema["description"]
-            : undefined;
+        typeof schema["description"] === "string" ? schema["description"] : undefined;
     const defaultValue =
         schema["default"] !== undefined
             ? formatScalarValue(schema["default"])
@@ -252,20 +284,10 @@ function extractSchemaDoc(schema: SchemaObject): SchemaDoc {
         : undefined;
     const type = getSchemaType(schema);
 
-    return {
-        title,
-        description,
-        defaultValue,
-        examples,
-        enumValues,
-        type,
-    };
+    return { title, description, defaultValue, examples, enumValues, type };
 }
 
-function getSchemaDefaultValue(
-    root: SchemaObject,
-    schema: SchemaObject,
-): unknown {
+function getSchemaDefaultValue(root: SchemaObject, schema: SchemaObject): unknown {
     const candidates = expandCandidates(root, schema, new Set<string>());
 
     for (const candidate of candidates) {
@@ -303,10 +325,7 @@ function getPropertyInsertText(
     if (defaultValue !== undefined) {
         const rendered = renderYamlValue(defaultValue);
         if (rendered.includes("\n")) {
-            return {
-                apply: `${key}:\n${indentBlock(rendered)}`,
-                isSnippet: false,
-            };
+            return { apply: `${key}:\n${indentBlock(rendered)}`, isSnippet: false };
         }
 
         return { apply: `${key}: ${rendered}`, isSnippet: false };
@@ -495,4 +514,58 @@ export function getSchemaDocForPath(
     }
 
     return null;
+}
+
+export function getPropertyBehaviorForPath(
+    schema: SchemaObject | null,
+    path: Array<string | number>,
+    key: string,
+): SchemaPropertyBehavior {
+    if (!schema) return "unknown";
+
+    const candidates = getPathCandidates(schema, path);
+    if (candidates.length === 0) return "unknown";
+
+    let supportsDefinedProperty = false;
+    let supportsAllowedExtra = false;
+    let supportsIgnoredExtra = false;
+    let supportsForbiddenExtra = false;
+
+    for (const candidate of candidates) {
+        const expanded = expandCandidates(schema, candidate, new Set<string>());
+        for (const node of expanded) {
+            const properties = asSchemaObject(node["properties"]);
+            if (properties && key in properties) {
+                supportsDefinedProperty = true;
+                continue;
+            }
+
+            if (matchesPatternProperties(node, key)) {
+                supportsDefinedProperty = true;
+                continue;
+            }
+
+            const additionalProperties = node["additionalProperties"];
+            if (additionalProperties === true || asSchemaObject(additionalProperties)) {
+                supportsAllowedExtra = true;
+                continue;
+            }
+
+            const extraBehavior = getExtraBehavior(node);
+            if (extraBehavior === "ignore") {
+                supportsIgnoredExtra = true;
+                continue;
+            }
+
+            if (extraBehavior === "forbid" || additionalProperties === false) {
+                supportsForbiddenExtra = true;
+            }
+        }
+    }
+
+    if (supportsDefinedProperty) return "defined";
+    if (supportsAllowedExtra) return "allowed-extra";
+    if (supportsIgnoredExtra) return "ignored-extra";
+    if (supportsForbiddenExtra) return "forbidden-extra";
+    return "unknown";
 }

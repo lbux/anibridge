@@ -8,12 +8,9 @@
         analyzeYamlSource,
         buildSchemaDiagnostics,
         diagnosticsToMarkers,
+        findIgnoredExtraRanges,
     } from "./yaml-analysis";
-    import {
-        asSchemaObject,
-        createValidator,
-        type SchemaObject,
-    } from "./yaml-schema";
+    import { asSchemaObject, createValidator, type SchemaObject } from "./yaml-schema";
 
     type Props = {
         value?: string;
@@ -46,10 +43,11 @@
     let editor = $state<Monaco.editor.IStandaloneCodeEditor | null>(null);
     let model = $state<Monaco.editor.ITextModel | null>(null);
     let ownsModel = false;
-    let resizeObserver = $state<ResizeObserver | null>(null);
-    let changeDisposable = $state<Monaco.IDisposable | null>(null);
-    let autoHeightDispose = $state<(() => void) | null>(null);
+    let resizeObserver: ResizeObserver | null = null;
+    let changeDisposable: Monaco.IDisposable | null = null;
+    let autoHeightDispose: (() => void) | null = null;
     let validationMarkers = $state<Monaco.editor.IMarkerData[]>([]);
+    let ignoredDecorationIds: string[] = [];
     let resolvedSchema = $state<SchemaObject | null>(null);
     let schemaValidator = $state<ValidateFunction<unknown> | null>(null);
     let schemaFetchAbort: AbortController | null = null;
@@ -102,9 +100,7 @@
             quickSuggestions: { other: true, comments: false, strings: true },
             suggestOnTriggerCharacters: true,
             wordBasedSuggestions: "off",
-            suggest: {
-                showWords: false,
-            },
+            suggest: { showWords: false },
             fontFamily:
                 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
             fontLigatures: false,
@@ -152,6 +148,9 @@
         }
         if (monacoInstance && model) {
             monacoInstance.editor.setModelMarkers(model, markerOwner, []);
+        }
+        if (editor && ignoredDecorationIds.length > 0) {
+            editor.deltaDecorations(ignoredDecorationIds, []);
         }
 
         editor?.dispose();
@@ -222,6 +221,7 @@
     });
 
     $effect(() => {
+        const activeEditor = editor;
         const activeModel = model;
         const monaco = monacoInstance;
         if (!activeModel || !monaco) {
@@ -231,6 +231,20 @@
 
         const analysis = analyzeYamlSource(value);
         const markers = diagnosticsToMarkers(monaco, activeModel, analysis.diagnostics);
+        const ignoredRanges = findIgnoredExtraRanges(value, resolvedSchema);
+
+        markers.push(
+            ...diagnosticsToMarkers(
+                monaco,
+                activeModel,
+                ignoredRanges.map((range) => ({
+                    from: range.from,
+                    to: range.to,
+                    severity: "hint",
+                    message: range.message,
+                })),
+            ),
+        );
 
         if (
             schemaValidator &&
@@ -258,6 +272,34 @@
         }
 
         validationMarkers = markers;
+
+        if (!activeEditor) return;
+
+        ignoredDecorationIds = activeEditor.deltaDecorations(
+            ignoredDecorationIds,
+            ignoredRanges.map((range) => {
+                const start = activeModel.getPositionAt(range.from);
+                const end = activeModel.getPositionAt(
+                    Math.max(range.from + 1, range.to),
+                );
+
+                return {
+                    range: new monaco.Range(
+                        start.lineNumber,
+                        start.column,
+                        end.lineNumber,
+                        end.column,
+                    ),
+                    options: {
+                        inlineClassName: "yaml-ignored-config",
+                        hoverMessage: { value: range.message },
+                        stickiness:
+                            monaco.editor.TrackedRangeStickiness
+                                .NeverGrowsWhenTypingAtEdges,
+                    },
+                };
+            }),
+        );
     });
 
     $effect(() => {
@@ -291,9 +333,7 @@
                 fixedOverflowWidgets: true,
                 dragAndDrop: false,
                 wordBasedSuggestions: "off",
-                suggest: {
-                    showWords: false,
-                },
+                suggest: { showWords: false },
                 scrollbar: autoHeight
                     ? { vertical: "hidden", handleMouseWheel: false }
                     : { vertical: "auto", handleMouseWheel: true },
@@ -351,5 +391,10 @@
 
     .editor-root :global(.monaco-editor .margin) {
         background: transparent;
+    }
+
+    .editor-root :global(.yaml-ignored-config) {
+        opacity: 0.5;
+        filter: saturate(0.65);
     }
 </style>

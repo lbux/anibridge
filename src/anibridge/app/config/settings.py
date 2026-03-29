@@ -3,11 +3,16 @@
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args, get_origin
 
 import yaml
-from anibridge.utils.cache import cache
+from anibridge.utils.cache import cache, lru_cache
 from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic.json_schema import (
+    DEFAULT_REF_TEMPLATE,
+    GenerateJsonSchema,
+    JsonSchemaMode,
+)
 from pydantic_core import PydanticUndefined
 from pydantic_settings import (
     BaseSettings,
@@ -40,6 +45,7 @@ __all__ = [
 ]
 
 _log = _get_logger(__name__)
+_SCHEMA_EXTRA_BEHAVIOR_KEY = "x-anibridge-extraBehavior"
 
 
 class LogLevel(BaseStrEnum):
@@ -295,6 +301,44 @@ class AnibridgeProfileConfig(BaseModel):
         return self
 
 
+def _iter_model_types(annotation: Any) -> set[type[BaseModel]]:
+    model_types: set[type[BaseModel]] = set()
+    origin = get_origin(annotation)
+
+    if origin is None:
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            model_types.add(annotation)
+        return model_types
+
+    for arg in get_args(annotation):
+        model_types.update(_iter_model_types(arg))
+
+    return model_types
+
+
+def _collect_nested_model_types(root_model: type[BaseModel]) -> set[type[BaseModel]]:
+    discovered: set[type[BaseModel]] = set()
+    pending = [root_model]
+
+    while pending:
+        model_cls = pending.pop()
+        if model_cls in discovered:
+            continue
+
+        discovered.add(model_cls)
+        for field in model_cls.model_fields.values():
+            pending.extend(_iter_model_types(field.annotation))
+
+    return discovered
+
+
+def _resolve_extra_behavior(model_cls: type[BaseModel]) -> str:
+    extra_behavior = model_cls.model_config.get("extra")
+    if extra_behavior in {"allow", "ignore", "forbid"}:
+        return extra_behavior
+    return "ignore"
+
+
 class AnibridgeConfig(BaseSettings):
     """Multi-configuration manager for AniBridge application.
 
@@ -441,6 +485,40 @@ class AnibridgeConfig(BaseSettings):
                 env_parse_none_str="null",
             ),
         )
+
+    @classmethod
+    @lru_cache(maxsize=1, per_instance=False)
+    def model_json_schema(
+        cls,
+        by_alias: bool = True,
+        ref_template: str = DEFAULT_REF_TEMPLATE,
+        schema_generator: type[GenerateJsonSchema] = GenerateJsonSchema,
+        mode: JsonSchemaMode = "validation",
+        *,
+        union_format: Literal["any_of", "primitive_type_array"] = "any_of",
+    ) -> dict[str, Any]:
+        """Generate the config schema with editor-specific extra-behavior metadata."""
+        schema = super().model_json_schema(
+            by_alias=by_alias,
+            ref_template=ref_template,
+            schema_generator=schema_generator,
+            mode=mode,
+            union_format=union_format,
+        )
+        definitions = schema.get("$defs", {})
+
+        for nested_model in _collect_nested_model_types(cls):
+            target = (
+                schema
+                if nested_model is cls
+                else definitions.get(nested_model.__name__)
+            )
+            if not isinstance(target, dict) or target.get("type") != "object":
+                continue
+
+            target[_SCHEMA_EXTRA_BEHAVIOR_KEY] = _resolve_extra_behavior(nested_model)
+
+        return schema
 
     model_config = SettingsConfigDict(extra="ignore")
 

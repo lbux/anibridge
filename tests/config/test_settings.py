@@ -409,3 +409,16 @@ def test_unconfigured_config_allows_config_api_without_auth() -> None:
 
     assert config.web.has_auth is False
     assert config.web.allow_config_without_auth is True
+
+
+def test_config_schema_includes_extra_behavior_metadata() -> None:
+    """Config schema should expose extra-handling metadata for the editor."""
+    schema = AnibridgeConfig.model_json_schema()
+    definitions = schema["$defs"]
+
+    assert schema["x-anibridge-extraBehavior"] == "ignore"
+    assert (
+        definitions["AnibridgeProfileConfig"]["x-anibridge-extraBehavior"] == "ignore"
+    )
+    assert definitions["WebConfig"]["x-anibridge-extraBehavior"] == "ignore"
+    assert definitions["BasicAuthConfig"]["x-anibridge-extraBehavior"] == "ignore"

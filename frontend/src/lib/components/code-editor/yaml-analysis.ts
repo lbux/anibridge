@@ -15,6 +15,8 @@ import {
     type Scalar,
 } from "yaml";
 
+import { getPropertyBehaviorForPath, type SchemaObject } from "./yaml-schema";
+
 const TAB_INDENT_REGEX = /(^|\n)(\t+)/g;
 
 type YamlDocLike = {
@@ -40,10 +42,9 @@ export type YamlDiagnostic = {
     message: string;
 };
 
-export type YamlAnalysisResult = {
-    doc: YamlDocLike;
-    diagnostics: YamlDiagnostic[];
-};
+export type YamlAnalysisResult = { doc: YamlDocLike; diagnostics: YamlDiagnostic[] };
+
+export type IgnoredYamlRange = { from: number; to: number; message: string };
 
 function decodePointerSegment(segment: string): string {
     return segment.replace(/~1/g, "/").replace(/~0/g, "~");
@@ -110,11 +111,10 @@ function findContextInNode(
             }
 
             if (key && pair.value && containsPosition(pair.value, position)) {
-                const nested = findContextInNode(
-                    pair.value as ParsedNode,
-                    position,
-                    [...path, key],
-                );
+                const nested = findContextInNode(pair.value as ParsedNode, position, [
+                    ...path,
+                    key,
+                ]);
                 if (nested) return nested;
 
                 return {
@@ -128,11 +128,7 @@ function findContextInNode(
             }
         }
 
-        return {
-            path: [...path],
-            parentPath: [...path],
-            atKey: false,
-        };
+        return { path: [...path], parentPath: [...path], atKey: false };
     }
 
     if (isSeq(node)) {
@@ -143,19 +139,15 @@ function findContextInNode(
             const nested = findContextInNode(item, position, [...path, index]);
             if (nested) return nested;
 
-            return {
-                path: [...path, index],
-                parentPath: [...path],
-                atKey: false,
-            };
+            return { path: [...path, index], parentPath: [...path], atKey: false };
         }
     }
 
-    return {
-        path: [...path],
-        parentPath: path.slice(0, -1),
-        atKey: false,
-    };
+    return { path: [...path], parentPath: path.slice(0, -1), atKey: false };
+}
+
+function getPairRange(pair: unknown, key: unknown): [number, number] | null {
+    return getRange(pair) ?? getRange(key);
 }
 
 function createDocument(source: string): YamlDocLike {
@@ -174,10 +166,7 @@ function getNodeRangeByPath(
     const range = node?.range;
     if (!range || range.length < 2) return null;
 
-    return {
-        from: range[0],
-        to: Math.max(range[0] + 1, range[1]),
-    };
+    return { from: range[0], to: Math.max(range[0] + 1, range[1]) };
 }
 
 function escapeRegExp(value: string): string {
@@ -320,21 +309,13 @@ export function buildSchemaDiagnostics(
             continue;
         }
 
-        const range =
-            getNodeRangeByPath(doc, path) ||
-            (missingProperty
-                ? findKeyRangeInSource(source, missingProperty)
-                : null) ||
+        const range = getNodeRangeByPath(doc, path) ||
+            (missingProperty ? findKeyRangeInSource(source, missingProperty) : null) ||
             (additionalProperty
                 ? findKeyRangeInSource(source, additionalProperty)
-                : null) || {
-                from: 0,
-                to: Math.min(source.length, 1),
-            };
+                : null) || { from: 0, to: Math.min(source.length, 1) };
 
-        let message = `${error.instancePath || "/"} ${
-            error.message || "is invalid"
-        }`;
+        let message = `${error.instancePath || "/"} ${error.message || "is invalid"}`;
         if (error.keyword === "required" && missingProperty) {
             message = `Missing required property "${missingProperty}"`;
         }
@@ -351,6 +332,75 @@ export function buildSchemaDiagnostics(
     }
 
     return diagnostics;
+}
+
+function collectIgnoredExtraRangesInNode(
+    node: ParsedNode | null | undefined,
+    path: Array<string | number>,
+    schema: SchemaObject,
+    ranges: IgnoredYamlRange[],
+) {
+    if (!node) return;
+
+    if (isMap(node)) {
+        for (const item of node.items) {
+            if (!isPair(item)) continue;
+
+            const key = scalarToKey(item.key);
+            if (!key) continue;
+
+            const propertyBehavior = getPropertyBehaviorForPath(schema, path, key);
+            if (propertyBehavior === "ignored-extra") {
+                const pairRange = getPairRange(item, item.key);
+                if (pairRange) {
+                    ranges.push({
+                        from: pairRange[0],
+                        to: Math.max(pairRange[0] + 1, pairRange[1]),
+                        message: `"${key}" is ignored by the config model and has no effect.`,
+                    });
+                }
+                continue;
+            }
+
+            if (item.value) {
+                collectIgnoredExtraRangesInNode(
+                    item.value as ParsedNode,
+                    [...path, key],
+                    schema,
+                    ranges,
+                );
+            }
+        }
+        return;
+    }
+
+    if (isSeq(node)) {
+        for (let index = 0; index < node.items.length; index += 1) {
+            collectIgnoredExtraRangesInNode(
+                node.items[index] as ParsedNode | null,
+                [...path, index],
+                schema,
+                ranges,
+            );
+        }
+    }
+}
+
+export function findIgnoredExtraRanges(
+    source: string,
+    schema: SchemaObject | null,
+): IgnoredYamlRange[] {
+    if (!schema) return [];
+
+    const doc = createDocument(source);
+    const ranges: IgnoredYamlRange[] = [];
+    collectIgnoredExtraRangesInNode(
+        (doc.contents as ParsedNode | null) ?? null,
+        [],
+        schema,
+        ranges,
+    );
+    return ranges;
 }
 
 function toMarkerSeverity(
