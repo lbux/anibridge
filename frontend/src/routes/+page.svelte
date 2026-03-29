@@ -7,6 +7,7 @@
         DatabaseBackup,
         RefreshCcw,
         Users,
+        Wrench,
     } from "@lucide/svelte";
     import { Meter } from "bits-ui";
 
@@ -144,6 +145,13 @@
 
     async function reinitializeProfile(name: string) {
         if (isProfileReinitializing(name)) return;
+        if (
+            !confirm(
+                `Reinitialize profile ${name}?\n\nThis will recreate its providers and restart its scheduler.`,
+            )
+        ) {
+            return;
+        }
 
         reinitializingProfiles[name] = true;
         try {
@@ -297,16 +305,16 @@
                                     e.stopPropagation(),
                                     !profileReinitializing &&
                                         reinitializeProfile(name))}
-                                class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-amber-500/60 bg-amber-500/20 px-2 py-1 text-[11px] font-medium text-amber-100 shadow-sm hover:bg-amber-500/30"
+                                class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-amber-600/60 bg-amber-600/30 px-2 py-1 text-[11px] font-medium text-amber-200 shadow-sm hover:bg-amber-600/40"
                                 class:cursor-wait={profileReinitializing}
                                 title={profileReinitializing
                                     ? "Retrying profile initialization"
                                     : "Retry profile initialization"}>
-                                <RefreshCcw
+                                <Wrench
                                     class={`inline h-3 w-3 ${profileReinitializing ? "animate-spin" : ""}`} />
                                 <span
                                     >{profileReinitializing
-                                        ? "Reinitializing…"
+                                        ? "Reinitializing..."
                                         : "Reinitialize"}</span>
                             </span>
                         {:else}

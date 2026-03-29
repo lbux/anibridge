@@ -20,8 +20,13 @@
     import TimelineItem from "$lib/components/timeline/timeline-item.svelte";
     import TimelineOutcomeFilters from "$lib/components/timeline/timeline-outcome-filters.svelte";
     import type { ItemDiffUi } from "$lib/components/timeline/types";
-    import type { CurrentSync, GetHistoryResponse, HistoryItem } from "$lib/types/api";
-    import { apiFetch } from "$lib/utils/api";
+    import type {
+        CurrentSync,
+        GetHistoryResponse,
+        HistoryItem,
+        StatusResponse,
+    } from "$lib/types/api";
+    import { apiFetch, apiJson } from "$lib/utils/api";
     import { toast } from "$lib/utils/notify";
 
     const { params } = $props<{ params: { profile: string } }>();
@@ -47,6 +52,7 @@
     let openDiff: Record<number, boolean> = $state({});
     let currentSync: CurrentSync | null = $state(null);
     let isProfileRunning = $state(false);
+    let isReinitializing = $state(false);
     let undoLoading: Record<number, boolean> = $state({});
     let retryLoading: Record<number, boolean> = $state({});
 
@@ -324,6 +330,18 @@
         showJump = !isNearTop && (newItemsCount > 0 || window.scrollY > 400);
     }
 
+    async function refreshProfileStatus() {
+        try {
+            const data = await apiJson<StatusResponse>("/api/status");
+            const profile = data.profiles?.[params.profile];
+            const current = profile?.status?.current_sync ?? null;
+            currentSync = current;
+            isProfileRunning = current?.state === "running";
+        } catch (e) {
+            console.error("Failed to refresh profile status", e);
+        }
+    }
+
     async function loadFirst() {
         loadingInitial = true;
         try {
@@ -484,9 +502,36 @@
         }
     }
 
+    async function reinitializeProfile() {
+        if (isReinitializing) return;
+        if (
+            !confirm(
+                `Reinitialize profile ${params.profile}?\n\nThis will recreate its providers and restart its scheduler.`,
+            )
+        ) {
+            return;
+        }
+
+        isReinitializing = true;
+        try {
+            const response = await apiFetch(
+                `/api/sync/profile/${params.profile}/reinitialize`,
+                { method: "POST" },
+                { successMessage: `Reinitialized profile ${params.profile}` },
+            );
+            if (!response.ok) return;
+            await refreshProfileStatus();
+        } catch (e) {
+            console.error("Failed to reinitialize profile", e);
+        } finally {
+            isReinitializing = false;
+        }
+    }
+
     onMount(() => {
         wsShouldReconnect = true;
         loadFirst();
+        refreshProfileStatus();
         initWs();
         initStatusWs();
         const io = new IntersectionObserver((entries) => {
@@ -512,8 +557,10 @@
         profile={params.profile}
         {currentSync}
         {isProfileRunning}
+        {isReinitializing}
         onFullSync={() => triggerSync(false)}
         onPollSync={() => triggerSync(true)}
+        onReinitialize={reinitializeProfile}
         onRefresh={loadFirst} />
     <div class="-mt-1">
         <TimelineGlobalPinsManager profile={params.profile} />

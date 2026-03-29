@@ -276,10 +276,11 @@ class ProfileScheduler:
         if ScanMode.POLL in self.scan_modes:
             self._spawn_loop(name="poll", interval=self.poll_interval, poll=True)
 
-    async def stop(self) -> None:
+    async def stop(self, *, set_stop_event: bool = True) -> None:
         """Stop the profile worker and cancel active tasks."""
         self._running = False
-        self.stop_event.set()
+        if set_stop_event:
+            self.stop_event.set()
 
         for task in tuple(self._tasks):
             if not task.done():

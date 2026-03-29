@@ -1,5 +1,11 @@
 <script lang="ts">
-    import { CloudDownload, History, RefreshCcw, RotateCw } from "@lucide/svelte";
+    import {
+        CloudDownload,
+        History,
+        RefreshCcw,
+        RotateCw,
+        Wrench,
+    } from "@lucide/svelte";
     import { Meter } from "bits-ui";
 
     import type { CurrentSync } from "$lib/types/api";
@@ -8,8 +14,10 @@
         profile: string;
         currentSync?: CurrentSync | null;
         isProfileRunning?: boolean;
+        isReinitializing?: boolean;
         onFullSync: () => void;
         onPollSync: () => void;
+        onReinitialize: () => void;
         onRefresh: () => void;
     }
 
@@ -17,8 +25,10 @@
         profile,
         currentSync = null,
         isProfileRunning = false,
+        isReinitializing = false,
         onFullSync,
         onPollSync,
+        onReinitialize,
         onRefresh,
     }: Props = $props();
 
@@ -45,16 +55,24 @@
     </div>
     <div class="flex items-center gap-2 text-[11px]">
         <button
+            onclick={onReinitialize}
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md border border-amber-600/60 bg-amber-600/30 px-2 py-1 font-medium text-amber-200 hover:bg-amber-600/40 disabled:cursor-wait disabled:opacity-70"
+            disabled={isReinitializing}
+            ><Wrench
+                class={`inline h-4 w-4 text-[14px] ${isReinitializing ? "animate-spin" : ""}`} />
+            {isReinitializing ? "Reinitializing..." : "Reinitialize"}</button>
+        <button
             onclick={onFullSync}
             type="button"
             class="inline-flex items-center gap-1 rounded-md border border-emerald-600/60 bg-emerald-600/30 px-2 py-1 font-medium text-emerald-200 hover:bg-emerald-600/40 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isProfileRunning}
+            disabled={isProfileRunning || isReinitializing}
             ><RefreshCcw class="inline h-4 w-4 text-[14px]" /> Full Scan</button>
         <button
             onclick={onPollSync}
             type="button"
             class="inline-flex items-center gap-1 rounded-md border border-sky-600/60 bg-sky-600/30 px-2 py-1 font-medium text-sky-200 hover:bg-sky-600/40 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isProfileRunning}
+            disabled={isProfileRunning || isReinitializing}
             ><CloudDownload class="inline h-4 w-4 text-[14px]" /> Poll Scan</button>
         <button
             onclick={onRefresh}

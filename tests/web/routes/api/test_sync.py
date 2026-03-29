@@ -10,7 +10,7 @@ class _DummyScheduler:
     def __init__(self) -> None:
         self.reinitialized_profiles: list[str] = []
 
-    async def reinitialize_failed_profile(self, profile: str) -> None:
+    async def reinitialize_profile(self, profile: str) -> None:
         self.reinitialized_profiles.append(profile)
 
 
@@ -21,7 +21,7 @@ class _DummyAppState:
 
 @pytest.mark.asyncio
 async def test_reinitialize_profile_calls_scheduler(monkeypatch) -> None:
-    """Reinitialize endpoint should target the requested failed profile."""
+    """Reinitialize endpoint should target the requested profile."""
     scheduler = _DummyScheduler()
     state = _DummyAppState(scheduler=scheduler)
     monkeypatch.setattr(sync_api_module, "get_app_state", lambda: state)

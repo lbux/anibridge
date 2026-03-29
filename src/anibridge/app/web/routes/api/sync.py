@@ -98,10 +98,10 @@ async def sync_profile(
 
 @router.post("/profile/{profile}/reinitialize", response_model=OkResponse)
 async def reinitialize_profile(profile: str = Path(...)) -> OkResponse:
-    """Retry initialization for a profile that previously failed to start.
+    """Rebuild and restart a single profile.
 
     Args:
-        profile (str): The failed profile to reinitialize.
+        profile (str): The profile to reinitialize.
 
     Returns:
         OkResponse: The response containing the reinitialization status.
@@ -109,11 +109,10 @@ async def reinitialize_profile(profile: str = Path(...)) -> OkResponse:
     Raises:
         SchedulerNotInitializedError: If the scheduler is not running.
         ProfileNotFoundError: If the profile does not exist.
-        SchedulerUnavailableError: If the profile is not currently failed or fails
-            again during reinitialization.
+        SchedulerUnavailableError: If the profile fails during reinitialization.
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
         raise SchedulerNotInitializedError("Scheduler not available")
-    await scheduler.reinitialize_failed_profile(profile)
+    await scheduler.reinitialize_profile(profile)
     return OkResponse(ok=True)

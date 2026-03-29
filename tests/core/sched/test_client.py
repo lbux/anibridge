@@ -185,6 +185,24 @@ async def test_profile_scheduler_stop_cancels_tasks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_profile_scheduler_stop_without_setting_stop_event() -> None:
+    """Stopping a single profile should not require tripping the shared stop event."""
+    stop_event = asyncio.Event()
+    scheduler = ProfileScheduler(
+        profile_name="default",
+        bridge_client=cast("sched_module.BridgeClient", SimpleNamespace()),
+        scan_interval=1,
+        scan_modes=[],
+        poll_interval=1,
+        stop_event=stop_event,
+    )
+
+    await scheduler.stop(set_stop_event=False)
+
+    assert stop_event.is_set() is False
+
+
+@pytest.mark.asyncio
 async def test_profile_scheduler_sync_cancellation() -> None:
     """Cancellation should propagate and clear current task."""
     start_event = asyncio.Event()
@@ -328,7 +346,7 @@ async def test_scheduler_reinitialize_failed_profile(
     scheduler._running = True
     scheduler.failed_profile_errors["broken"] = "Provider auth failed"
 
-    await scheduler.reinitialize_failed_profile("broken")
+    await scheduler.reinitialize_profile("broken")
 
     assert "broken" in scheduler.bridge_clients
     assert scheduler.failed_profile_errors.get("broken") is None
@@ -362,10 +380,52 @@ async def test_scheduler_reinitialize_failed_profile_preserves_failure(
     scheduler.failed_profile_errors["broken"] = "Provider auth failed"
 
     with pytest.raises(SchedulerUnavailableError, match="still broken"):
-        await scheduler.reinitialize_failed_profile("broken")
+        await scheduler.reinitialize_profile("broken")
 
     assert scheduler.failed_profile_errors["broken"] == "still broken"
     assert "broken" not in scheduler.bridge_clients
+
+
+@pytest.mark.asyncio
+async def test_scheduler_reinitialize_profile_keeps_global_stop_event_clear(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Reinitializing one healthy profile should not stop the whole scheduler."""
+    profiles = {"good": FakeProfileConfig(scan_modes=[])}
+    config = FakeConfig(profiles=profiles, data_path=tmp_path)
+
+    monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
+    monkeypatch.setattr(
+        sched_module,
+        "BridgeClient",
+        lambda profile_name, *_args, **_kwargs: FakeBridgeClient(profile_name),
+    )
+
+    class StubScheduler:
+        def __init__(self, *_, **__):
+            self.stop_calls: list[bool] = []
+            self.started = False
+            self._running = True
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def stop(self, *, set_stop_event: bool = True) -> None:
+            self.stop_calls.append(set_stop_event)
+
+    monkeypatch.setattr(sched_module, "ProfileScheduler", StubScheduler)
+
+    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler._running = True
+    scheduler.bridge_clients["good"] = FakeBridgeClient("good")  # ty:ignore[invalid-assignment]
+    scheduler.profile_schedulers["good"] = cast(
+        sched_module.ProfileScheduler, StubScheduler()
+    )
+
+    await scheduler.reinitialize_profile("good")
+
+    assert scheduler.stop_event.is_set() is False
+    assert cast(StubScheduler, scheduler.profile_schedulers["good"]).started is True
 
 
 @pytest.mark.asyncio

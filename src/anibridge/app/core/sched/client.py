@@ -163,14 +163,11 @@ class SchedulerClient:
 
         if profile_config.scan_modes:
             next_sync_time = "in progress"
-            if (
-                ScanMode.PERIODIC in profile_config.scan_modes
-                and is_enabled_interval(profile_config.scan_interval)
+            if ScanMode.PERIODIC in profile_config.scan_modes and is_enabled_interval(
+                profile_config.scan_interval
             ):
                 next_sync = datetime.now(UTC).astimezone()
-                next_sync_time = "at {}".format(
-                    next_sync.strftime("%Y-%m-%d %H:%M:%S")
-                )
+                next_sync_time = "at {}".format(next_sync.strftime("%Y-%m-%d %H:%M:%S"))
 
             log.info(
                 "[%s] Scheduler started, next sync: %s",
@@ -517,33 +514,17 @@ class SchedulerClient:
 
         log.info("Daily database sync scheduler stopped")
 
-    async def reinitialize_failed_profile(self, profile_name: str) -> None:
-        """Retry bridge initialization for a profile that previously failed."""
+    async def reinitialize_profile(self, profile_name: str) -> None:
+        """Rebuild and restart a single profile bridge and scheduler."""
         if profile_name not in self.global_config.profiles:
             raise ProfileNotFoundError(f"Profile '{profile_name}' not found")
 
         async def _reinitialize() -> None:
-            if (
-                profile_name in self.bridge_clients
-                and profile_name not in self.failed_profile_errors
-            ):
-                log.info(
-                    "[%s] Profile already initialized; skipping reinitialization",
-                    profile_name,
-                )
-                return
-
-            if profile_name not in self.failed_profile_errors:
-                raise SchedulerUnavailableError(
-                    f"Profile '{profile_name}' is not in a failed initialization "
-                    "state"
-                )
-
-            log.info("[%s] Retrying failed profile initialization", profile_name)
+            log.info("[%s] Reinitializing profile", profile_name)
 
             existing_scheduler = self.profile_schedulers.pop(profile_name, None)
             if existing_scheduler is not None:
-                await existing_scheduler.stop()
+                await existing_scheduler.stop(set_stop_event=False)
 
             existing_bridge = self.bridge_clients.pop(profile_name, None)
             if existing_bridge is not None:
