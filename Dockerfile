@@ -13,8 +13,7 @@ WORKDIR /app
 
 RUN apk add --no-cache git
 
-COPY ./src /app/src
-COPY ./README.md /app/README.md
+COPY ./src ./LICENSE ./README.md /app/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock,ro \
