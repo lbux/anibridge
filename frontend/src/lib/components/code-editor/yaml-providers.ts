@@ -1,414 +1,209 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 
-class YamlSchemaManager {
-    private schema: any = { properties: {}, definitions: {} };
-    private suggestionsMap: Map<string, any[]> = new Map();
-    private schemaUrl?: string;
-    private rawSchema: any | null = null;
-    public ready: Promise<void>;
+import { findYamlPositionContext } from "./yaml-analysis";
+import {
+    getCompletionOptionsForPath,
+    getEnumValueCompletions,
+    getSchemaDocForPath,
+    type SchemaCompletion,
+    type SchemaDoc,
+    type SchemaObject,
+} from "./yaml-schema";
 
-    constructor() {
-        this.parseSchema();
-        this.ready = Promise.resolve();
-    }
+const yamlSchemasByModel = new Map<string, SchemaObject | null>();
 
-    setSchemaUrl(url: string | undefined) {
-        if (!url) {
-            this.schemaUrl = undefined;
-            this.rawSchema = null;
-            this.schema = { properties: {}, definitions: {} };
-            this.suggestionsMap.clear();
-            this.parseSchema();
-            this.ready = Promise.resolve();
-            return;
-        }
-
-        if (url === this.schemaUrl) return;
-        this.schemaUrl = url;
-        this.rawSchema = null;
-        this.ready = this.fetchLatestSchema();
-    }
-
-    setSchemaObject(schema: any) {
-        if (!schema) return;
-        this.rawSchema = schema;
-        this.schema = schema;
-        this.suggestionsMap.clear();
-        this.parseSchema();
-    }
-
-    private getDefinitions() {
-        return this.schema.definitions || this.schema.$defs || {};
-    }
-
-    private resolveRef(ref: string) {
-        if (!ref || !ref.startsWith("#")) return null;
-        const pointer = ref.replace(/^#\/?/, "");
-        if (!pointer) return this.schema;
-        const segments = pointer
-            .split("/")
-            .map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
-        let current: any = this.schema;
-        for (const seg of segments) {
-            if (current && typeof current === "object" && seg in current) {
-                current = current[seg];
-            } else {
-                return null;
-            }
-        }
-        return current;
-    }
-
-    private mergeSchemas(schemas: any[]) {
-        const result: any = {
-            type: "object",
-            properties: {},
-            required: [] as string[],
-        };
-        for (const schema of schemas) {
-            if (!schema || typeof schema !== "object") continue;
-            if (schema.description && !result.description)
-                result.description = schema.description;
-            if (schema.title && !result.title) result.title = schema.title;
-            if (schema.type && !result.type) result.type = schema.type;
-            if (schema.properties) {
-                result.properties = { ...result.properties, ...schema.properties };
-            }
-            if (Array.isArray(schema.required)) {
-                result.required = Array.from(
-                    new Set([...(result.required || []), ...schema.required]),
-                );
-            }
-            if (
-                schema.additionalProperties !== undefined &&
-                result.additionalProperties === undefined
-            ) {
-                result.additionalProperties = schema.additionalProperties;
-            }
-            if (schema.items && !result.items) result.items = schema.items;
-        }
-        return result;
-    }
-
-    private resolveSchema(schema: any, visited = new Set<any>()): any {
-        if (!schema || typeof schema !== "object") return schema;
-        if (visited.has(schema)) return schema;
-        visited.add(schema);
-
-        if (schema.$ref) {
-            const resolved = this.resolveRef(schema.$ref);
-            if (resolved) {
-                const merged = { ...resolved, ...schema };
-                delete merged.$ref;
-                return this.resolveSchema(merged, visited);
-            }
-        }
-
-        if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
-            const merged = this.mergeSchemas(
-                schema.allOf.map((s: any) => this.resolveSchema(s, visited)),
-            );
-            return this.resolveSchema(
-                { ...merged, ...schema, allOf: undefined },
-                visited,
-            );
-        }
-
-        return schema;
-    }
-
-    private collectProperties(schema: any) {
-        const resolved = this.resolveSchema(schema);
-        const properties: Record<string, any> = {};
-
-        if (resolved?.properties) {
-            Object.assign(properties, resolved.properties);
-        }
-
-        const variants = [...(resolved?.oneOf || []), ...(resolved?.anyOf || [])];
-        for (const variant of variants) {
-            const props = this.collectProperties(variant);
-            Object.assign(properties, props);
-        }
-
-        return properties;
-    }
-
-    private async fetchLatestSchema(retries = 2): Promise<void> {
-        if (!this.schemaUrl) return;
-        if (this.rawSchema) return;
-        try {
-            const response = await fetch(this.schemaUrl);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            this.schema = await response.json();
-            this.suggestionsMap.clear();
-            this.parseSchema();
-        } catch (e) {
-            if (retries > 0) {
-                await new Promise((r) => setTimeout(r, 1000));
-                return this.fetchLatestSchema(retries - 1);
-            }
-            console.error("Failed to fetch schema after retries", e);
-        }
-    }
-
-    private parseSchema() {
-        const definitions = this.getDefinitions();
-        const rootSuggestions: any[] = [];
-        const rootProps = this.collectProperties(this.schema);
-        if (rootProps && Object.keys(rootProps).length > 0) {
-            for (const [key, value] of Object.entries(rootProps)) {
-                const val = value as any;
-                rootSuggestions.push({
-                    label: key,
-                    kind: 1,
-                    documentation: this.getDescription(val),
-                    insertText: this.generateInsertText(key, val),
-                });
-            }
-        }
-        this.suggestionsMap.set("root", rootSuggestions);
-
-        if (Object.keys(definitions).length > 0) {
-            for (const [defName, defValue] of Object.entries(definitions)) {
-                const def = defValue as any;
-                const defProps = this.collectProperties(def);
-                if (defProps && Object.keys(defProps).length > 0) {
-                    const suggestions: any[] = [];
-                    for (const [key, value] of Object.entries(defProps)) {
-                        const val = value as any;
-                        suggestions.push({
-                            label: key,
-                            kind: 1,
-                            documentation: this.getDescription(val),
-                            insertText: this.generateInsertText(key, val),
-                        });
-                    }
-                    this.suggestionsMap.set(defName, suggestions);
-                }
-            }
-        }
-    }
-
-    private getDescription(val: any, visited = new Set<string>()): string {
-        if (!val) return "";
-        if (val.description) return val.description;
-
-        if (val.$ref) {
-            if (visited.has(val.$ref)) return "";
-            visited.add(val.$ref);
-            const defName = val.$ref.includes("/")
-                ? val.$ref.split("/").pop()
-                : val.$ref.replace("#", "");
-            const def = (this.schema.definitions || this.schema.$defs)?.[defName];
-            if (def && def.description) return def.description;
-            if (def) return this.getDescription(def, visited);
-        }
-
-        const nested = val.oneOf || val.anyOf || [];
-        for (const sub of nested) {
-            const desc = this.getDescription(sub, visited);
-            if (desc) return desc;
-        }
-
-        return "";
-    }
-
-    private generateInsertText(key: string, val: any): string {
-        const type = Array.isArray(val.type) ? val.type[0] : val.type;
-
-        if (type === "array") {
-            return `${key}:\n  - \${1}`;
-        }
-        if (type === "object" || val.$ref || val.properties || val.oneOf || val.anyOf) {
-            return `${key}:\n  \${1}`;
-        }
-        return `${key}: `;
-    }
-
-    private getSchemaForPath(path: string[]) {
-        let current: any = this.resolveSchema(this.schema);
-        for (const segment of path) {
-            if (!current) return null;
-            current = this.resolveSchema(current);
-
-            if (segment === "[]") {
-                const items = current.items || current.prefixItems?.[0];
-                current = this.resolveSchema(items);
-                continue;
-            }
-
-            const directProp = current.properties?.[segment];
-            if (directProp) {
-                current = directProp;
-                continue;
-            }
-
-            const variants = [
-                ...(current.oneOf || []),
-                ...(current.anyOf || []),
-                ...(current.allOf || []),
-            ];
-            let found: any = null;
-            for (const variant of variants) {
-                const v = this.resolveSchema(variant);
-                if (v?.properties?.[segment]) {
-                    found = v.properties[segment];
-                    break;
-                }
-            }
-
-            if (found) {
-                current = found;
-                continue;
-            }
-
-            if (
-                current.additionalProperties &&
-                typeof current.additionalProperties === "object"
-            ) {
-                current = current.additionalProperties;
-                continue;
-            }
-
-            return null;
-        }
-
-        return this.resolveSchema(current);
-    }
-
-    getSuggestionsForPath(path: string[]) {
-        if (path.length === 0) return this.suggestionsMap.get("root") || [];
-
-        const schema = this.getSchemaForPath(path);
-        if (!schema) return [];
-
-        const props = this.collectProperties(schema);
-        return Object.entries(props).map(([key, value]) => ({
-            label: key,
-            kind: 1,
-            documentation: this.getDescription(value),
-            insertText: this.generateInsertText(key, value),
-        }));
-    }
-
-    getDocumentation(word: string): string | null {
-        if (this.schema.properties?.[word]) {
-            return `**${word}**\n\n${this.getDescription(this.schema.properties[word])}`;
-        }
-
-        const definitions = this.schema.definitions || this.schema.$defs;
-        if (definitions?.[word]) {
-            return `**${word}**\n\n${definitions[word].description || ""}`;
-        }
-
-        if (definitions) {
-            for (const [defName, def] of Object.entries(definitions) as any[]) {
-                if (def.properties?.[word]) {
-                    return `**${word}** (in ${defName})\n\n${this.getDescription(
-                        def.properties[word],
-                    )}`;
-                }
-
-                const nested = [
-                    ...(def.oneOf || []),
-                    ...(def.anyOf || []),
-                    ...(def.allOf || []),
-                ];
-                for (const sub of nested) {
-                    if (sub.properties?.[word]) {
-                        return `**${word}** (in ${defName})\n\n${this.getDescription(
-                            sub.properties[word],
-                        )}`;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    getDocumentationAtPath(path: string[], word: string): string | null {
-        const schema = this.getSchemaForPath(path);
-        const resolved = schema ? this.resolveSchema(schema) : null;
-        const props = resolved ? this.collectProperties(resolved) : null;
-        const propSchema = props?.[word];
-        if (propSchema) {
-            return `**${word}**\n\n${this.getDescription(propSchema)}`;
-        }
-        return this.getDocumentation(word);
-    }
+function getModelKey(uri: Monaco.Uri | string): string {
+    return typeof uri === "string" ? uri : uri.toString();
 }
 
-const yamlSchemaManager = new YamlSchemaManager();
+function getSchemaForModel(model: Monaco.editor.ITextModel): SchemaObject | null {
+    return yamlSchemasByModel.get(getModelKey(model.uri)) ?? null;
+}
 
-function getPath(model: Monaco.editor.ITextModel, position: Monaco.Position): string[] {
-    const lineContent = model.getLineContent(position.lineNumber);
-    const indent = lineContent.match(/^\s*/)?.[0].length || 0;
-    if (indent === 0) return [];
+function escapeMarkdown(value: string): string {
+    return value.replace(/[\\`*_{}[\]()#+\-.!|>]/g, "\\$&");
+}
 
-    let currentIndent = indent;
-    const tokens: string[] = [];
+function getLinePrefix(
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+): string {
+    return model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+}
 
-    for (let i = position.lineNumber - 1; i >= 1; i--) {
-        const line = model.getLineContent(i);
-        const lineIndent = line.match(/^\s*/)?.[0].length || 0;
-        if (lineIndent < currentIndent) {
-            const listItem = line.match(/^\s*-\s+/);
-            if (listItem) {
-                tokens.push("[]");
-                currentIndent = lineIndent;
-                continue;
-            }
+function getCurrentToken(
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+    pattern = /[\w.-]*$/,
+) {
+    const linePrefix = getLinePrefix(model, position);
+    const match = linePrefix.match(pattern);
+    const text = match?.[0] ?? "";
+    const startColumn = position.column - text.length;
 
-            const match = line.match(/^\s*([\w-]+):/);
-            if (match) {
-                tokens.push(match[1]);
-                currentIndent = lineIndent;
-            }
-        }
+    return {
+        text,
+        range: {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn,
+            endColumn: position.column,
+        },
+    };
+}
+
+function isLikelyKeyPosition(
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+): boolean {
+    const linePrefix = getLinePrefix(model, position);
+    return /^\s*(?:-\s*)?[\w.-]*$/.test(linePrefix);
+}
+
+function getSequenceItemPath(
+    context: NonNullable<ReturnType<typeof findYamlPositionContext>>,
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+): Array<string | number> | null {
+    const linePrefix = getLinePrefix(model, position);
+    if (!/^\s*-\s*[\w.-]*$/.test(linePrefix)) return null;
+
+    const pathTail = context.path[context.path.length - 1];
+    if (typeof pathTail === "number") return context.path;
+
+    const parentTail = context.parentPath[context.parentPath.length - 1];
+    if (typeof parentTail === "number") return context.parentPath;
+
+    return [...context.path, 0];
+}
+
+function formatInsertText(
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+    completion: SchemaCompletion,
+): string {
+    if (!completion.isSnippet || !completion.apply.includes("\n")) {
+        return completion.apply;
     }
 
-    return tokens.reverse();
+    const indent = model.getLineContent(position.lineNumber).match(/^\s*/)?.[0];
+
+    return completion.apply.replace(/\n {2}/g, `\n${indent ?? ""}  `);
+}
+
+function formatDocumentation(
+    doc: SchemaDoc,
+    fallbackTitle?: string,
+): string | undefined {
+    const lines: string[] = [];
+    const title = doc.title ?? fallbackTitle;
+    if (title) {
+        lines.push(`**${escapeMarkdown(title)}**`);
+    }
+    if (doc.description) {
+        lines.push(escapeMarkdown(doc.description));
+    }
+    if (doc.type) {
+        lines.push(`Type: \`${escapeMarkdown(doc.type)}\``);
+    }
+    if (doc.defaultValue) {
+        lines.push(`Default: \`${escapeMarkdown(doc.defaultValue)}\``);
+    }
+    if (doc.enumValues && doc.enumValues.length > 0) {
+        lines.push(
+            `Allowed: ${doc.enumValues
+                .map((value) => `\`${escapeMarkdown(value)}\``)
+                .join(", ")}`,
+        );
+    }
+    if (doc.examples && doc.examples.length > 0) {
+        lines.push(
+            `Examples: ${doc.examples
+                .map((value) => `\`${escapeMarkdown(value)}\``)
+                .join(", ")}`,
+        );
+    }
+
+    return lines.length > 0 ? lines.join("\n\n") : undefined;
+}
+
+function toCompletionItem(
+    monaco: typeof Monaco,
+    model: Monaco.editor.ITextModel,
+    position: Monaco.Position,
+    range: Monaco.IRange,
+    completion: SchemaCompletion,
+): Monaco.languages.CompletionItem {
+    return {
+        label: completion.label,
+        detail: completion.detail,
+        documentation: completion.documentation,
+        kind:
+            completion.kind === "property"
+                ? monaco.languages.CompletionItemKind.Property
+                : monaco.languages.CompletionItemKind.EnumMember,
+        insertText: formatInsertText(model, position, completion),
+        insertTextRules: completion.isSnippet
+            ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+            : undefined,
+        sortText:
+            completion.kind === "property"
+                ? `0-${completion.label}`
+                : `1-${completion.label}`,
+        range,
+    };
+}
+
+function getPropertyPath(context: ReturnType<typeof findYamlPositionContext>) {
+    if (!context) return [];
+    return context.atKey ? context.parentPath : context.path;
 }
 
 export function registerYamlCompletionProvider(monaco: typeof Monaco) {
     return monaco.languages.registerCompletionItemProvider("yaml", {
-        triggerCharacters: [" ", ":", "-", "."],
+        triggerCharacters: [" ", ":", "-", ".", '"', "'"],
         provideCompletionItems: (model, position) => {
-            const lineContent = model.getLineContent(position.lineNumber);
-            const textBeforeCursor = lineContent.substring(0, position.column - 1);
+            const schema = getSchemaForModel(model);
+            if (!schema) return { suggestions: [] };
 
-            if (textBeforeCursor.endsWith(":")) {
-                return { suggestions: [] };
-            }
+            const source = model.getValue();
+            const offset = model.getOffsetAt(position);
+            const yamlContext = findYamlPositionContext(source, offset);
+            if (!yamlContext) return { suggestions: [] };
 
-            if (/: /.test(textBeforeCursor)) {
-                return { suggestions: [] };
-            }
+            const token = getCurrentToken(model, position);
+            const isKeyPosition =
+                yamlContext.atKey || isLikelyKeyPosition(model, position);
+            const sequenceItemPath = getSequenceItemPath(yamlContext, model, position);
 
-            const word = model.getWordUntilPosition(position);
-            const range = {
-                startLineNumber: position.lineNumber,
-                endLineNumber: position.lineNumber,
-                startColumn: word.startColumn,
-                endColumn: word.endColumn,
+            const completions = sequenceItemPath
+                ? (() => {
+                      const itemPropertyCompletions = getCompletionOptionsForPath(
+                          schema,
+                          sequenceItemPath,
+                          token.text,
+                      );
+                      return itemPropertyCompletions.length > 0
+                          ? itemPropertyCompletions
+                          : getEnumValueCompletions(
+                                schema,
+                                sequenceItemPath,
+                                token.text,
+                            );
+                  })()
+                : isKeyPosition
+                  ? getCompletionOptionsForPath(
+                        schema,
+                        getPropertyPath(yamlContext),
+                        token.text,
+                    )
+                  : getEnumValueCompletions(schema, yamlContext.path, token.text);
+
+            return {
+                suggestions: completions.map((completion) =>
+                    toCompletionItem(monaco, model, position, token.range, completion),
+                ),
             };
-
-            const path = getPath(model, position);
-            const suggestions = yamlSchemaManager
-                .getSuggestionsForPath(path)
-                .map((s) => ({
-                    ...s,
-                    range,
-                    kind: monaco.languages.CompletionItemKind.Property,
-                    insertTextRules: s.insertText.includes("$")
-                        ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-                        : undefined,
-                }));
-
-            return { suggestions };
         },
     });
 }
@@ -416,27 +211,34 @@ export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 export function registerYamlHoverProvider(monaco: typeof Monaco) {
     return monaco.languages.registerHoverProvider("yaml", {
         provideHover: (model, position) => {
-            const word = model.getWordAtPosition(position);
-            if (!word) return null;
+            const schema = getSchemaForModel(model);
+            if (!schema) return null;
 
-            const path = getPath(model, position);
-            const documentation = yamlSchemaManager.getDocumentationAtPath(
-                path,
-                word.word,
-            );
-            if (documentation) {
-                return {
-                    range: new monaco.Range(
-                        position.lineNumber,
-                        word.startColumn,
-                        position.lineNumber,
-                        word.endColumn,
-                    ),
-                    contents: [{ value: documentation }],
-                };
-            }
+            const source = model.getValue();
+            const offset = model.getOffsetAt(position);
+            const yamlContext = findYamlPositionContext(source, offset);
+            if (!yamlContext || !yamlContext.currentKey) return null;
 
-            return null;
+            const doc = getSchemaDocForPath(schema, yamlContext.path);
+            if (!doc) return null;
+
+            const contents = formatDocumentation(doc, yamlContext.currentKey);
+            if (!contents) return null;
+
+            const startOffset = yamlContext.keyFrom ?? offset;
+            const endOffset = yamlContext.keyTo ?? Math.min(source.length, offset + 1);
+            const start = model.getPositionAt(startOffset);
+            const end = model.getPositionAt(endOffset);
+
+            return {
+                range: new monaco.Range(
+                    start.lineNumber,
+                    start.column,
+                    end.lineNumber,
+                    end.column,
+                ),
+                contents: [{ value: contents }],
+            };
         },
     });
 }
@@ -445,11 +247,13 @@ export function registerYamlProviders(monaco: typeof Monaco) {
     return [registerYamlCompletionProvider(monaco), registerYamlHoverProvider(monaco)];
 }
 
-export function setYamlSchemaUrl(url: string | undefined) {
-    yamlSchemaManager.setSchemaUrl(url);
+export function setYamlSchemaForModel(
+    uri: Monaco.Uri | string,
+    schema: SchemaObject | null,
+) {
+    yamlSchemasByModel.set(getModelKey(uri), schema);
 }
 
-export function setYamlSchemaObject(schema: unknown) {
-    if (!schema) return;
-    yamlSchemaManager.setSchemaObject(schema);
+export function clearYamlSchemaForModel(uri: Monaco.Uri | string) {
+    yamlSchemasByModel.delete(getModelKey(uri));
 }

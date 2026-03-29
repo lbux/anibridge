@@ -15,9 +15,9 @@ import { shikiToMonaco } from "@shikijs/monaco";
 import { createHighlighter } from "shiki";
 
 import {
+    clearYamlSchemaForModel,
     registerYamlProviders,
-    setYamlSchemaObject,
-    setYamlSchemaUrl,
+    setYamlSchemaForModel,
 } from "./yaml-providers";
 
 self.MonacoEnvironment = { getWorker: () => new editorWorker() };
@@ -58,7 +58,7 @@ export function registerProviders() {
     yamlProviders = registerYamlProviders(monaco);
 }
 
-export { setYamlSchemaObject, setYamlSchemaUrl };
+export { clearYamlSchemaForModel, setYamlSchemaForModel };
 
 if (typeof window !== "undefined") {
     (window as unknown as { monaco: typeof monaco }).monaco = monaco;

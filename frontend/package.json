@@ -23,7 +23,6 @@
         "@sveltejs/kit": "2.55.0",
         "@sveltejs/vite-plugin-svelte": "7.0.0",
         "@tailwindcss/vite": "^4.2.2",
-        "@types/js-yaml": "^4.0.9",
         "@types/node": "^25.5.0",
         "@vite-pwa/sveltekit": "^1.1.0",
         "bits-ui": "^2.16.4",
@@ -45,9 +44,9 @@
     "dependencies": {
         "@shikijs/monaco": "^4.0.2",
         "ajv": "^8.18.0",
-        "js-yaml": "^4.1.1",
         "monaco-editor": "^0.55.1",
-        "shiki": "^4.0.2"
+        "shiki": "^4.0.2",
+        "yaml": "^2.8.3"
     },
     "pnpm": {
         "onlyBuiltDependencies": [

@@ -1,9 +1,19 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
 
-    import type { ErrorObject } from "ajv";
-    import jsyaml from "js-yaml";
+    import type { ValidateFunction } from "ajv";
     import type * as Monaco from "monaco-editor";
+
+    import {
+        analyzeYamlSource,
+        buildSchemaDiagnostics,
+        diagnosticsToMarkers,
+    } from "./yaml-analysis";
+    import {
+        asSchemaObject,
+        createValidator,
+        type SchemaObject,
+    } from "./yaml-schema";
 
     type Props = {
         value?: string;
@@ -27,6 +37,9 @@
         theme = "dark",
     }: Props = $props();
 
+    const langId = "yaml";
+    const markerOwner = "yaml-editor";
+
     let monacoModule: typeof import("./monaco") | null = null;
     let monacoInstance = $state<typeof import("./monaco").monaco | null>(null);
     let editorElement: HTMLDivElement;
@@ -36,84 +49,21 @@
     let resizeObserver = $state<ResizeObserver | null>(null);
     let changeDisposable = $state<Monaco.IDisposable | null>(null);
     let autoHeightDispose = $state<(() => void) | null>(null);
-    let cursorDisposable = $state<Monaco.IDisposable | null>(null);
     let validationMarkers = $state<Monaco.editor.IMarkerData[]>([]);
-    let schemaForValidation = $state<unknown | null>(null);
+    let resolvedSchema = $state<SchemaObject | null>(null);
+    let schemaValidator = $state<ValidateFunction<unknown> | null>(null);
     let schemaFetchAbort: AbortController | null = null;
-    let activeLine = $state<number | null>(null);
-    let validationRunId = 0;
 
-    const langId = "yaml";
     const editorTheme = $derived(
         theme === "dark" ? "catppuccin-mocha" : "catppuccin-latte",
     );
-    const fontSizeValue = $derived(parseInt(fontSize.replace("px", ""), 10));
-    const markers = $derived.by(() => {
-        const monaco = monacoInstance;
-        if (!model || !monaco) return [];
-
-        const syntaxMarkers: Monaco.editor.IMarkerData[] = [];
-        try {
-            jsyaml.load(value);
-        } catch (e: unknown) {
-            const err = e as {
-                mark?: { line: number; column: number };
-                reason?: string;
-                message?: string;
-            };
-            const mark = err.mark;
-
-            if (mark) {
-                const lineCount = model.getLineCount();
-                const lineNumber = Math.min(Math.max(1, mark.line + 1), lineCount);
-                const maxColumn = model.getLineMaxColumn(lineNumber);
-
-                syntaxMarkers.push({
-                    severity: monaco.MarkerSeverity.Error,
-                    message: err.reason || err.message || "YAML error",
-                    startLineNumber: lineNumber,
-                    startColumn: Math.min(mark.column + 1, maxColumn),
-                    endLineNumber: lineNumber,
-                    endColumn: maxColumn,
-                });
-            } else {
-                syntaxMarkers.push({
-                    severity: monaco.MarkerSeverity.Error,
-                    message: err.message || "YAML error",
-                    startLineNumber: 1,
-                    startColumn: 1,
-                    endLineNumber: 1,
-                    endColumn: 1,
-                });
-            }
-        }
-
-        return [...syntaxMarkers, ...validationMarkers];
-    });
-
-    function escapeRegExp(value: string) {
-        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    }
-
-    function findLineForKey(key: string) {
-        if (!model) return 1;
-        const lineCount = model.getLineCount();
-        const pattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`);
-        for (let i = 1; i <= lineCount; i++) {
-            const line = model.getLineContent(i);
-            if (pattern.test(line)) return i;
-        }
-        return 1;
-    }
-
-    function decodePointerSegment(segment: string) {
-        return segment.replace(/~1/g, "/").replace(/~0/g, "~");
-    }
+    const fontSizeValue = $derived(
+        Number.parseInt(fontSize.replace("px", ""), 10) || 13,
+    );
 
     function updateHeight() {
         if (!editor || !editorElement || !autoHeight) return;
-        const contentHeight = editor.getContentHeight();
-        editorElement.style.height = `${contentHeight}px`;
+        editorElement.style.height = `${editor.getContentHeight()}px`;
         editor.layout();
     }
 
@@ -125,11 +75,6 @@
         monacoInstance = monaco;
 
         await monacoModule.initShiki(monaco);
-        if (schemaObject) {
-            monacoModule.setYamlSchemaObject(schemaObject);
-        } else if (schemaUrl) {
-            monacoModule.setYamlSchemaUrl(schemaUrl);
-        }
         await new Promise((resolve) =>
             requestAnimationFrame(() => requestAnimationFrame(resolve)),
         );
@@ -156,6 +101,10 @@
             contextmenu: true,
             quickSuggestions: { other: true, comments: false, strings: true },
             suggestOnTriggerCharacters: true,
+            wordBasedSuggestions: "off",
+            suggest: {
+                showWords: false,
+            },
             fontFamily:
                 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
             fontLigatures: false,
@@ -172,26 +121,18 @@
             label: "Select All",
             contextMenuGroupId: "9_cutcopypaste",
             contextMenuOrder: 4,
-            run: (ed: Monaco.editor.IStandaloneCodeEditor) => {
-                ed.focus();
-                const activeModel = ed.getModel();
-                if (activeModel) {
-                    ed.setSelection(activeModel.getFullModelRange());
+            run: (activeEditor: Monaco.editor.IStandaloneCodeEditor) => {
+                activeEditor.focus();
+                const activeEditorModel = activeEditor.getModel();
+                if (activeEditorModel) {
+                    activeEditor.setSelection(activeEditorModel.getFullModelRange());
                 }
             },
         });
 
-        if (activeModel) {
-            changeDisposable = activeModel.onDidChangeContent(() => {
-                value = activeModel.getValue() || "";
-            });
-        }
-
-        cursorDisposable = createdEditor.onDidChangeCursorPosition(
-            (e: Monaco.editor.ICursorPositionChangedEvent) => {
-                activeLine = e.position.lineNumber;
-            },
-        );
+        changeDisposable = activeModel.onDidChangeContent(() => {
+            value = activeModel.getValue() || "";
+        });
 
         resizeObserver = new ResizeObserver(() => {
             requestAnimationFrame(() => {
@@ -203,21 +144,18 @@
 
     onDestroy(() => {
         changeDisposable?.dispose();
-        cursorDisposable?.dispose();
         resizeObserver?.disconnect();
         autoHeightDispose?.();
+
+        if (monacoModule && model) {
+            monacoModule.clearYamlSchemaForModel(model.uri);
+        }
+        if (monacoInstance && model) {
+            monacoInstance.editor.setModelMarkers(model, markerOwner, []);
+        }
+
         editor?.dispose();
         if (ownsModel) model?.dispose();
-    });
-
-    $effect(() => {
-        if (monacoModule) {
-            if (schemaObject) {
-                monacoModule.setYamlSchemaObject(schemaObject);
-            } else if (schemaUrl) {
-                monacoModule.setYamlSchemaUrl(schemaUrl);
-            }
-        }
     });
 
     $effect(() => {
@@ -226,126 +164,100 @@
             schemaFetchAbort = null;
         }
 
-        if (schemaObject) {
-            schemaForValidation = schemaObject;
+        const directSchema = asSchemaObject(schemaObject);
+        if (directSchema) {
+            resolvedSchema = directSchema;
+            schemaValidator = createValidator(directSchema);
             return;
         }
 
         if (!schemaUrl) {
-            schemaForValidation = null;
+            resolvedSchema = null;
+            schemaValidator = null;
             return;
         }
 
         const controller = new AbortController();
         schemaFetchAbort = controller;
+        resolvedSchema = null;
+        schemaValidator = null;
+
         (async () => {
             try {
-                const response = await fetch(schemaUrl, { signal: controller.signal });
+                const response = await fetch(schemaUrl, {
+                    cache: "no-store",
+                    signal: controller.signal,
+                });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const json = await response.json();
-                if (!controller.signal.aborted) {
-                    schemaForValidation = json;
-                }
+
+                const payload = asSchemaObject(await response.json());
+                if (controller.signal.aborted) return;
+
+                resolvedSchema = payload;
+                schemaValidator = payload ? createValidator(payload) : null;
             } catch {
-                if (!controller.signal.aborted) {
-                    schemaForValidation = null;
-                }
+                if (controller.signal.aborted) return;
+                resolvedSchema = null;
+                schemaValidator = null;
             }
         })();
 
         return () => {
             controller.abort();
+            if (schemaFetchAbort === controller) {
+                schemaFetchAbort = null;
+            }
+        };
+    });
+
+    $effect(() => {
+        const activeModel = model;
+        const api = monacoModule;
+        if (!activeModel || !api) return;
+
+        api.setYamlSchemaForModel(activeModel.uri, resolvedSchema);
+        return () => {
+            api.clearYamlSchemaForModel(activeModel.uri);
         };
     });
 
     $effect(() => {
         const activeModel = model;
         const monaco = monacoInstance;
-        if (!activeModel || !monaco || !schemaForValidation) {
+        if (!activeModel || !monaco) {
             validationMarkers = [];
             return;
         }
 
-        let data: unknown;
-        try {
-            data = jsyaml.load(value);
-        } catch {
-            validationMarkers = [];
-            return;
-        }
+        const analysis = analyzeYamlSource(value);
+        const markers = diagnosticsToMarkers(monaco, activeModel, analysis.diagnostics);
 
-        const runId = ++validationRunId;
-        const currentActiveLine = activeLine;
-        const schemaSnapshot = schemaForValidation;
-        const modelForMarkers = activeModel;
-        const monacoForMarkers = monaco;
-
-        void (async () => {
-            const { default: Ajv } = await import("ajv");
-            const ajv = new Ajv({
-                allErrors: true,
-                strict: false,
-                validateFormats: false,
-            });
-
-            let validate;
+        if (
+            schemaValidator &&
+            !analysis.diagnostics.some((diagnostic) => diagnostic.severity === "error")
+        ) {
             try {
-                validate = ajv.compile(schemaSnapshot as Record<string, unknown>);
+                const parsedValue = analysis.doc.toJS();
+                const valid = schemaValidator(parsedValue);
+                if (!valid) {
+                    markers.push(
+                        ...diagnosticsToMarkers(
+                            monaco,
+                            activeModel,
+                            buildSchemaDiagnostics(
+                                schemaValidator.errors,
+                                analysis.doc,
+                                value,
+                            ),
+                        ),
+                    );
+                }
             } catch {
-                if (runId !== validationRunId) return;
-                validationMarkers = [];
-                return;
+                // Syntax diagnostics already cover parser failures.
             }
+        }
 
-            const valid = validate(data);
-            if (runId !== validationRunId) return;
-            if (valid) {
-                validationMarkers = [];
-                return;
-            }
-
-            const errors = validate.errors || [];
-            const markers = errors
-                .map((err: ErrorObject): Monaco.editor.IMarkerData | null => {
-                    const pointer = err.instancePath || "";
-                    const segments = pointer
-                        .split("/")
-                        .filter(Boolean)
-                        .map((s: string) => decodePointerSegment(s));
-                    let key = segments.length > 0 ? segments[segments.length - 1] : "";
-                    if (err.keyword === "required" && typeof err.params === "object") {
-                        const missing = (err.params as { missingProperty?: string })
-                            .missingProperty;
-                        if (missing) key = missing;
-                    }
-                    if (/^\d+$/.test(key) && segments.length > 1) {
-                        key = segments[segments.length - 2];
-                    }
-
-                    const lineNumber = key ? findLineForKey(key) : 1;
-                    if (
-                        currentActiveLine !== null &&
-                        lineNumber === currentActiveLine
-                    ) {
-                        return null;
-                    }
-                    const maxColumn = modelForMarkers.getLineMaxColumn(lineNumber);
-                    return {
-                        severity: monacoForMarkers.MarkerSeverity.Error,
-                        message: err.message || "Schema validation error",
-                        startLineNumber: lineNumber,
-                        startColumn: 1,
-                        endLineNumber: lineNumber,
-                        endColumn: maxColumn,
-                    } as Monaco.editor.IMarkerData;
-                })
-                .filter((marker): marker is Monaco.editor.IMarkerData =>
-                    Boolean(marker),
-                );
-
-            if (runId !== validationRunId) return;
-            validationMarkers = markers;
-        })();
+        validationMarkers = markers;
     });
 
     $effect(() => {
@@ -362,7 +274,11 @@
 
     $effect(() => {
         if (model && monacoInstance) {
-            monacoInstance.editor.setModelMarkers(model, "yaml-linter", markers);
+            monacoInstance.editor.setModelMarkers(
+                model,
+                markerOwner,
+                validationMarkers,
+            );
         }
     });
 
@@ -374,6 +290,10 @@
                 wordWrap: "on",
                 fixedOverflowWidgets: true,
                 dragAndDrop: false,
+                wordBasedSuggestions: "off",
+                suggest: {
+                    showWords: false,
+                },
                 scrollbar: autoHeight
                     ? { vertical: "hidden", handleMouseWheel: false }
                     : { vertical: "auto", handleMouseWheel: true },
