@@ -1,5 +1,6 @@
 """Database Configuration for AniBridge."""
 
+from contextvars import ContextVar, Token
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
@@ -60,7 +61,15 @@ class AnibridgeDb:
             expire_on_commit=False,
             future=True,
         )
-        self._session: Session | None = None
+        # Keep the engine/session factory singleton-scoped, but isolate the live
+        # Session per request/task context so overlapping requests never share it.
+        self._session_ctx: ContextVar[Session | None] = ContextVar(
+            "anibridge_db_session",
+            default=None,
+        )
+        self._session_tokens: ContextVar[tuple[Token[Session | None], ...]] = (
+            ContextVar("anibridge_db_session_tokens", default=())
+        )
         self._do_migrations()
 
     def _setup_db(self) -> Engine:
@@ -144,7 +153,10 @@ class AnibridgeDb:
 
     def __enter__(self) -> AnibridgeDb:
         """Enters the context manager, returning the database instance."""
-        self._session = self._SessionLocal()
+        session = self._SessionLocal()
+        token = self._session_ctx.set(session)
+        tokens = self._session_tokens.get()
+        self._session_tokens.set((*tokens, token))
         return self
 
     def __exit__(
@@ -154,16 +166,34 @@ class AnibridgeDb:
         exc_tb: TracebackType | None,
     ) -> None:
         """Close the session opened for this context, if any."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+        session = self._session_ctx.get()
+        if session is not None:
+            session.close()
+
+        tokens = self._session_tokens.get()
+        if not tokens:
+            self._session_ctx.set(None)
+            return
+
+        token = tokens[-1]
+        self._session_tokens.set(tokens[:-1])
+        self._session_ctx.reset(token)
+
+    def close(self) -> None:
+        """Close the current session and dispose the SQLAlchemy engine."""
+        self.__exit__(None, None, None)
+        self.engine.dispose()
 
     @property
     def session(self) -> Session:
         """Return the current SQLAlchemy session, creating it if needed."""
-        if self._session is None:
-            self._session = self._SessionLocal()
-        return self._session
+        session = self._session_ctx.get()
+        if session is None:
+            session = self._SessionLocal()
+            token = self._session_ctx.set(session)
+            tokens = self._session_tokens.get()
+            self._session_tokens.set((*tokens, token))
+        return session
 
 
 @cache
