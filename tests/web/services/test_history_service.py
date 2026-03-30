@@ -168,6 +168,13 @@ class DummyBridge(SimpleNamespace):
     """Bridge container connecting providers to the scheduler stub."""
 
 
+class DummyScheduler(SimpleNamespace):
+    """Scheduler test double for retry-item scheduling."""
+
+    async def trigger_profile_sync(self, profile: str, **kwargs):
+        self.calls.append({"profile": profile, **kwargs})
+
+
 @pytest.fixture()
 def history_env(monkeypatch: pytest.MonkeyPatch):
     """Attach a scheduler containing a single bridge for history tests."""
@@ -505,3 +512,216 @@ async def test_history_service_purge_ephemeral_items_removes_only_ephemeral(
 def test_get_history_service_returns_singleton():
     """The cached service factory should return a singleton."""
     assert get_history_service() is get_history_service()
+
+
+@pytest.mark.asyncio
+async def test_history_service_helper_short_circuits(history_env):
+    """Empty batches and mismatched namespaces should return no metadata."""
+    service = HistoryService()
+
+    assert await service._build_history_items("profile", []) == []
+    assert await service._fetch_list_metadata_batch("profile", "alist", ()) == {}
+    assert await service._fetch_list_metadata_batch("profile", "wrong", ("lst1",)) == {}
+    assert (
+        await service._fetch_library_metadata_batch(
+            "profile",
+            "_dummy-library",
+            None,
+            ("lib1",),
+        )
+        == {}
+    )
+    assert (
+        await service._fetch_library_metadata_batch(
+            "profile",
+            "wrong",
+            "1",
+            ("lib1",),
+        )
+        == {}
+    )
+
+
+@pytest.mark.asyncio
+async def test_history_service_get_latest_id_and_cursor_filters(history_env):
+    """Latest-id lookups and cursor paging should honor the requested bounds."""
+    row1 = _seed_history_row(
+        library_media_key="lib1",
+        list_media_key="lst1",
+        outcome=SyncOutcome.SYNCED,
+    )
+    row2 = _seed_history_row(
+        clear=False,
+        library_media_key="lib2",
+        list_media_key="lst2",
+        outcome=SyncOutcome.FAILED,
+    )
+    service = HistoryService()
+
+    assert await service.get_latest_id("profile") == row2
+    assert (
+        await service.get_latest_id("profile", outcome=SyncOutcome.FAILED.value) == row2
+    )
+
+    before_page = await service.get_page(
+        profile="profile",
+        limit=10,
+        before_id=row2,
+        include_library_media=False,
+        include_list_media=False,
+    )
+    after_page = await service.get_page(
+        profile="profile",
+        limit=10,
+        after_id=row1,
+        include_library_media=False,
+        include_list_media=False,
+    )
+
+    assert [item.id for item in before_page.items] == [row1]
+    assert [item.id for item in after_page.items] == [row2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"limit": 0}, "limit must be >= 1"),
+        ({"limit": 251}, "limit must be <= 250"),
+        ({"before_id": 1, "after_id": 2}, "mutually exclusive"),
+    ],
+)
+async def test_history_service_get_page_validates_inputs(
+    kwargs: dict[str, Any],
+    message: str,
+    history_env,
+) -> None:
+    """Invalid page parameters should raise a clear ValueError."""
+    service = HistoryService()
+
+    with pytest.raises(ValueError, match=message):
+        await service.get_page(
+            profile="profile",
+            include_library_media=False,
+            include_list_media=False,
+            **kwargs,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"list_namespace": "other"}, "different list provider"),
+        ({"library_namespace": "other"}, "different library provider"),
+        ({"outcome": SyncOutcome.SKIPPED}, "only supported"),
+        ({"before_state": None, "after_state": None}, "does not contain undo data"),
+    ],
+)
+async def test_history_service_undo_item_permission_branches(
+    overrides: dict[str, Any],
+    message: str,
+    history_env,
+) -> None:
+    """Undo should reject rows that do not meet the provider and state requirements."""
+    row_id = _seed_history_row(**overrides)
+    service = HistoryService()
+
+    with pytest.raises(HistoryPermissionError, match=message):
+        await service.undo_item("profile", row_id)
+
+
+@pytest.mark.asyncio
+async def test_history_service_undo_item_restore_dry_run_skips_provider_write(
+    history_env,
+):
+    """Dry-run undo restores should not mutate the remote list provider."""
+    history_env.bridge.profile_config.dry_run = True
+    service = HistoryService()
+    row_id = _seed_history_row()
+
+    item = await service.undo_item("profile", row_id)
+
+    assert item.ephemeral is True
+    assert history_env.list_provider.updated_entries == []
+
+
+@pytest.mark.asyncio
+async def test_history_service_undo_item_restore_requires_provider_entry(history_env):
+    """Undo restore should fail if the provider entry no longer exists."""
+    row_id = _seed_history_row(before_state={"media_key": "lst1", "progress": 0})
+    history_env.list_provider._missing_keys.add("lst1")
+    service = HistoryService()
+
+    with pytest.raises(HistoryItemNotFoundError, match="no longer exists"):
+        await service.undo_item("profile", row_id)
+
+
+@pytest.mark.asyncio
+async def test_history_service_retry_item_branches(
+    history_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry should validate scheduler state and schedule targeted syncs."""
+    service = HistoryService()
+    state = get_app_state()
+    original_scheduler = state.scheduler
+    state.scheduler = None
+    try:
+        with pytest.raises(SchedulerNotInitializedError):
+            await service.retry_item("profile", 1)
+    finally:
+        state.scheduler = original_scheduler
+
+    with pytest.raises(HistoryItemNotFoundError):
+        await service.retry_item("profile", 9999)
+
+    wrong_ns_id = _seed_history_row(
+        library_namespace="wrong",
+        outcome=SyncOutcome.FAILED,
+    )
+    with pytest.raises(HistoryPermissionError, match="different library provider"):
+        await service.retry_item("profile", wrong_ns_id)
+
+    wrong_outcome_id = _seed_history_row(
+        clear=False,
+        library_media_key="lib2",
+        list_media_key="lst2",
+        outcome=SyncOutcome.SYNCED,
+    )
+    with pytest.raises(HistoryPermissionError, match="only available"):
+        await service.retry_item("profile", wrong_outcome_id)
+
+    scheduled: dict[str, Any] = {}
+
+    def fake_schedule_task(coro, *, name: str) -> None:
+        scheduled["name"] = name
+        scheduled["coro"] = coro
+        coro.close()
+
+    scheduler = DummyScheduler(bridge_clients={"profile": history_env.bridge}, calls=[])
+    state.scheduler = cast(Any, scheduler)
+    monkeypatch.setattr(
+        "anibridge.app.web.services.history_service.schedule_task",
+        fake_schedule_task,
+    )
+
+    retry_id = _seed_history_row(
+        clear=False,
+        library_media_key="lib4",
+        list_media_key="lst4",
+        outcome=SyncOutcome.FAILED,
+    )
+    await service.retry_item("profile", retry_id)
+
+    assert scheduled["name"] == f"retry_history_item:profile:{retry_id}"
+
+
+@pytest.mark.asyncio
+async def test_history_service_purge_ephemeral_items_returns_zero_when_empty(
+    history_env,
+):
+    """Purge should return zero when there are no ephemeral rows to delete."""
+    service = HistoryService()
+
+    assert await service.purge_ephemeral_items() == 0

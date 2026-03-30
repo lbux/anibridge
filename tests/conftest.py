@@ -40,6 +40,7 @@ from anibridge.utils.limiter import Limiter  # noqa: E402
 
 from anibridge.app.config import settings as settings_module  # noqa: E402
 from anibridge.app.config.database import db as db_factory  # noqa: E402
+from anibridge.app.models.db.base import Base  # noqa: E402
 from anibridge.app.utils import logging as logging_module  # noqa: E402
 from anibridge.app.web.state import get_app_state  # noqa: E402
 
@@ -75,6 +76,64 @@ def _reset_app_state():
     state = get_app_state()
     yield state
     get_app_state.cache_clear()
+
+
+@pytest.fixture
+def in_memory_db_factory():
+    """Build disposable SQLite-backed DB stubs patched into target modules."""
+    resources: list[tuple[object, object]] = []
+
+    def _factory(
+        monkeypatch: pytest.MonkeyPatch,
+        *modules: object,
+    ) -> object:
+        from sqlalchemy.engine import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///:memory:", future=True)
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(
+            bind=engine,
+            autoflush=False,
+            autocommit=False,
+            expire_on_commit=False,
+            future=True,
+        )
+
+        class _DB:
+            def __init__(self) -> None:
+                self._session = None
+
+            def __enter__(self):
+                self._session = session_factory()
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                if self._session is not None:
+                    self._session.close()
+                    self._session = None
+
+            @property
+            def session(self):
+                if self._session is None:
+                    self._session = session_factory()
+                return self._session
+
+        db_instance = _DB()
+
+        for module in modules:
+            monkeypatch.setattr(module, "db", lambda: db_instance)
+
+        resources.append((db_instance, engine))
+        return db_instance
+
+    yield _factory
+
+    for db_instance, engine in reversed(resources):
+        session = getattr(db_instance, "_session", None)
+        if session is not None:
+            session.close()
+        engine.dispose()  # ty:ignore[unresolved-attribute]
 
 
 @atexit.register

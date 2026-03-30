@@ -20,7 +20,18 @@ class DummyListProvider:
     NAMESPACE = "anilist"
 
     async def get_entries_batch(self, keys):
-        return []
+        return [
+            None,
+            SimpleNamespace(
+                media=lambda: SimpleNamespace(
+                    key="abc",
+                    title="AniBridge",
+                    poster_image="https://example.test/poster.jpg",
+                    external_url="https://example.test/item",
+                    labels=("dub", "favorite"),
+                )
+            ),
+        ]
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +95,18 @@ def test_update_pin_payload_normalizes_and_validates():
     with pytest.raises(ValueError, match="Unsupported field"):
         UpdatePinPayload(fields=["missing"]).normalized()
 
+    assert UpdatePinPayload(fields=[" ", "status"]).normalized() == [
+        SyncField.STATUS.value
+    ]
+
+
+def test_pin_service_lists_available_field_options():
+    """Selectable pin options should expose user-facing labels."""
+    options = PinService().list_options()
+
+    assert options[0].value == SyncField.STATUS.value
+    assert options[0].label == "Status"
+
 
 @pytest.mark.asyncio
 async def test_pin_service_lists_and_serializes_entries():
@@ -130,3 +153,30 @@ async def test_pin_service_upsert_and_delete_roundtrip():
 
     with pytest.raises(ValueError):
         await service.upsert_pin("default", "xyz", [])
+
+
+@pytest.mark.asyncio
+async def test_pin_service_enriches_entries_with_media_metadata():
+    """with_media should merge provider metadata into pin responses."""
+    service = PinService()
+    _insert_pin(list_media_key="abc", fields=[SyncField.STATUS.value])
+
+    listed = await service.list_pins("default", with_media=True)
+    fetched = await service.get_pin("default", "abc", with_media=True)
+    updated = await service.upsert_pin(
+        "default",
+        "abc",
+        [SyncField.STATUS.value],
+        with_media=True,
+    )
+
+    assert listed[0].media is not None
+    assert listed[0].media.title == "AniBridge"
+    assert listed[0].media.labels == ["dub", "favorite"]
+    assert fetched is not None and fetched.media is not None
+    assert updated.media is not None
+
+
+def test_pin_service_delete_missing_pin_is_noop():
+    """Deleting a missing pin should quietly return."""
+    PinService().delete_pin("default", "missing")

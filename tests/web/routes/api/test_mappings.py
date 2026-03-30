@@ -1,11 +1,19 @@
 """Tests for mappings API routes."""
 
+import asyncio
 from contextlib import contextmanager
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from anibridge.app.config.database import db
+from anibridge.app.exceptions import (
+    AniListFilterError,
+    AniListSearchError,
+    BooruQuerySyntaxError,
+    MappingIdMismatchError,
+)
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.web.routes.api import mappings as mappings_api_module
 
@@ -60,3 +68,133 @@ def test_query_capabilities_include_distinct_provider_values() -> None:
 
     assert source_provider["values"] == ["anilist", "tmdb"]
     assert target_provider["values"] == ["anilist", "tmdb"]
+
+
+def test_list_mappings_and_override_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _MappingsService:
+        async def list_mappings(self, **kwargs):
+            assert kwargs["page"] == 2
+            assert kwargs["per_page"] == 1
+            assert kwargs["q"] == "anilist"
+            assert kwargs["custom_only"] is True
+            assert kwargs["with_anilist"] is True
+            return (
+                [
+                    {
+                        "descriptor": "anilist:1",
+                        "provider": "anilist",
+                        "entry_id": "1",
+                        "scope": None,
+                        "edges": [],
+                        "custom": False,
+                        "sources": [],
+                        "anilist": None,
+                    }
+                ],
+                3,
+            )
+
+    class _OverridesService:
+        async def get_mapping_detail(self, descriptor: str):
+            return {
+                "descriptor": descriptor,
+                "provider": "anilist",
+                "entry_id": "1",
+                "scope": None,
+                "layers": {},
+                "targets": [],
+            }
+
+        async def save_override(self, **kwargs):
+            return {
+                "descriptor": kwargs["descriptor"],
+                "provider": "anilist",
+                "entry_id": "1",
+                "scope": None,
+                "layers": {},
+                "targets": [],
+            }
+
+    monkeypatch.setattr(
+        mappings_api_module,
+        "get_mappings_service",
+        lambda: _MappingsService(),
+    )
+    monkeypatch.setattr(
+        mappings_api_module,
+        "get_mapping_overrides_service",
+        lambda: _OverridesService(),
+    )
+
+    client = TestClient(_build_app())
+    listed = client.get(
+        "/api/mappings",
+        params={
+            "page": 2,
+            "per_page": 1,
+            "q": "anilist",
+            "custom_only": "true",
+            "with_anilist": "true",
+        },
+    )
+    assert listed.status_code == 200
+    assert listed.json()["pages"] == 3
+
+    detail = client.get("/api/mappings/anilist:1")
+    assert detail.status_code == 200
+
+    created = client.post(
+        "/api/mappings",
+        json={"descriptor": "anilist:1", "targets": []},
+    )
+    assert created.status_code == 200
+
+    updated = asyncio.run(
+        mappings_api_module.update_mapping(
+            "anilist:1",
+            mappings_api_module.MappingOverridePayload(
+                descriptor="anilist:1",
+                targets=[],
+            ),
+        )
+    )
+    assert updated.descriptor == "anilist:1"
+
+    with pytest.raises(MappingIdMismatchError):
+        asyncio.run(
+            mappings_api_module.update_mapping(
+                "anilist:1",
+                mappings_api_module.MappingOverridePayload(
+                    descriptor="anilist:2",
+                    targets=[],
+                ),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected_status"),
+    [
+        (BooruQuerySyntaxError("bad"), 400),
+        (AniListFilterError("bad filter"), 400),
+        (AniListSearchError("lookup failed"), 502),
+        (asyncio.CancelledError(), 499),
+    ],
+)
+def test_list_mappings_translates_service_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    exc: Exception,
+    expected_status: int,
+) -> None:
+    class _MappingsService:
+        async def list_mappings(self, **kwargs):
+            raise exc
+
+    monkeypatch.setattr(
+        mappings_api_module,
+        "get_mappings_service",
+        lambda: _MappingsService(),
+    )
+    response = TestClient(_build_app()).get("/api/mappings")
+
+    assert response.status_code == expected_status

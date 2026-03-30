@@ -256,6 +256,72 @@ async def test_search_media_returns_none_when_disabled(
 
 
 @pytest.mark.asyncio
+async def test_clear_cache_clears_history_cache(movie_client: MovieSyncClient) -> None:
+    """clear_cache should also reset the cached movie history helper."""
+    movie = make_movie(
+        history=[make_history_entry("movie-1", ts=datetime(2025, 1, 1, tzinfo=UTC))]
+    )
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+
+    await movie_client._calculate_started_at(**_call_args(movie, entry))
+    await movie_client.clear_cache()
+    history = await movie_client._get_history(cast(LibraryMovieProtocol, movie))
+
+    assert history == movie._history
+
+
+@pytest.mark.asyncio
+async def test_calculate_status_handles_current_and_dropped(
+    movie_client: MovieSyncClient,
+) -> None:
+    """Current and dropped states should reflect playback flags and history."""
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+    current = make_movie(view_count=0, on_watching=True, history=[])
+    dropped = make_movie(
+        view_count=0,
+        on_watching=False,
+        on_watchlist=False,
+        history=[make_history_entry("movie-1", ts=datetime(2025, 1, 1, tzinfo=UTC))],
+    )
+
+    assert (
+        await movie_client._calculate_status(**_call_args(current, entry))
+        == ListStatus.CURRENT
+    )
+    assert (
+        await movie_client._calculate_status(**_call_args(dropped, entry))
+        == ListStatus.DROPPED
+    )
+
+
+@pytest.mark.asyncio
+async def test_started_and_finished_dates_return_none_without_history(
+    movie_client: MovieSyncClient,
+) -> None:
+    """Date calculations should return None when the movie has no history."""
+    movie = make_movie(history=[])
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="1",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+    )
+
+    assert await movie_client._calculate_started_at(**_call_args(movie, entry)) is None
+    assert await movie_client._calculate_finished_at(**_call_args(movie, entry)) is None
+
+
+@pytest.mark.asyncio
 async def test_map_media_returns_multiple_targets(
     movie_client: MovieSyncClient,
 ) -> None:

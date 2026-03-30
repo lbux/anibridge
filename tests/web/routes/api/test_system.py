@@ -1,13 +1,13 @@
 """Tests for system API endpoints."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import pytest
 from pytest import raises
 
 from anibridge.app.exceptions import SchedulerUnavailableError
-from anibridge.app.web.routes.api import config as config_api_module
 from anibridge.app.web.routes.api import system as system_api_module
 
 
@@ -19,26 +19,60 @@ class _DummyScheduler:
         self.shutdown_requested = True
 
 
-class _DummyAppState:
-    def __init__(self, scheduler: _DummyScheduler | None) -> None:
-        self.scheduler = scheduler
-        self.restart_requested = False
+class _DummyGlobalConfig:
+    def __init__(self) -> None:
+        self.profiles = {
+            "primary": SimpleNamespace(
+                model_dump=lambda mode="json": {
+                    "library_namespace": "plex",
+                    "list_namespace": "anilist",
+                    "scan_modes": ["poll", "periodic"],
+                }
+            )
+        }
 
-    def request_restart(self) -> None:
-        self.restart_requested = True
+    def model_dump(self, mode="json", exclude=None):
+        return {"web": {"host": "127.0.0.1"}}
 
 
-def _build_app() -> FastAPI:
-    app = FastAPI()
-    app.include_router(system_api_module.router, prefix="/api/system")
-    return app
+class _AboutScheduler:
+    def __init__(self) -> None:
+        self.global_config = _DummyGlobalConfig()
+        self.is_running = True
+
+    async def get_status(self) -> dict[str, Any]:
+        return {
+            "primary": {
+                "config": {
+                    "library_namespace": "plex",
+                    "list_namespace": "anilist",
+                    "scan_modes": ["poll", "periodic"],
+                },
+                "status": {
+                    "running": True,
+                    "last_synced": "2026-01-01T00:00:00+00:00",
+                    "current_sync": {"state": "running"},
+                    "initialization_error": None,
+                },
+            }
+        }
+
+    async def get_runtime_metrics(self) -> dict[str, Any]:
+        return {"coordinator": {"queued": 1}}
+
+    def get_next_database_sync_at(self):
+        return datetime(2026, 1, 2, tzinfo=UTC)
 
 
-def test_api_restart_requests_scheduler_shutdown(monkeypatch) -> None:
+@pytest.fixture
+def system_client(api_client_for):
+    return api_client_for(system_api_module, "/api/system")
+
+
+def test_api_restart_requests_scheduler_shutdown(patch_app_state) -> None:
     """Restart endpoint should mark restart and request scheduler shutdown."""
     scheduler = _DummyScheduler()
-    state = _DummyAppState(scheduler=scheduler)
-    monkeypatch.setattr(system_api_module, "get_app_state", lambda: state)
+    state = patch_app_state(system_api_module, scheduler=scheduler)
 
     response = system_api_module.api_restart()
 
@@ -48,61 +82,121 @@ def test_api_restart_requests_scheduler_shutdown(monkeypatch) -> None:
     assert scheduler.shutdown_requested is True
 
 
-def test_api_restart_requires_scheduler(monkeypatch) -> None:
+def test_api_restart_requires_scheduler(patch_app_state) -> None:
     """Restart endpoint should fail when scheduler is unavailable."""
-    state = _DummyAppState(scheduler=None)
-    monkeypatch.setattr(system_api_module, "get_app_state", lambda: state)
+    patch_app_state(system_api_module, scheduler=None)
 
     with raises(SchedulerUnavailableError):
         system_api_module.api_restart()
 
 
-def test_restart_api_blocked_without_auth_or_override(monkeypatch) -> None:
-    """Restart API should be blocked when config API access is blocked."""
-    monkeypatch.setattr(
-        config_api_module,
-        "runtime_config",
-        SimpleNamespace(
-            web=SimpleNamespace(
-                has_auth=False,
-                allow_config_without_auth=False,
-            )
-        ),
-        raising=False,
-    )
-
-    state = _DummyAppState(scheduler=_DummyScheduler())
-    monkeypatch.setattr(system_api_module, "get_app_state", lambda: state)
-
-    client = TestClient(_build_app())
-    response = client.post("/api/system/restart")
-
-    assert response.status_code == 403
-    assert "Configuration API is disabled" in response.json()["detail"]
-    assert state.restart_requested is False
-
-
-def test_restart_api_allowed_with_unauthenticated_override(monkeypatch) -> None:
-    """Restart API should be available when unauthenticated override is enabled."""
-    monkeypatch.setattr(
-        config_api_module,
-        "runtime_config",
-        SimpleNamespace(
-            web=SimpleNamespace(
-                has_auth=False,
-                allow_config_without_auth=True,
-            )
-        ),
-        raising=False,
-    )
-
+@pytest.mark.parametrize(
+    ("allow_without_auth", "expected_status", "restart_requested"),
+    [
+        pytest.param(False, 403, False, id="blocked-without-override"),
+        pytest.param(True, 202, True, id="allowed-with-override"),
+    ],
+)
+def test_restart_api_access_policy(
+    patch_app_state,
+    system_client,
+    set_config_api_access,
+    allow_without_auth: bool,
+    expected_status: int,
+    restart_requested: bool,
+) -> None:
+    """Restart API should follow the shared config API access policy."""
+    set_config_api_access(allow_config_without_auth=allow_without_auth)
     scheduler = _DummyScheduler()
-    state = _DummyAppState(scheduler=scheduler)
-    monkeypatch.setattr(system_api_module, "get_app_state", lambda: state)
+    state = patch_app_state(system_api_module, scheduler=scheduler)
 
-    client = TestClient(_build_app())
-    response = client.post("/api/system/restart")
+    response = system_client.post("/api/system/restart")
 
-    assert response.status_code == 202
-    assert state.restart_requested is True
-    assert scheduler.shutdown_requested is True
+    assert response.status_code == expected_status
+    assert state.restart_requested is restart_requested
+    assert scheduler.shutdown_requested is restart_requested
+    if expected_status == 403:
+        assert "Configuration API is disabled" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("scheduler", "expected_global_config", "expected_profile_count"),
+    [
+        pytest.param(
+            _AboutScheduler(), {"web": {"host": "127.0.0.1"}}, 1, id="with-scheduler"
+        ),
+        pytest.param(None, {}, 0, id="without-scheduler"),
+    ],
+)
+def test_api_settings_serializes_scheduler_state(
+    patch_app_state,
+    scheduler: _AboutScheduler | None,
+    expected_global_config: dict[str, Any],
+    expected_profile_count: int,
+) -> None:
+    patch_app_state(system_api_module, scheduler=scheduler)
+
+    response = system_api_module.api_settings()
+
+    assert response.global_config == expected_global_config
+    assert len(response.profiles) == expected_profile_count
+    if expected_profile_count:
+        assert response.profiles[0].name == "primary"
+        assert response.profiles[0].settings["library_namespace"] == "plex"
+
+
+@pytest.mark.asyncio
+async def test_api_about_returns_runtime_summary(monkeypatch, patch_app_state) -> None:
+    scheduler = _AboutScheduler()
+    patch_app_state(
+        system_api_module,
+        scheduler=scheduler,
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    monkeypatch.setattr(system_api_module.platform, "python_version", lambda: "3.14.0")
+    monkeypatch.setattr(system_api_module.platform, "platform", lambda: "Linux")
+    monkeypatch.setattr(system_api_module.os, "getpid", lambda: 123)
+    monkeypatch.setattr(system_api_module.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(
+        system_api_module,
+        "resource",
+        SimpleNamespace(
+            RUSAGE_SELF=1,
+            getrusage=lambda _kind: SimpleNamespace(ru_maxrss=2048),
+        ),
+    )
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(system_api_module, "datetime", FrozenDateTime)
+
+    response = await system_api_module.api_about()
+
+    assert response.info.python == "3.14.0"
+    assert response.process.pid == 123
+    assert response.scheduler.running is True
+    assert response.scheduler.syncing_profiles == 1
+    assert response.scheduler.most_recent_sync_profile == "primary"
+    assert response.scheduler.next_database_sync_at == "2026-01-02T00:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_api_about_wraps_scheduler_errors(patch_app_state) -> None:
+    class _BrokenScheduler(_AboutScheduler):
+        async def get_status(self) -> dict[str, Any]:
+            raise RuntimeError("boom")
+
+    patch_app_state(system_api_module, scheduler=_BrokenScheduler())
+
+    with pytest.raises(SchedulerUnavailableError, match="Unable to fetch scheduler"):
+        await system_api_module.api_about()
+
+
+def test_meta_returns_version_and_git_hash() -> None:
+    response = system_api_module.meta()
+
+    assert response.version
+    assert response.git_hash

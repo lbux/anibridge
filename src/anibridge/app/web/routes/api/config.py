@@ -68,7 +68,7 @@ def get_configuration() -> ConfigDocumentResponse:
         payload = get_configuration_service().load_document_text()
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=exc.errors(),
         ) from exc
     except ValueError as exc:
@@ -105,7 +105,7 @@ async def update_configuration(
         ) from exc
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=exc.errors(),
         ) from exc
     except ValueError as exc:

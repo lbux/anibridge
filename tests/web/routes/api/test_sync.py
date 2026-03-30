@@ -1,5 +1,8 @@
 """Tests for sync API endpoints."""
 
+from collections.abc import Coroutine
+from typing import Any
+
 import pytest
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
@@ -9,22 +12,87 @@ from anibridge.app.web.routes.api import sync as sync_api_module
 class _DummyScheduler:
     def __init__(self) -> None:
         self.reinitialized_profiles: list[str] = []
+        self.profile_sync_calls: list[tuple[str, bool, list[str] | None, str]] = []
+        self.all_sync_calls: list[tuple[bool, str]] = []
+        self.database_sync_calls: list[str] = []
 
     async def reinitialize_profile(self, profile: str) -> None:
         self.reinitialized_profiles.append(profile)
 
+    async def trigger_all_profiles_sync(self, *, poll: bool, source: str) -> None:
+        self.all_sync_calls.append((poll, source))
 
-class _DummyAppState:
-    def __init__(self, scheduler: _DummyScheduler | None) -> None:
-        self.scheduler = scheduler
+    async def trigger_database_sync(self, *, source: str) -> None:
+        self.database_sync_calls.append(source)
+
+    async def trigger_profile_sync(
+        self,
+        profile: str,
+        *,
+        poll: bool,
+        library_keys: list[str] | None,
+        source: str,
+    ) -> None:
+        self.profile_sync_calls.append((profile, poll, library_keys, source))
+
+
+@pytest.fixture
+def scheduler() -> _DummyScheduler:
+    return _DummyScheduler()
+
+
+@pytest.fixture
+def scheduled_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, Coroutine[Any, Any, Any]]]:
+    tasks: list[tuple[str, Coroutine[Any, Any, Any]]] = []
+
+    def _schedule_task(coro: Coroutine[Any, Any, Any], *, name: str) -> None:
+        tasks.append((name, coro))
+        coro.close()
+
+    monkeypatch.setattr(sync_api_module, "schedule_task", _schedule_task)
+    return tasks
 
 
 @pytest.mark.asyncio
-async def test_reinitialize_profile_calls_scheduler(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("operation", "expected_task_name"),
+    [
+        pytest.param("all", "sync_all_profiles", id="all-profiles"),
+        pytest.param("database", "sync_database", id="database"),
+        pytest.param("profile", "sync_profile:broken", id="single-profile"),
+    ],
+)
+async def test_sync_routes_schedule_background_tasks(
+    patch_app_state,
+    scheduler: _DummyScheduler,
+    scheduled_tasks,
+    operation: str,
+    expected_task_name: str,
+) -> None:
+    patch_app_state(sync_api_module, scheduler=scheduler)
+
+    if operation == "all":
+        response = await sync_api_module.sync_all(poll=True)
+    elif operation == "database":
+        response = await sync_api_module.sync_database()
+    else:
+        response = await sync_api_module.sync_profile(
+            "broken", poll=True, library_keys=["1", "2"]
+        )
+
+    assert response.ok is True
+    assert [name for name, _ in scheduled_tasks] == [expected_task_name]
+
+
+@pytest.mark.asyncio
+async def test_reinitialize_profile_calls_scheduler(
+    patch_app_state,
+    scheduler: _DummyScheduler,
+) -> None:
     """Reinitialize endpoint should target the requested profile."""
-    scheduler = _DummyScheduler()
-    state = _DummyAppState(scheduler=scheduler)
-    monkeypatch.setattr(sync_api_module, "get_app_state", lambda: state)
+    patch_app_state(sync_api_module, scheduler=scheduler)
 
     response = await sync_api_module.reinitialize_profile("broken")
 
@@ -33,10 +101,27 @@ async def test_reinitialize_profile_calls_scheduler(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reinitialize_profile_requires_scheduler(monkeypatch) -> None:
-    """Reinitialize endpoint should fail when scheduler is unavailable."""
-    state = _DummyAppState(scheduler=None)
-    monkeypatch.setattr(sync_api_module, "get_app_state", lambda: state)
+@pytest.mark.parametrize(
+    "operation",
+    [
+        pytest.param("all", id="all-profiles"),
+        pytest.param("database", id="database"),
+        pytest.param("profile", id="single-profile"),
+        pytest.param("reinitialize", id="reinitialize"),
+    ],
+)
+async def test_sync_routes_require_scheduler(
+    patch_app_state,
+    operation: str,
+) -> None:
+    patch_app_state(sync_api_module, scheduler=None)
 
     with pytest.raises(SchedulerNotInitializedError):
-        await sync_api_module.reinitialize_profile("broken")
+        if operation == "all":
+            await sync_api_module.sync_all()
+        elif operation == "database":
+            await sync_api_module.sync_database()
+        elif operation == "profile":
+            await sync_api_module.sync_profile("broken")
+        else:
+            await sync_api_module.reinitialize_profile("broken")

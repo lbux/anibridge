@@ -4,6 +4,7 @@ import base64
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -13,6 +14,7 @@ from anibridge.app.config.database import db
 from anibridge.app.config.settings import AnibridgeConfig, BasicAuthConfig, WebConfig
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.web import app as app_module
+from anibridge.app.web.middlewares import basic_auth as basic_auth_module
 from anibridge.app.web.middlewares.basic_auth import BasicAuthMiddleware
 from anibridge.app.web.state import get_app_state
 
@@ -152,6 +154,89 @@ def test_basic_auth_middleware_bypasses_healthz() -> None:
     assert health.json() == {"status": "ok"}
 
     assert client.get("/protected").status_code == 401
+
+
+def test_basic_auth_extract_credentials_handles_invalid_headers() -> None:
+    """Malformed Authorization headers should be ignored safely."""
+    middleware = BasicAuthMiddleware(lambda scope, receive, send: None)  # type: ignore[arg-type]
+
+    scope = {"type": "http", "headers": []}
+    assert middleware._extract_credentials(scope) is None
+
+    bad_scheme = {"type": "http", "headers": [(b"authorization", b"Bearer token")]}
+    assert middleware._extract_credentials(bad_scheme) is None
+
+    invalid_base64 = {
+        "type": "http",
+        "headers": [(b"authorization", b"Basic !!!")],
+    }
+    assert middleware._extract_credentials(invalid_base64) is None
+
+    missing_separator = {
+        "type": "http",
+        "headers": [(b"authorization", b"Basic dXNlcg==")],
+    }
+    assert middleware._extract_credentials(missing_separator) is None
+
+
+def test_basic_auth_load_htpasswd_handles_cache_and_errors(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """htpasswd loading should cache results and tolerate read failures."""
+    htpasswd_file = tmp_path / "htpasswd"
+    htpasswd_file.write_text(
+        "test:$2y$10$AVmi7rydBM1wRpzyrv2V5eGmBdYiHLIq07V.xOGza.tBTkTa1eZ1S",
+        encoding="utf-8",
+    )
+    middleware = BasicAuthMiddleware(  # type: ignore[arg-type]
+        lambda scope, receive, send: None,
+        htpasswd_path=htpasswd_file,
+    )
+
+    calls = {"count": 0}
+    original_from_file = basic_auth_module.HtpasswdFile.from_file
+
+    def _from_file(path: Path):
+        calls["count"] += 1
+        return original_from_file(path)
+
+    monkeypatch.setattr(basic_auth_module.HtpasswdFile, "from_file", _from_file)
+    first = middleware._load_htpasswd()
+    second = middleware._load_htpasswd()
+    assert first is second
+    assert calls["count"] == 1
+    assert middleware._validate_htpasswd("test", "test") is True
+
+    missing = BasicAuthMiddleware(  # type: ignore[arg-type]
+        lambda scope, receive, send: None,
+        htpasswd_path=tmp_path / "missing",
+    )
+    assert missing._load_htpasswd() is None
+
+    class _BrokenPath:
+        def stat(self):
+            raise OSError("boom")
+
+    broken = BasicAuthMiddleware(  # type: ignore[arg-type]
+        lambda scope, receive, send: None,
+        htpasswd_path=_BrokenPath(),
+    )
+    assert broken._load_htpasswd() is None
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_middleware_passes_through_non_http() -> None:
+    """Non-HTTP scopes should be forwarded unchanged."""
+    called = False
+
+    async def app(scope, receive, send) -> None:
+        nonlocal called
+        called = True
+
+    middleware = BasicAuthMiddleware(app)
+    await middleware({"type": "websocket"}, lambda: None, lambda _message: None)
+
+    assert called is True
 
 
 def test_create_app_registers_basic_auth_middleware_when_configured(

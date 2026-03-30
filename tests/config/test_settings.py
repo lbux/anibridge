@@ -7,10 +7,12 @@ import pytest
 import yaml
 from pydantic import SecretStr
 
+from anibridge.app.config import settings as settings_module
 from anibridge.app.config.settings import (
     AnibridgeConfig,
     AnibridgeProfileConfig,
     BasicAuthConfig,
+    ScanMode,
     SyncField,
     SyncRulesConfig,
     SyncRuleTemplateId,
@@ -422,3 +424,67 @@ def test_config_schema_includes_extra_behavior_metadata() -> None:
     )
     assert definitions["WebConfig"]["x-anibridge-extraBehavior"] == "ignore"
     assert definitions["BasicAuthConfig"]["x-anibridge-extraBehavior"] == "ignore"
+
+
+def test_sync_field_names_returns_all_enum_values() -> None:
+    """SyncField.field_names should expose every enum value once."""
+    assert SyncField.field_names() == tuple(field.value for field in SyncField)
+
+
+def test_profile_merge_globals_no_parent_returns_self() -> None:
+    """Profile config merge should be a no-op when no parent is assigned."""
+    profile = AnibridgeProfileConfig(scan_modes=[ScanMode.POLL])
+
+    assert profile._merge_globals() is profile
+    assert profile.scan_modes == [ScanMode.POLL]
+
+
+def test_config_data_path_uses_environment_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cached data_path property should resolve AB_DATA_PATH."""
+    monkeypatch.setenv("AB_DATA_PATH", str(tmp_path))
+
+    assert AnibridgeConfig().data_path == tmp_path.resolve()
+
+
+def test_partial_basic_auth_credentials_are_cleared() -> None:
+    """Half-configured static auth credentials should be ignored."""
+    config = AnibridgeConfig(
+        web=WebConfig(
+            basic_auth=BasicAuthConfig(username="admin", password=None),
+            allow_config_without_auth=False,
+        )
+    )
+
+    assert config.web.basic_auth.username is None
+    assert config.web.basic_auth.password is None
+
+
+def test_invalid_htpasswd_path_is_rejected(tmp_path: Path) -> None:
+    """Configured htpasswd files must exist on disk."""
+    with pytest.raises(ValueError, match="htpasswd_path"):
+        AnibridgeConfig(
+            web=WebConfig(
+                basic_auth=BasicAuthConfig(htpasswd_path=tmp_path / "missing")
+            )
+        )
+
+
+def test_config_string_and_default_template_helpers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Config helpers should render readable summaries and create default templates."""
+    config = AnibridgeConfig(profiles={"alpha": AnibridgeProfileConfig()})
+    assert "alpha" in str(config)
+    assert "1 profile" in str(config)
+
+    template = settings_module._render_default_config_template()
+    assert template.startswith("################################################")
+    assert "# profiles:" in template
+
+    monkeypatch.setenv("AB_DATA_PATH", str(tmp_path))
+    created = settings_module._ensure_default_config_file()
+    assert created.exists()
+    assert created.read_text(encoding="utf-8").startswith("################")
+    assert settings_module._ensure_default_config_file() == created

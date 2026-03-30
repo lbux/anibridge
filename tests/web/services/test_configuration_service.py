@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from anibridge.app.web.services import (
+    configuration_service as configuration_service_module,
+)
 from anibridge.app.web.services.configuration_service import ConfigurationService
 
 
@@ -55,3 +58,30 @@ async def test_save_document_text_rejects_invalid_yaml(tmp_path: Path):
 
     with pytest.raises(ValueError):
         await service.save_document_text("- not a mapping")
+
+
+def test_configuration_service_exposes_config_path_and_mtime(tmp_path: Path) -> None:
+    """The service should expose its resolved config path and mtime metadata."""
+    config_path = tmp_path / "config.yaml"
+    service = ConfigurationService(config_path=config_path)
+
+    assert service.config_path == config_path.resolve()
+    assert service.load_document_text()["mtime"] is None
+
+
+def test_get_configuration_service_returns_singleton(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cached configuration service factory should be stable per process."""
+    monkeypatch.setattr(
+        configuration_service_module,
+        "find_yaml_config_file",
+        lambda: tmp_path / "config.yaml",
+    )
+    configuration_service_module.get_configuration_service.cache_clear()
+
+    first = configuration_service_module.get_configuration_service()
+    second = configuration_service_module.get_configuration_service()
+
+    assert first is second
+    configuration_service_module.get_configuration_service.cache_clear()

@@ -9,15 +9,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from sqlalchemy.engine import create_engine
-from sqlalchemy.orm import sessionmaker
 
 import anibridge.app.core.bridge as bridge_module
 from anibridge.app.config.settings import SyncRulesConfig
 from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.core.sync.stats import ItemIdentifier, SyncStats
 from anibridge.app.exceptions import MediaTypeError
-from anibridge.app.models.db.base import Base
 from anibridge.app.models.db.sync_history import SyncOutcome
 
 
@@ -163,49 +160,23 @@ class FakeSyncClient:
         self.flush_called = True
 
 
+class FailingSyncClient(FakeSyncClient):
+    """Sync client variant that can fail during prefetch."""
+
+    def __init__(self, *, prefetch_error: Exception | None = None) -> None:
+        super().__init__()
+        self._prefetch_error = prefetch_error
+
+    async def prefetch_entries(self, items: list[FakeMedia]) -> None:
+        if self._prefetch_error is not None:
+            raise self._prefetch_error
+        await super().prefetch_entries(items)
+
+
 @pytest.fixture
-def in_memory_db(monkeypatch: pytest.MonkeyPatch):
+def in_memory_db(monkeypatch: pytest.MonkeyPatch, in_memory_db_factory):
     """Provide an in-memory database patched into the bridge module."""
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(
-        bind=engine,
-        autoflush=False,
-        autocommit=False,
-        expire_on_commit=False,
-        future=True,
-    )
-
-    class _DB:
-        def __init__(self) -> None:
-            self._session = None
-
-        def __enter__(self):
-            self._session = session_factory()
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-            if self._session is not None:
-                self._session.close()
-                self._session = None
-
-        @property
-        def session(self):
-            if self._session is None:
-                self._session = session_factory()
-            return self._session
-
-    db_instance = _DB()
-
-    monkeypatch.setattr(bridge_module, "db", lambda: db_instance)
-
-    try:
-        yield db_instance
-    finally:
-        session = getattr(db_instance, "_session", None)
-        if session is not None:
-            session.close()
-        engine.dispose()
+    return in_memory_db_factory(monkeypatch, bridge_module)
 
 
 def _make_profile_config(**overrides: Any) -> SimpleNamespace:
@@ -232,6 +203,32 @@ def _make_global_config(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(data_path=tmp_path)
 
 
+def _make_bridge_client(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    provider: FakeLibraryProvider,
+    list_provider: FakeListProvider,
+    shared_animap_client: Any | None = None,
+    **profile_overrides: Any,
+) -> BridgeClient:
+    """Construct a BridgeClient with patched fake providers."""
+    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
+    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
+
+    profile_config = _make_profile_config(**profile_overrides)
+    return BridgeClient(
+        profile_name="default",
+        profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
+        global_config=cast(
+            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
+        ),
+        shared_animap_client=cast(
+            Any, object() if shared_animap_client is None else shared_animap_client
+        ),
+    )
+
+
 def test_last_synced_round_trip(
     in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -239,18 +236,11 @@ def test_last_synced_round_trip(
     movie_section = FakeSection("Movies", bridge_module.MediaKind.MOVIE)
     provider = FakeLibraryProvider([movie_section], {"Movies": []})
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    profile_config = _make_profile_config()
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     assert client.last_synced is None
@@ -258,13 +248,11 @@ def test_last_synced_round_trip(
     stamped = datetime(2025, 1, 1, tzinfo=UTC)
     client._set_last_synced(stamped)
 
-    fresh = BridgeClient(
-        profile_name="default",
-        profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    fresh = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     assert fresh.last_synced == stamped
@@ -277,19 +265,12 @@ def test_backup_list_skips_when_not_supported(
     movie_section = FakeSection("Movies", bridge_module.MediaKind.MOVIE)
     provider = FakeLibraryProvider([movie_section], {"Movies": []})
     list_provider = FakeListProvider(backup_payload=NotImplementedError())
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=7,
     )
 
     asyncio.run(client._backup_list())
@@ -304,21 +285,12 @@ def test_backup_list_writes_payload(
     """Successful backups should write to disk."""
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload="{}")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    # Default config disables backups, so override to enable for this test
-    config = _make_profile_config()
-    config.backup_retention_days = 0
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast("bridge_module.AnibridgeProfileConfig", config),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=0,
     )
 
     asyncio.run(client._backup_list())
@@ -334,18 +306,12 @@ def test_backup_list_prunes_expired_backups(
     """Expired backups should be deleted when retention is enabled."""
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload="{}")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    config = _make_profile_config(backup_retention_days=7)
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast("bridge_module.AnibridgeProfileConfig", config),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=7,
     )
 
     backup_root = tmp_path / "backups" / "default"
@@ -378,19 +344,11 @@ async def test_parse_webhook_delegates(
     """Webhook parsing should delegate to the library provider."""
     provider = FakeLibraryProvider([], {}, webhook_result=(False, None))
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     assert (
@@ -415,25 +373,18 @@ async def test_sync_section_batches_and_handles_errors(
     )
     list_provider = FakeListProvider(backup_payload="")
 
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
     movie_sync = FakeSyncClient(outcome=SyncOutcome.SYNCED)
     show_sync = FakeSyncClient(outcome=SyncOutcome.SYNCED)
 
     monkeypatch.setattr(bridge_module, "MovieSyncClient", lambda **_: movie_sync)
     monkeypatch.setattr(bridge_module, "ShowSyncClient", lambda **_: show_sync)
 
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig",
-            _make_profile_config(batch_requests=True),
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        batch_requests=True,
     )
 
     stats = await client._sync_section(
@@ -465,9 +416,6 @@ async def test_sync_section_first_poll_defaults_to_one_poll_interval_ago(
     )
     list_provider = FakeListProvider(backup_payload="")
 
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
     fixed_now = datetime(2026, 3, 12, 12, 0, tzinfo=UTC)
 
     class FrozenDateTime(datetime):
@@ -477,16 +425,12 @@ async def test_sync_section_first_poll_defaults_to_one_poll_interval_ago(
 
     monkeypatch.setattr(bridge_module, "datetime", FrozenDateTime)
 
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig",
-            _make_profile_config(poll_interval=60),
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        poll_interval=60,
     )
 
     await client._sync_section(
@@ -512,19 +456,11 @@ async def test_sync_section_skips_unsupported_section(
     section = FakeSection("Other", bridge_module.MediaKind.SEASON)
     provider = FakeLibraryProvider(sections=[section], items_by_section={})
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     stats = await client._sync_section(
@@ -547,19 +483,11 @@ async def test_initialize_and_close_calls_providers(
     """Initialize should call provider hooks and close should tear down."""
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     await client.initialize()
@@ -579,19 +507,11 @@ def test_backup_list_skips_empty_payload(
     """Empty backups should not create files."""
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     asyncio.run(client._backup_list())
@@ -605,19 +525,12 @@ def test_backup_list_handles_provider_error(
     """Provider errors should be handled without raising."""
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload=RuntimeError("boom"))
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=7,
     )
 
     asyncio.run(client._backup_list())
@@ -632,26 +545,151 @@ def test_backup_list_handles_write_errors(
     provider = FakeLibraryProvider([], {})
     list_provider = FakeListProvider(backup_payload="{}")
 
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
     def _raise_write(*_args, **_kwargs):
         raise OSError("boom")
 
     monkeypatch.setattr(Path, "write_text", _raise_write)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=7,
     )
 
     asyncio.run(client._backup_list())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_provider", ["library", "list"])
+async def test_initialize_surfaces_provider_initialization_errors(
+    failing_provider: str,
+    in_memory_db,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Initialization failures should be re-raised for the failing provider."""
+
+    class BrokenLibraryProvider(FakeLibraryProvider):
+        async def initialize(self) -> None:
+            if failing_provider == "library":
+                raise RuntimeError("library boom")
+            await super().initialize()
+
+    class BrokenListProvider(FakeListProvider):
+        async def initialize(self) -> None:
+            if failing_provider == "list":
+                raise RuntimeError("list boom")
+            await super().initialize()
+
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=BrokenLibraryProvider([], {}),
+        list_provider=BrokenListProvider(backup_payload=""),
+        backup_retention_days=7,
+    )
+
+    with pytest.raises(RuntimeError):
+        await client.initialize()
+
+
+@pytest.mark.asyncio
+async def test_close_swallows_provider_close_errors(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Close errors should be logged and swallowed for both providers."""
+
+    class BrokenLibraryProvider(FakeLibraryProvider):
+        async def close(self) -> None:
+            self.closed = True
+            raise RuntimeError("library close")
+
+    class BrokenListProvider(FakeListProvider):
+        async def close(self) -> None:
+            self.closed = True
+            raise RuntimeError("list close")
+
+    provider = BrokenLibraryProvider([], {})
+    list_provider = BrokenListProvider(backup_payload="")
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+    )
+
+    await client.close()
+
+    assert provider.closed is True
+    assert list_provider.closed is True
+
+
+@pytest.mark.asyncio
+async def test_async_context_manager_closes_client(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exiting the async context manager should close the providers."""
+    provider = FakeLibraryProvider([], {})
+    list_provider = FakeListProvider(backup_payload="")
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+    )
+
+    async with client as entered:
+        assert entered is client
+
+    assert provider.closed is True
+    assert list_provider.closed is True
+
+
+def test_cleanup_old_backups_handles_missing_roots_and_oserrors(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Backup cleanup should ignore missing paths and unlink/stat failures."""
+    provider = FakeLibraryProvider([], {})
+    list_provider = FakeListProvider(backup_payload="{}")
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        backup_retention_days=7,
+    )
+
+    client._cleanup_old_backups(tmp_path / "missing")
+
+    stale = tmp_path / "backups" / "default" / "anibridge_default_fake-list_old.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}", encoding="utf-8")
+    stale_ts = (datetime.now(UTC) - timedelta(days=30)).timestamp()
+    os.utime(stale, (stale_ts, stale_ts))
+
+    broken_stat = (
+        tmp_path / "backups" / "default" / "anibridge_default_fake-list_bad.json"
+    )
+    broken_stat.write_text("{}", encoding="utf-8")
+
+    real_stat = Path.stat
+    real_unlink = Path.unlink
+
+    def fake_stat(path: Path):
+        if path == broken_stat:
+            raise OSError("stat failed")
+        return real_stat(path)
+
+    def fake_unlink(path: Path, *args, **kwargs):
+        if path == stale:
+            raise OSError("unlink failed")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+
+    client._cleanup_old_backups(stale.parent)
 
 
 @pytest.mark.asyncio
@@ -665,19 +703,11 @@ async def test_sync_section_handles_show_items(
         items_by_section={"Shows": [FakeMedia("Show", bridge_module.MediaKind.SHOW)]},
     )
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     movie_sync = FakeSyncClient()
@@ -709,19 +739,11 @@ async def test_sync_section_handles_item_errors(
         items_by_section={"Movies": [FakeMedia("Bad", bridge_module.MediaKind.SEASON)]},
     )
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     movie_sync = FakeSyncClient()
@@ -741,6 +763,66 @@ async def test_sync_section_handles_item_errors(
 
 
 @pytest.mark.asyncio
+async def test_parse_webhook_returns_false_when_provider_raises(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Webhook parsing failures should be converted into a safe default."""
+
+    class BrokenLibraryProvider(FakeLibraryProvider):
+        async def parse_webhook(self, _request) -> tuple[bool, list[str] | None]:
+            raise RuntimeError("boom")
+
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=BrokenLibraryProvider([], {}),
+        list_provider=FakeListProvider(backup_payload=""),
+    )
+
+    result = await client.parse_webhook(
+        cast("bridge_module.Request", SimpleNamespace())
+    )
+
+    assert result == (False, None)
+
+
+@pytest.mark.asyncio
+async def test_sync_uses_full_scan_keys_and_prefetch_error_paths(
+    in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Sync should keep going when prefetch fails and full-scan key filters are used."""
+    movie_section = FakeSection("Movies", bridge_module.MediaKind.MOVIE)
+    provider = FakeLibraryProvider(
+        sections=[movie_section],
+        items_by_section={
+            "Movies": [FakeMedia("Movie", bridge_module.MediaKind.MOVIE)]
+        },
+    )
+    list_provider = FakeListProvider(backup_payload="")
+    movie_sync = FailingSyncClient(prefetch_error=RuntimeError("prefetch boom"))
+    show_sync = FakeSyncClient()
+
+    monkeypatch.setattr(bridge_module, "MovieSyncClient", lambda **_: movie_sync)
+    monkeypatch.setattr(bridge_module, "ShowSyncClient", lambda **_: show_sync)
+
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
+        full_scan=True,
+        batch_requests=True,
+    )
+
+    await client.sync(library_keys=["Movie"])
+
+    assert provider.list_calls[0]["require_watched"] is False
+    assert provider.list_calls[0]["keys"] == ["Movie"]
+    assert movie_sync.flush_called is True
+    assert movie_sync.batch_called is True
+
+
+@pytest.mark.asyncio
 async def test_sync_updates_last_synced_and_progress(
     in_memory_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -754,24 +836,17 @@ async def test_sync_updates_last_synced_and_progress(
     )
     list_provider = FakeListProvider(backup_payload="")
 
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
     movie_sync = FakeSyncClient(outcome=SyncOutcome.NOT_FOUND)
     show_sync = FakeSyncClient(outcome=SyncOutcome.NOT_FOUND)
 
     monkeypatch.setattr(bridge_module, "MovieSyncClient", lambda **_: movie_sync)
     monkeypatch.setattr(bridge_module, "ShowSyncClient", lambda **_: show_sync)
 
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     await client.sync()
@@ -790,19 +865,11 @@ async def test_sync_failure_sets_completed_state(
     movie_section = FakeSection("Movies", bridge_module.MediaKind.MOVIE)
     provider = FakeLibraryProvider([movie_section], {"Movies": []})
     list_provider = FakeListProvider(backup_payload="")
-
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    client = BridgeClient(
-        profile_name="default",
-        profile_config=cast(
-            "bridge_module.AnibridgeProfileConfig", _make_profile_config()
-        ),
-        global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
-        ),
-        shared_animap_client=cast(Any, object()),
+    client = _make_bridge_client(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        provider=provider,
+        list_provider=list_provider,
     )
 
     async def _boom(*_args, **_kwargs):

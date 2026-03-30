@@ -13,6 +13,7 @@ from anibridge.app.web.services.backup_service import (
     ProfileNotFoundError,
     SchedulerNotInitializedError,
     SchedulerUnavailableError,
+    get_backup_service,
 )
 from anibridge.app.web.state import get_app_state
 
@@ -164,6 +165,25 @@ def test_list_backups_allows_errored_profiles(configured_scheduler):
     assert [item.filename for item in items] == [backup_name]
 
 
+def test_list_backups_returns_empty_when_directory_missing(configured_scheduler):
+    """Profiles with no backup directory should return an empty list."""
+    _tmp_path, _provider, _scheduler = configured_scheduler
+    assert BackupService().list_backups("primary") == []
+
+
+def test_list_backups_without_bridge_uses_profile_provider_and_mtime_fallback(
+    configured_scheduler,
+):
+    """Missing bridges should still list backups using the configured provider name."""
+    tmp_path, _provider, scheduler = configured_scheduler
+    scheduler.bridge_clients.pop("primary")
+    service = BackupService()
+    file_path = _write_backup(tmp_path, "anibridge_primary_alist_snapshot.json", [])
+
+    items = service.list_backups("primary")
+    assert [item.filename for item in items] == [file_path.name]
+
+
 def test_errored_profile_raw_preview_is_allowed(configured_scheduler):
     """Raw preview should still work for errored profiles."""
     tmp_path, _, scheduler = configured_scheduler
@@ -177,6 +197,20 @@ def test_errored_profile_raw_preview_is_allowed(configured_scheduler):
     scheduler.failed_profile_errors["errored"] = "Provider auth failed"
 
     assert service.read_backup_raw("errored", backup_name) == {"entries": []}
+
+
+def test_read_backup_raw_requires_scheduler_and_known_profile(configured_scheduler):
+    """Raw backup reads should validate scheduler state and profile existence."""
+    _tmp_path, _provider, scheduler = configured_scheduler
+    service = BackupService()
+
+    get_app_state().scheduler = None
+    with pytest.raises(SchedulerNotInitializedError):
+        service.read_backup_raw("primary", "backup.json")
+
+    get_app_state().scheduler = cast(Any, scheduler)
+    with pytest.raises(ProfileNotFoundError):
+        service.read_backup_raw("unknown", "backup.json")
 
 
 @pytest.mark.asyncio
@@ -194,3 +228,56 @@ async def test_errored_profile_restore_is_blocked(configured_scheduler):
 
     with pytest.raises(SchedulerUnavailableError):
         await service.restore_backup("errored", backup_name)
+
+
+@pytest.mark.asyncio
+async def test_restore_backup_success(configured_scheduler):
+    """Restoring a valid backup should delegate raw JSON to the list provider."""
+    tmp_path, provider, _scheduler = configured_scheduler
+    service = BackupService()
+    backup_name = "anibridge_primary_alist_20240303030303.json"
+    _write_backup(tmp_path, backup_name, [{"key": "1"}])
+
+    await service.restore_backup("primary", backup_name)
+
+    assert provider._restored == []
+
+
+@pytest.mark.asyncio
+async def test_restore_backup_requires_bridge_client(configured_scheduler):
+    """Profiles without an active bridge client should be treated as unavailable."""
+    tmp_path, _provider, scheduler = configured_scheduler
+    service = BackupService()
+    backup_name = "anibridge_primary_alist_20240303030303.json"
+    _write_backup(tmp_path, backup_name, [{"key": "1"}])
+    scheduler.bridge_clients.pop("primary")
+
+    with pytest.raises(SchedulerUnavailableError, match="unavailable for restore"):
+        await service.restore_backup("primary", backup_name)
+
+
+@pytest.mark.asyncio
+async def test_restore_backup_wraps_provider_errors(configured_scheduler, monkeypatch):
+    """Provider restore failures should be converted into backup parse errors."""
+    tmp_path, provider, _scheduler = configured_scheduler
+    service = BackupService()
+    backup_name = "anibridge_primary_alist_20240303030303.json"
+    _write_backup(tmp_path, backup_name, [{"key": "1"}])
+
+    async def _not_implemented(_payload: str) -> None:
+        raise NotImplementedError
+
+    monkeypatch.setattr(provider, "restore_list", _not_implemented)
+    with pytest.raises(Exception, match="does not support backup restoration"):
+        await service.restore_backup("primary", backup_name)
+
+    async def _boom(_payload: str) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(provider, "restore_list", _boom)
+    with pytest.raises(Exception, match="Error during backup restoration: boom"):
+        await service.restore_backup("primary", backup_name)
+
+
+def test_get_backup_service_is_cached() -> None:
+    assert get_backup_service() is get_backup_service()

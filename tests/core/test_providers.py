@@ -113,3 +113,57 @@ def test_build_list_provider_raises_when_missing(
         providers_module.build_list_provider(
             cast("providers_module.AnibridgeProfileConfig", profile)
         )
+
+
+@pytest.mark.parametrize(
+    "class_path",
+    ["missing-separator", "package.only."],
+)
+def test_register_classes_rejects_invalid_class_paths(class_path: str) -> None:
+    """Malformed class paths should fail fast before import resolution."""
+    with pytest.raises(ProfileConfigError, match="Invalid provider class path"):
+        providers_module._register_classes([class_path])
+
+
+def test_register_classes_wraps_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Import failures should be translated into ProfileConfigError."""
+    monkeypatch.setattr(providers_module, "_LOADED_CLASSES", set())
+    monkeypatch.setattr(
+        providers_module,
+        "import_module",
+        lambda _module: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    with pytest.raises(ProfileConfigError, match="Failed to import provider class"):
+        providers_module._register_classes(["pkg.module.Provider"])
+
+
+def test_register_classes_rejects_non_class_and_unknown_bases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolved objects must be classes inheriting from a supported provider base."""
+    monkeypatch.setattr(providers_module, "_LOADED_CLASSES", set())
+    monkeypatch.setattr(
+        providers_module,
+        "import_module",
+        lambda _module: SimpleNamespace(Provider="not-a-class"),
+    )
+
+    with pytest.raises(ProfileConfigError, match="does not resolve to a class"):
+        providers_module._register_classes(["pkg.module.Provider"])
+
+    class Other:
+        pass
+
+    monkeypatch.setattr(
+        providers_module,
+        "import_module",
+        lambda _module: SimpleNamespace(Provider=Other),
+    )
+    monkeypatch.setattr(
+        providers_module, "LibraryProvider", type("LibraryBase", (), {})
+    )
+    monkeypatch.setattr(providers_module, "ListProvider", type("ListBase", (), {}))
+
+    with pytest.raises(ProfileConfigError, match="must inherit from"):
+        providers_module._register_classes(["pkg.module.Provider"])

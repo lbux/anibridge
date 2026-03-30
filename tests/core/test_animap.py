@@ -1,7 +1,6 @@
 """Tests for the Animap client mapping sync."""
 
 import asyncio
-import importlib
 import re
 from hashlib import md5
 from pathlib import Path
@@ -9,15 +8,14 @@ from typing import Any, cast
 
 import orjson
 import pytest
-from sqlalchemy.engine import create_engine
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import select
 
+from anibridge.app.config import database as database_module
 from anibridge.app.config.database import AnibridgeDb
+from anibridge.app.core import animap as animap_module
 from anibridge.app.core.animap import AnimapClient, AnimapEdge
 from anibridge.app.core.mappings import MappingsClient
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
-from anibridge.app.models.db.base import Base
 from anibridge.app.models.db.housekeeping import Housekeeping
 
 
@@ -49,53 +47,9 @@ class FakeMappingsClient:
 
 
 @pytest.fixture
-def in_memory_db(monkeypatch: pytest.MonkeyPatch):
+def in_memory_db(monkeypatch: pytest.MonkeyPatch, in_memory_db_factory):
     """Provide an in-memory database patched into the application."""
-    engine = create_engine("sqlite:///:memory:", future=True)
-
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(
-        bind=engine,
-        autoflush=False,
-        autocommit=False,
-        expire_on_commit=False,
-        future=True,
-    )
-
-    class _DB:
-        def __init__(self) -> None:
-            self._session = None
-
-        def __enter__(self):
-            self._session = session_factory()
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-            if self._session is not None:
-                self._session.close()
-                self._session = None
-
-        @property
-        def session(self):
-            if self._session is None:
-                self._session = session_factory()
-            return self._session
-
-    db_instance = _DB()
-
-    database_module = importlib.import_module("anibridge.app.config.database")
-    animap_module = importlib.import_module("anibridge.app.core.animap")
-
-    monkeypatch.setattr(database_module, "db", lambda: db_instance)
-    monkeypatch.setattr(animap_module, "db", lambda: db_instance)
-
-    try:
-        yield db_instance
-    finally:
-        session = getattr(db_instance, "_session", None)
-        if session is not None:
-            session.close()
-        engine.dispose()
+    return in_memory_db_factory(monkeypatch, database_module, animap_module)
 
 
 @pytest.fixture
@@ -392,7 +346,6 @@ def test_sync_db_logs_distinct_mapping_changes(
                 pass
         messages.append(template)
 
-    animap_module = importlib.import_module("anibridge.app.core.animap")
     monkeypatch.setattr(animap_module.log, "success", _capture_success)
 
     asyncio.run(animap_client.sync_db())

@@ -215,3 +215,38 @@ def test_evaluate_passes_in_values_to_db_resolver():
     assert result.ids == {1, 2, 3}
     assert result.used_bare is False
     assert result.order_hint == {}
+
+
+def test_parse_query_invalid_parsed_ast_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unexpected parser output should raise the domain syntax error."""
+    monkeypatch.setattr(
+        bq,
+        "PARSER",
+        type(
+            "_Parser",
+            (),
+            {"parse_string": staticmethod(lambda _q, parse_all=True: [["bad"]])},
+        )(),
+    )
+
+    with pytest.raises(BooruQuerySyntaxError, match="Invalid parsed AST"):
+        bq.parse_query("naruto")
+
+
+def test_evaluate_handles_empty_and_and_nested_parse_results() -> None:
+    """Evaluation should handle empty conjunctions and grouped parse results."""
+    empty = bq.evaluate(
+        bq.And([]),
+        db_resolver=lambda _term: set(),
+        anilist_resolver=lambda _term: [],
+        universe_ids={1, 2},
+    )
+    assert empty.ids == {1, 2}
+
+    grouped = bq.evaluate(
+        bq.And([bq.Or([bq.BareTerm("naruto"), bq.BareTerm("bleach")])]),
+        db_resolver=lambda _term: set(),
+        anilist_resolver=lambda term: [1] if term == "naruto" else [2],
+        universe_ids=None,
+    )
+    assert grouped.ids == {1, 2}
