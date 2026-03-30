@@ -423,24 +423,6 @@
         {item}
         ui={ui()} />
 {/if}
-{#if openInfo && hasInfo}
-    <div class="ml-4 rounded-md border border-slate-800 bg-slate-900/40 p-3">
-        <dl class="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {#each infoEntries as [key, value] (key)}
-                <div
-                    class="rounded-md border border-slate-700/70 bg-slate-800/55 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <dt
-                        class="mb-1 text-[10px] font-semibold tracking-[0.08em] text-slate-400 uppercase">
-                        {formatInfoKey(key)}
-                    </dt>
-                    <dd class="leading-relaxed wrap-break-word text-slate-100">
-                        {value}
-                    </dd>
-                </div>
-            {/each}
-        </dl>
-    </div>
-{/if}
 {#if openPins && hasPins}
     {@render (pinsPanel ?? DefaultPins)({
         item,
@@ -452,6 +434,54 @@
         togglePins,
         data: pinsPanelData,
     })}
+{/if}
+{#if openInfo && hasInfo}
+    <div
+        class="mt-2 ml-6 overflow-hidden rounded-md border border-slate-800 bg-slate-950/80 will-change-transform">
+        <div
+            class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-3 py-2">
+            <div class="flex items-start gap-2 text-[10px]">
+                <Info class="mt-0.5 h-3.5 w-3.5 text-slate-300" />
+                <div class="flex items-center gap-2">
+                    <span class="font-semibold tracking-wide text-slate-100 uppercase">
+                        Sync Debug
+                    </span>
+                    <span
+                        class="text-[11px] leading-tight font-normal text-slate-500 normal-case">
+                        Debug info captured during sync.
+                    </span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-[11px] text-slate-400">
+                <span
+                    class="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1">
+                    <Info class="h-3.5 w-3.5" />
+                    <span class="font-semibold text-slate-100">
+                        {infoEntries.length}
+                    </span>
+                    fields
+                </span>
+            </div>
+        </div>
+        <div class="overflow-auto p-3">
+            <dl class="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                {#each infoEntries as [key, value] (key)}
+                    <div
+                        class="rounded-md border border-slate-800/80 bg-slate-900/70 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <dt
+                            class="mb-1 inline-flex max-w-full rounded bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-slate-300 uppercase"
+                            title={formatInfoKey(key)}>
+                            <span class="truncate">{formatInfoKey(key)}</span>
+                        </dt>
+                        <dd
+                            class="font-mono text-[11px] leading-5 wrap-break-word text-slate-100">
+                            {value}
+                        </dd>
+                    </div>
+                {/each}
+            </dl>
+        </div>
+    </div>
 {/if}
 
 <style>
