@@ -142,7 +142,6 @@ def test_create_app_serves_spa_and_domain_errors(
     spa_app = app_module.create_app()
 
     with TestClient(spa_app) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
         assert client.get("/missing").text == "<html>SPA</html>"
         assert client.get("/api/missing").status_code == 404
 

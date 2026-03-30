@@ -60,6 +60,11 @@ export default defineConfig({
     server: {
         proxy: {
             "/api": { target: "http://localhost:4848", changeOrigin: true },
+            "/docs": { target: "http://localhost:4848", changeOrigin: true },
+            "/healthz": { target: "http://localhost:4848", changeOrigin: true },
+            "/livez": { target: "http://localhost:4848", changeOrigin: true },
+            "/openapi.json": { target: "http://localhost:4848", changeOrigin: true },
+            "/readyz": { target: "http://localhost:4848", changeOrigin: true },
             "/ws": { target: "http://localhost:4848", changeOrigin: true, ws: true },
         },
     },

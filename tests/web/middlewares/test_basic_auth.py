@@ -129,8 +129,8 @@ def test_basic_auth_middleware_plain_and_htpasswd(
     assert success_htpasswd.json() == {"ok": True}
 
 
-def test_basic_auth_middleware_bypasses_healthz() -> None:
-    """BasicAuthMiddleware should not challenge healthz endpoint."""
+def test_basic_auth_middleware_bypasses_probe_endpoints() -> None:
+    """BasicAuthMiddleware should not challenge unauthenticated probe endpoints."""
     test_app = FastAPI()
     test_app.add_middleware(
         BasicAuthMiddleware,  # type: ignore[arg-type]
@@ -139,9 +139,17 @@ def test_basic_auth_middleware_bypasses_healthz() -> None:
         realm="Realm",
     )
 
+    @test_app.get("/livez")
+    async def livez() -> dict[str, str]:
+        return {"status": "ok"}
+
     @test_app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @test_app.get("/readyz")
+    async def readyz() -> dict[str, object]:
+        return {"status": "ok", "ready": True}
 
     @test_app.get("/protected")
     async def protected() -> dict[str, bool]:
@@ -149,9 +157,17 @@ def test_basic_auth_middleware_bypasses_healthz() -> None:
 
     client = TestClient(test_app)
 
-    health = client.get("/healthz")
+    legacy_health = client.get("/healthz")
+    assert legacy_health.status_code == 200
+    assert legacy_health.json() == {"status": "ok"}
+
+    health = client.get("/livez")
     assert health.status_code == 200
     assert health.json() == {"status": "ok"}
+
+    ready = client.get("/readyz")
+    assert ready.status_code == 200
+    assert ready.json() == {"status": "ok", "ready": True}
 
     assert client.get("/protected").status_code == 401
 

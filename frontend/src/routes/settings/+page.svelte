@@ -69,7 +69,7 @@
     }
 
     async function checkServerHealth(): Promise<boolean> {
-        const response = await fetchWithTimeout(`/healthz?t=${Date.now()}`, {
+        const response = await fetchWithTimeout(`/livez?t=${Date.now()}`, {
             headers: { Accept: "application/json" },
         });
         if (!response.ok) return false;

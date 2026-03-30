@@ -18,7 +18,7 @@ __all__ = ["BasicAuthMiddleware"]
 class BasicAuthMiddleware:
     """Pure ASGI middleware that enforces HTTP Basic Authentication."""
 
-    EXEMPT_PATHS = frozenset({"/healthz"})
+    EXEMPT_PATHS = frozenset({"/healthz", "/livez", "/readyz"})
 
     def __init__(
         self,
