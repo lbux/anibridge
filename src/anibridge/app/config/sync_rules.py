@@ -263,10 +263,10 @@ SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
                 {
                     "name": "Promote rewatch to repeating",
                     "if": (
-                        'current.status in ("completed", "repeating") and '
-                        'computed.status == "current"'
+                        "current.status in ('completed', 'repeating') and "
+                        "computed.status == 'current'"
                     ),
-                    "set": "repeating",
+                    "set": "'repeating'",
                 }
             )
         ],

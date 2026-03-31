@@ -251,9 +251,9 @@ def test_sync_rules_promote_rewatch_template_adds_status_promotion_rule() -> Non
 
     assert status_rules[0]["name"] == "Promote rewatch to repeating"
     assert status_rules[0]["if"] == (
-        'current.status in ("completed", "repeating") and computed.status == "current"'
+        "current.status in ('completed', 'repeating') and computed.status == 'current'"
     )
-    assert status_rules[0]["set"] == "repeating"
+    assert status_rules[0]["set"] == "'repeating'"
 
 
 def test_sync_rules_disable_review_and_rating_template_overrides_defaults() -> None:
