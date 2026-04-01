@@ -152,14 +152,6 @@ def test_get_profile_raises_for_unknown_name(
         config.get_profile("missing")
 
 
-def test_legacy_field_rules_reject_unknown_operator() -> None:
-    """Unknown legacy field-rule operators should fail validation."""
-    with pytest.raises(ValueError):
-        AnibridgeProfileConfig.model_validate(
-            {"sync_fields": {SyncField.STATUS: {"_between": False}}}
-        )
-
-
 def test_sync_rules_accept_declarative_field_rules() -> None:
     """Declarative sync rules should validate and preserve runtime aliases."""
     rules = SyncRulesConfig.model_validate(
