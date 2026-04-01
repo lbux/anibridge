@@ -278,7 +278,10 @@ class SyncRulesConfig(BaseModel):
     """Declarative per-field sync rules, templates, and reusable variables."""
 
     templates: list[SyncRuleTemplateId] = Field(
-        default_factory=lambda: [SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW],
+        default_factory=lambda: [
+            SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW,
+            SyncRuleTemplateId.PREVENT_REGRESSIONS,
+        ],
         description="Built-in templates to apply in order after the user-defined rules",
     )
     vars: dict[str, str] = Field(
