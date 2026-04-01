@@ -232,26 +232,6 @@ class AnibridgeProfileConfig(BaseModel):
 
     _parent: AnibridgeConfig | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def raise_on_legacy_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
-        """Detect legacy fields and raise an error with instructions for migration.
-
-        Only raises for dangerous fields that might cause data loss if misconfigured.
-        """
-        legacy_fields = {
-            "promote_on_rewatch": "sync_rules.status",
-            "sync_fields": "sync_rules",
-            "sync_modes": "scan_modes",
-        }
-        for legacy, new in legacy_fields.items():
-            if legacy in values:
-                raise ProfileConfigError(
-                    f"Legacy field '{legacy}' detected in profile config. "
-                    f"Please migrate to the new configuration format using '{new}'."
-                )
-        return values
-
     @property
     def parent(self) -> AnibridgeConfig:
         """Get the parent multi-config instance.
@@ -605,8 +585,6 @@ def _render_default_config_template() -> str:
     commented_lines = [
         "############################################################################################################",
         "# This is a template configuration file for AniBridge.                                                     #",  # noqa: E501
-        "# All optional coniguration fields are commented out with their default values.                            #",  # noqa: E501
-        "# Required fields are uncommented and indicated by a placeholder `...`.                                    #",  # noqa: E501
         "#                                                                                                          #",  # noqa: E501
         "# Please refer to the documentation for more details: https://anibridge.eliasbenb.dev/configuration/       #",  # noqa: E501
         "############################################################################################################",
