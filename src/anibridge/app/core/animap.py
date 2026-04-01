@@ -226,8 +226,10 @@ class AnimapClient:
 
                 # If existing had extra indices, schedule them for deletion
                 if len(existing_sources) > len(sources):
-                    for i in range(len(sources), len(existing_sources)):
-                        to_delete_pairs.append((mapping_id, i))
+                    to_delete_pairs.extend(
+                        (mapping_id, i)
+                        for i in range(len(sources), len(existing_sources))
+                    )
 
         if not ids_to_refresh:
             return

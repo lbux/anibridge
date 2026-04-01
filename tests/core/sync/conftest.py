@@ -370,10 +370,10 @@ class FakeListProvider:
         if self.resolved_targets:
             results: list[ListTarget] = []
             for descriptor in descriptors:
-                for media_key in self.resolved_targets.get(descriptor, []):
-                    results.append(
-                        ListTarget(descriptor=descriptor, media_key=media_key)
-                    )
+                results.extend(
+                    ListTarget(descriptor=descriptor, media_key=media_key)
+                    for media_key in self.resolved_targets.get(descriptor, [])
+                )
             return results
         if not self.derived_keys:
             return []

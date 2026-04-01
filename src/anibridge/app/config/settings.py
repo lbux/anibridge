@@ -613,8 +613,9 @@ def _render_default_config_template() -> str:
         "",
     ]
 
-    for line in yaml_text.splitlines():
-        commented_lines.append("#" if not line.strip() else f"# {line}")
+    commented_lines.extend(
+        "#" if not line.strip() else f"# {line}" for line in yaml_text.splitlines()
+    )
 
     return "\n".join(commented_lines) + "\n"
 
