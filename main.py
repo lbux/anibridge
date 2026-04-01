@@ -207,8 +207,8 @@ async def _shutdown_web_server(
     server: uvicorn.Server | None,
     server_task: asyncio.Task | None,
     *,
-    timeout: float = 10.0,
-    force_timeout: float = 5.0,
+    timeout_duration: float = 10.0,
+    force_timeout_duration: float = 5.0,
 ) -> None:
     """Attempt a graceful, then forced, shutdown of the web server."""
     if server is None or server_task is None:
@@ -216,22 +216,24 @@ async def _shutdown_web_server(
 
     server.should_exit = True
     try:
-        await asyncio.wait_for(asyncio.shield(server_task), timeout=timeout)
+        async with asyncio.timeout(timeout_duration):
+            await asyncio.shield(server_task)
         return
     except TimeoutError:
         log.warning(
             "AniBridge - Web server shutdown timed out after %.1fs; forcing exit",
-            timeout,
+            timeout_duration,
         )
 
     server.force_exit = True
     try:
-        await asyncio.wait_for(asyncio.shield(server_task), timeout=force_timeout)
+        async with asyncio.timeout(force_timeout_duration):
+            await asyncio.shield(server_task)
     except TimeoutError:
         log.error(
             "AniBridge - Forced web server shutdown timed out after %.1fs; "
             "cancelling server task",
-            force_timeout,
+            force_timeout_duration,
         )
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

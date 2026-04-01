@@ -21,8 +21,8 @@ async def test_shutdown_web_server_requests_graceful_exit() -> None:
     await main._shutdown_web_server(
         server,  # ty:ignore[invalid-argument-type]
         server_task,
-        timeout=0.1,
-        force_timeout=0.1,
+        timeout_duration=0.1,
+        force_timeout_duration=0.1,
     )
 
     assert server.should_exit is True
@@ -44,8 +44,8 @@ async def test_shutdown_web_server_forces_exit_when_graceful_stop_hangs() -> Non
     await main._shutdown_web_server(
         server,  # ty:ignore[invalid-argument-type]
         server_task,
-        timeout=0.01,
-        force_timeout=0.01,
+        timeout_duration=0.01,
+        force_timeout_duration=0.01,
     )
 
     assert server.should_exit is True

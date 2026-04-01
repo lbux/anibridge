@@ -303,7 +303,7 @@ def dev() -> None:
         print_success("Development servers stopped!")
 
 
-def format() -> None:
+def format_() -> None:
     """Format the codebase."""
     target = parse_target_args()
 
@@ -591,7 +591,7 @@ def main() -> None:
         case "dev":
             dev()
         case "format":
-            format()
+            format_()
         case "lint":
             lint()
         case "meta-setup":

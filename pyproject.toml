@@ -62,7 +62,7 @@ ab-clean = "anibridge.scripts.dev:clean"
 ab-deps-install = "anibridge.scripts.dev:deps_install"
 ab-deps-upgrade = "anibridge.scripts.dev:deps_upgrade"
 ab-dev = "anibridge.scripts.dev:dev"
-ab-format = "anibridge.scripts.dev:format"
+ab-format = "anibridge.scripts.dev:format_"
 ab-lint = "anibridge.scripts.dev:lint"
 ab-meta-setup = "anibridge.scripts.dev:meta_setup"
 ab-start = "anibridge.scripts.dev:start"
@@ -85,7 +85,21 @@ indent-style = "space"
 quote-style = "double"
 
 [tool.ruff.lint]
-select = ["B", "D", "E", "F", "I", "PERF", "RUF", "SIM", "UP", "W"]
+select = [
+    "A",
+    "ASYNC",
+    "B",
+    "D",
+    "E",
+    "F",
+    "FAST",
+    "I",
+    "PERF",
+    "RUF",
+    "SIM",
+    "UP",
+    "W",
+]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [

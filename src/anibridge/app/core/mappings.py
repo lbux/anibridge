@@ -8,6 +8,7 @@ from typing import Any, ClassVar, cast
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
+import anyio
 import orjson
 import yaml
 from anibridge.utils.cache import ttl_cache
@@ -292,13 +293,13 @@ class MappingsClient:
         self, file: str, loaded_chain: set[str]
     ) -> AnimapDict:
         """Load mappings from a local file."""
-        file_path = Path(file)
+        file_path = anyio.Path(file)
         try:
-            payload = file_path.read_bytes()
+            payload = await file_path.read_bytes()
         except Exception:
             log.error(
                 "Unexpected error reading file $$'%s'$$",
-                file_path.resolve(),
+                str(file_path),
             )
             log.exception("Mappings file read error details")
             return {}

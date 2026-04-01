@@ -260,9 +260,9 @@ async def test_run_loop_supports_cron_integer_and_error_paths(
         sync_calls.append((poll, source))
         scheduler._running = False
 
-    async def _wait_for(awaitable, timeout: float):
+    async def _wait_for(awaitable, timeout_duration: float):
         awaitable.close()
-        waits.append(timeout)
+        waits.append(timeout_duration)
         raise TimeoutError
 
     monkeypatch.setattr(scheduler, "sync", _sync)
