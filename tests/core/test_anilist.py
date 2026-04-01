@@ -370,7 +370,7 @@ async def test_make_request_retries_until_failure(
 
         def post(self, _url: str, **_kwargs):
             self.calls += 1
-            raise aiohttp.ClientError("boom")
+            raise aiohttp.ClientConnectionError("boom")
 
     session = DummySession()
 
