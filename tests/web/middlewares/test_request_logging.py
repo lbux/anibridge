@@ -310,7 +310,13 @@ async def test_request_logging_middleware_asgi_call_handles_non_http(
 
     middleware = RequestLoggingMiddleware(app)
 
-    await middleware({"type": "websocket"}, lambda: None, lambda _message: None)
+    def _middleware_receive():
+        return {"type": "websocket.receive", "text": "hello"}
+
+    async def _middleware_send(message) -> None:
+        pass
+
+    await middleware({"type": "websocket"}, _middleware_receive, _middleware_send)
 
     assert called is True
     assert dummy_logger.messages == []
@@ -326,11 +332,17 @@ async def test_request_logging_middleware_asgi_call_closes_on_failure(
 
     middleware = RequestLoggingMiddleware(app)
 
+    def _middleware_receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def _middleware_send(message) -> None:
+        pass
+
     with pytest.raises(RuntimeError):
         await middleware(
             _make_scope(path="/broken"),
-            lambda: {"type": "http.request", "body": b"", "more_body": False},
-            lambda _message: None,
+            _middleware_receive,
+            cast(Send, _middleware_send),
         )
 
     assert any("Failed" in message for message in dummy_logger.messages)

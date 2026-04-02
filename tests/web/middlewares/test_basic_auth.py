@@ -174,7 +174,11 @@ def test_basic_auth_middleware_bypasses_probe_endpoints() -> None:
 
 def test_basic_auth_extract_credentials_handles_invalid_headers() -> None:
     """Malformed Authorization headers should be ignored safely."""
-    middleware = BasicAuthMiddleware(lambda scope, receive, send: None)  # type: ignore[arg-type]
+
+    def _app(scope, receive, send):
+        pass
+
+    middleware = BasicAuthMiddleware(_app)
 
     scope = {"type": "http", "headers": []}
     assert middleware._extract_credentials(scope) is None
@@ -204,8 +208,12 @@ def test_basic_auth_load_htpasswd_handles_cache_and_errors(
         "test:$2y$10$AVmi7rydBM1wRpzyrv2V5eGmBdYiHLIq07V.xOGza.tBTkTa1eZ1S",
         encoding="utf-8",
     )
+
+    def _app(scope, receive, send):
+        pass
+
     middleware = BasicAuthMiddleware(  # type: ignore[arg-type]
-        lambda scope, receive, send: None,
+        _app,
         htpasswd_path=htpasswd_file,
     )
 
@@ -249,8 +257,14 @@ async def test_basic_auth_middleware_passes_through_non_http() -> None:
         nonlocal called
         called = True
 
+    def _middleware_receive():
+        return {"type": "websocket.receive", "text": "hello"}
+
+    async def _middleware_send(message) -> None:
+        pass
+
     middleware = BasicAuthMiddleware(app)
-    await middleware({"type": "websocket"}, lambda: None, lambda _message: None)
+    await middleware({"type": "websocket"}, _middleware_receive, _middleware_send)
 
     assert called is True
 
