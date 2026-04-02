@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml,ro \
     uv sync --frozen --no-dev
 
-FROM node:25-alpine AS node-builder
+FROM --platform=$BUILDPLATFORM node:25-alpine AS node-builder
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ RUN npm install -g pnpm
 
 RUN --mount=type=bind,source=frontend/pnpm-lock.yaml,target=/app/pnpm-lock.yaml,ro \
     --mount=type=bind,source=frontend/package.json,target=/app/package.json,ro \
-    --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,id=pnpm-store-${BUILDPLATFORM},target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 COPY ./frontend /app
