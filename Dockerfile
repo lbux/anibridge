@@ -1,6 +1,6 @@
 FROM alpine:3.23 AS python-builder
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -66,12 +66,11 @@ WORKDIR /app
 COPY . /app
 COPY ./scripts/docker_init.sh /init
 
-RUN rm -rf /app/frontend && \
-    mkdir -p /config
-
 COPY --from=python-builder /python /python
 COPY --from=python-builder /opt/venv /opt/venv
 COPY --from=node-builder /app/build /app/frontend/build
+
+RUN mkdir -p /config
 
 VOLUME ["/config"]
 
