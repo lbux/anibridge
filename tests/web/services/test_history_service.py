@@ -482,6 +482,46 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
 
 
 @pytest.mark.asyncio
+async def test_history_service_library_metadata_uses_media_key(history_env):
+    """Library metadata enrichment should resolve by media key."""
+    row_library_key = "guid://lib-entry-key"
+    _seed_history_row(library_media_key=row_library_key)
+
+    async def _list_items_with_mismatched_media_key(section, keys):
+        media_key = str(keys[0])
+        entry_key = "entry-key"
+        return [
+            DummyLibraryItem(
+                key=entry_key,
+                title=f"Library {entry_key}",
+                _media=DummyMedia(
+                    key=media_key,
+                    title=f"Library {entry_key}",
+                    poster_image=f"P-{entry_key}",
+                    external_url=f"http://library/{entry_key}",
+                    labels={"genre": "drama"},
+                ),
+            )
+        ]
+
+    history_env.bridge.library_provider.list_items = (
+        _list_items_with_mismatched_media_key
+    )
+
+    service = HistoryService()
+    page = await service.get_page(
+        profile="profile",
+        limit=10,
+        include_library_media=True,
+        include_list_media=False,
+    )
+
+    assert len(page.items) == 1
+    assert page.items[0].library_media is not None
+    assert page.items[0].library_media.external_url == "http://library/entry-key"
+
+
+@pytest.mark.asyncio
 async def test_history_service_purge_ephemeral_items_removes_only_ephemeral(
     history_env,
 ):

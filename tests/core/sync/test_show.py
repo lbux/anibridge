@@ -254,7 +254,7 @@ async def test_process_media_syncs_show_and_writes_history(
     with sync_db as ctx:
         records = ctx.session.query(SyncHistory).all()
         assert len(records) == 1
-        assert records[0].library_media_key == show.key
+        assert records[0].library_media_key == show.media().key
 
 
 @pytest.mark.asyncio
