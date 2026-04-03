@@ -1512,7 +1512,7 @@ def test_flush_failure_history_cleanup_batched_removal(
     """Batched cleanup removes queued failure history rows."""
     movie = make_movie()
     library_section_key = movie.section().key
-    library_media_key = str(movie.media().key)
+    library_media_key = str(movie.key)
     library_namespace = stub_client.library_provider.NAMESPACE
     list_namespace = stub_client.list_provider.NAMESPACE
 

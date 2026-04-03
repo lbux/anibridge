@@ -482,20 +482,19 @@ async def test_history_service_fetch_helpers_handle_mismatches(history_env):
 
 
 @pytest.mark.asyncio
-async def test_history_service_library_metadata_uses_media_key(history_env):
-    """Library metadata enrichment should resolve by media key."""
-    row_library_key = "guid://lib-entry-key"
+async def test_history_service_library_metadata_uses_library_key(history_env):
+    """Library metadata enrichment should resolve by provider library key."""
+    row_library_key = "entry-key"
     _seed_history_row(library_media_key=row_library_key)
 
     async def _list_items_with_mismatched_media_key(section, keys):
-        media_key = str(keys[0])
-        entry_key = "entry-key"
+        entry_key = str(keys[0])
         return [
             DummyLibraryItem(
                 key=entry_key,
                 title=f"Library {entry_key}",
                 _media=DummyMedia(
-                    key=media_key,
+                    key="guid://lib-entry-key",
                     title=f"Library {entry_key}",
                     poster_image=f"P-{entry_key}",
                     external_url=f"http://library/{entry_key}",
@@ -518,6 +517,7 @@ async def test_history_service_library_metadata_uses_media_key(history_env):
 
     assert len(page.items) == 1
     assert page.items[0].library_media is not None
+    assert page.items[0].library_media.key == row_library_key
     assert page.items[0].library_media.external_url == "http://library/entry-key"
 
 

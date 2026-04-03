@@ -243,7 +243,7 @@ class HistoryService:
         items = await bridge.library_provider.list_items(section, keys=list(media_keys))
         for item in items:
             media = item.media()
-            metadata[media.key] = media
+            metadata[str(item.key)] = media
         return metadata
 
     async def _fetch_profile_stats(

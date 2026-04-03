@@ -156,7 +156,7 @@ class SyncHistoryManager:
             )
 
         library_section_key = str(item.section().key)
-        library_media_key = str(item.media().key)
+        library_media_key = str(item.key)
         mapping_source_descriptors = tuple(
             dict.fromkeys(mapping.source for mapping in mappings or ())
         )
@@ -319,7 +319,7 @@ class SyncHistoryManager:
         del child_item
 
         library_section_key = str(item.section().key)
-        library_media_key = str(item.media().key)
+        library_media_key = str(item.key)
         if not library_media_key:
             return
 

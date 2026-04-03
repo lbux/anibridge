@@ -63,8 +63,9 @@ def history_manager(history_db_factory) -> SyncHistoryManager:
 
 
 class FakeItem:
-    def __init__(self, key: str):
+    def __init__(self, key: str, media_key: str | None = None):
         self.key = key
+        self._media_key = media_key or key
         self.media_kind = MediaKind.MOVIE
         self._section = SimpleNamespace(key="section-1")
 
@@ -72,12 +73,12 @@ class FakeItem:
         return self._section
 
     def media(self):
-        return self
+        return SimpleNamespace(key=self._media_key)
 
 
-def _item(key: str = "lib1") -> Any:
+def _item(key: str = "lib1", media_key: str | None = None) -> Any:
 
-    return FakeItem(key)
+    return FakeItem(key, media_key=media_key)
 
 
 def test_stringify_info_value_and_normalize_info(
@@ -178,6 +179,27 @@ async def test_create_sync_history_updates_existing_failure_record(
         assert len(rows) == 1
         assert rows[0].error_message == "new"
         assert rows[0].info["source"] == "retry"
+
+
+@pytest.mark.asyncio
+async def test_create_sync_history_persists_library_entry_key(
+    history_manager: SyncHistoryManager,
+    history_db_factory,
+) -> None:
+    """History rows should persist the provider entry key, not the media key."""
+    await history_manager.create_sync_history(
+        item=_item(key="rating-key", media_key="guid://media-key"),
+        child_item=None,
+        grandchild_items=None,
+        snapshots=(None, None),
+        list_media_key=None,
+        outcome=SyncOutcome.NOT_FOUND,
+    )
+
+    with history_db_factory() as ctx:
+        rows = ctx.session.query(SyncHistory).all()
+        assert len(rows) == 1
+        assert rows[0].library_media_key == "rating-key"
 
 
 def test_queue_cleanup_flushes_threshold_and_resolves_mapping_entry_id(
