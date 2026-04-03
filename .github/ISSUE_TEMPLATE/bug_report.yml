@@ -4,6 +4,18 @@ labels: ["bug"]
 body:
     - type: checkboxes
       attributes:
+          label: Is this a mapping issue?
+          description: |
+              Do not open a bug report for mappings not being found.
+
+              If you have a problem with a mapping, you can [create your own custom mapping](https://anibridge.eliasbenb.dev/mappings/custom-mappings/) or contribute to the [community mappings repo](https://github.com/anibridge/anibrdige-mappings).
+
+              ⚠️ If you open a bug report for a mapping issue, it will be closed without review.
+          options:
+              - label: This is not a mapping issue
+                required: true
+    - type: checkboxes
+      attributes:
           label: Is there an existing issue for this?
           description: Please search to see if an open or closed issue already exists for the bug you encountered. If a bug exists and it is closed as complete it may not yet be in a stable release.
           options:
