@@ -1,8 +1,7 @@
 """Unit tests for sync history persistence helpers."""
 
-from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from anibridge.library import MediaKind
@@ -65,9 +64,10 @@ def history_manager(history_db_factory) -> SyncHistoryManager:
 class FakeItem:
     def __init__(self, key: str, media_key: str | None = None):
         self.key = key
+        self.title = key
         self._media_key = media_key or key
         self.media_kind = MediaKind.MOVIE
-        self._section = SimpleNamespace(key="section-1")
+        self._section = SimpleNamespace(key="section-1", title="Section 1")
 
     def section(self):
         return self._section
@@ -75,27 +75,13 @@ class FakeItem:
     def media(self):
         return SimpleNamespace(key=self._media_key)
 
+    def mapping_descriptors(self):
+        return []
+
 
 def _item(key: str = "lib1", media_key: str | None = None) -> Any:
 
     return FakeItem(key, media_key=media_key)
-
-
-def test_stringify_info_value_and_normalize_info(
-    history_manager: SyncHistoryManager,
-) -> None:
-    """Info values should normalize booleans, datetimes, sequences, and blanks."""
-    naive = datetime(2026, 1, 1, 12, 0)
-
-    assert history_manager.stringify_info_value(True) == "true"
-    assert history_manager.stringify_info_value(naive) == "2026-01-01T12:00:00+00:00"
-    assert history_manager.stringify_info_value(ListStatus.CURRENT) == "current"
-    assert history_manager.stringify_info_value(["a", "", None]) == "a"
-    assert history_manager.normalize_info(
-        {" ok ": " value ", "": "skip", "none": None}
-    ) == {
-        "ok": "value",
-    }
 
 
 @pytest.mark.asyncio
@@ -200,6 +186,102 @@ async def test_create_sync_history_persists_library_entry_key(
         rows = ctx.session.query(SyncHistory).all()
         assert len(rows) == 1
         assert rows[0].library_media_key == "rating-key"
+        assert rows[0].info is not None
+        assert rows[0].info.get("library_section") == "Section 1 (section-1)"
+        assert rows[0].info.get("library_item") == "rating-key (rating-key)"
+        assert "list_media_key" not in rows[0].info
+        assert "mapping_sources" not in rows[0].info
+
+
+@pytest.mark.asyncio
+async def test_create_sync_history_persists_child_context(
+    history_manager: SyncHistoryManager,
+    history_db_factory,
+) -> None:
+    """History rows should include child identifiers when they add context."""
+
+    class _ChildItem(FakeItem):
+        def __init__(self):
+            super().__init__("season-2")
+            self.title = "Season 2"
+
+    parent = _item(key="show-1")
+    parent.title = "Show"
+
+    await history_manager.create_sync_history(
+        item=parent,
+        child_item=cast(Any, _ChildItem()),
+        grandchild_items=cast(
+            Any,
+            [SimpleNamespace(key="ep-1"), SimpleNamespace(key="ep-2")],
+        ),
+        snapshots=(None, None),
+        list_media_key="lst1",
+        outcome=SyncOutcome.SYNCED,
+    )
+
+    with history_db_factory() as ctx:
+        row = ctx.session.query(SyncHistory).one()
+        assert row.info is not None
+        assert row.info.get("library_item") == "Show (show-1)"
+        assert row.info.get("library_child_item") == "Season 2 (season-2)"
+        assert row.info.get("library_grandchild_items") == "2"
+
+
+@pytest.mark.asyncio
+async def test_create_sync_history_persists_mapping_target(
+    history_manager: SyncHistoryManager,
+    history_db_factory,
+) -> None:
+    """History rows should include the resolved mapping target descriptor."""
+    await history_manager.create_sync_history(
+        item=_item(),
+        child_item=None,
+        grandchild_items=None,
+        snapshots=(None, None),
+        list_media_key="lst1",
+        mappings=[
+            AnibridgeDescriptorMapping(
+                source=("anilist", "101", None),
+                target=("tmdb", "201", "movie"),
+            )
+        ],
+        outcome=SyncOutcome.SYNCED,
+    )
+
+    with history_db_factory() as ctx:
+        row = ctx.session.query(SyncHistory).one()
+        assert row.info is not None
+        assert row.info.get("mapping_targets") == "tmdb:201:movie"
+
+
+@pytest.mark.asyncio
+async def test_create_sync_history_persists_mapping_sources(
+    history_manager: SyncHistoryManager,
+    history_db_factory,
+) -> None:
+    """History rows should include the resolved mapping sources used for sync."""
+    mapping = AnibridgeDescriptorMapping(
+        source=("anilist", "101", None),
+        target=("tmdb", "201", "movie"),
+    )
+    mapping.add_mapping("2", "5")
+    mapping.add_mapping("3-4", "7-8")
+
+    await history_manager.create_sync_history(
+        item=_item(),
+        child_item=None,
+        grandchild_items=None,
+        snapshots=(None, None),
+        list_media_key="lst1",
+        mappings=[mapping],
+        outcome=SyncOutcome.SYNCED,
+    )
+
+    with history_db_factory() as ctx:
+        row = ctx.session.query(SyncHistory).one()
+        assert row.info is not None
+        assert row.info.get("mapping_sources") == "anilist:101"
 
 
 def test_queue_cleanup_flushes_threshold_and_resolves_mapping_entry_id(

@@ -411,7 +411,6 @@ async def test_history_service_undo_item_records_info(history_env):
     item = await service.undo_item("profile", row_id)
 
     assert item.info is not None
-    assert item.info.get("operation") == "undo"
     assert item.info.get("source_history_id") == str(row_id)
     assert item.info.get("source_outcome") == SyncOutcome.SYNCED.value
     assert history_env.list_provider.deleted_entries == ["lst1"]
@@ -429,7 +428,6 @@ async def test_history_service_undo_item_in_dry_run_is_ephemeral(history_env):
 
     assert item.ephemeral is True
     assert item.info is not None
-    assert item.info.get("operation") == "undo"
     assert history_env.list_provider.deleted_entries == []
 
 

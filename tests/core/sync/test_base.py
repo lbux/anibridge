@@ -9,6 +9,7 @@ import pytest
 from anibridge.library import MediaKind
 from anibridge.list import ListEntry as ListEntryProtocol
 from anibridge.list import ListMediaType, ListStatus
+from anibridge.utils.mappings import AnibridgeDescriptorMapping
 
 from anibridge.app.config.settings import SyncField, SyncRulesConfig
 from anibridge.app.core.sync.base import BaseSyncClient
@@ -707,9 +708,9 @@ async def test_apply_update_dry_run_records_ephemeral_history(
         assert history[0].outcome is SyncOutcome.SYNCED
         assert history[0].ephemeral is True
         assert history[0].info is not None
-        assert history[0].info.get("operation") == "update_entry"
-        assert history[0].info.get("mode") == "single"
-        assert history[0].info.get("dry_run") == "true"
+        assert "operation" not in history[0].info
+        assert "mode" not in history[0].info
+        assert "dry_run" not in history[0].info
 
 
 @pytest.mark.asyncio
@@ -754,8 +755,8 @@ async def test_batch_sync_dry_run_clears_queue_and_records_history(
         assert history[0].outcome is SyncOutcome.SYNCED
         assert history[0].ephemeral is True
         assert history[0].info is not None
-        assert history[0].info.get("mode") == "batch"
-        assert history[0].info.get("dry_run") == "true"
+        assert "mode" not in history[0].info
+        assert "dry_run" not in history[0].info
 
 
 @pytest.mark.asyncio
@@ -983,8 +984,8 @@ async def test_sync_media_updates_entry_and_history(
         assert len(history) == 1
         assert history[0].outcome == SyncOutcome.SYNCED
         assert history[0].info is not None
-        assert history[0].info.get("operation") == "update_entry"
-        assert history[0].info.get("mode") == "single"
+        assert "operation" not in history[0].info
+        assert "mode" not in history[0].info
 
 
 @pytest.mark.asyncio
@@ -1028,10 +1029,10 @@ async def test_sync_media_info_reports_rule_and_status_blocks(
     with sync_db as ctx:
         record = ctx.session.query(SyncHistory).one()
         assert record.info is not None
-        assert "progress(no_match)" not in (record.info.get("sync_rules_blocked") or "")
-        assert "review" in (record.info.get("disabled_fields") or "")
+        assert "progress(no_match)" not in (record.info.get("field_blocks") or "")
+        assert "review(disabled)" in (record.info.get("field_blocks") or "")
         assert "user_rating(requires_completed)" in (
-            record.info.get("status_gate_blocked") or ""
+            record.info.get("field_blocks") or ""
         )
 
 
@@ -1078,10 +1079,80 @@ async def test_sync_media_info_reports_applied_sync_rules(
     with sync_db as ctx:
         record = ctx.session.query(SyncHistory).one()
         assert record.info is not None
-        assert record.info.get("applied_sync_rules") == (
-            "status(Promote completed movie)"
-        )
-        assert "status" in (record.info.get("applied_fields") or "")
+        assert record.info.get("applied_rules") == ("status(Promote completed movie)")
+
+
+@pytest.mark.asyncio
+async def test_sync_media_info_includes_mapping_target(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Sync diagnostics should include the resolved mapping target descriptor."""
+    movie = make_movie(view_count=1)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+        mappings=(
+            AnibridgeDescriptorMapping(
+                source=("anilist", "101", None),
+                target=("tmdb", "201", "movie"),
+            ),
+        ),
+    )
+
+    assert result is SyncOutcome.SYNCED
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert record.info.get("mapping_targets") == "tmdb:201:movie"
+
+
+@pytest.mark.asyncio
+async def test_sync_media_info_includes_mapping_sources(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Sync diagnostics should include the resolved mapping sources used."""
+    movie = make_movie(view_count=1)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    mapping = AnibridgeDescriptorMapping(
+        source=("anilist", "101", None),
+        target=("tmdb", "201", "movie"),
+    )
+    mapping.add_mapping("2", "5")
+    mapping.add_mapping("3-4", "7-8")
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+        mappings=(mapping,),
+    )
+
+    assert result is SyncOutcome.SYNCED
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert record.info.get("mapping_sources") == "anilist:101"
 
 
 @pytest.mark.asyncio
@@ -1438,8 +1509,9 @@ async def test_sync_media_dry_run_delete_records_ephemeral_history(
         assert history[0].outcome is SyncOutcome.DELETED
         assert history[0].ephemeral is True
         assert history[0].info is not None
-        assert history[0].info.get("operation") == "delete_entry"
-        assert history[0].info.get("dry_run") == "true"
+        assert "operation" not in history[0].info
+        assert "status_plan" not in history[0].info
+        assert "dry_run" not in history[0].info
 
 
 @pytest.mark.asyncio
@@ -1567,9 +1639,11 @@ async def test_process_media_marks_not_found(
         record = ctx.session.query(SyncHistory).one()
         assert record.outcome == SyncOutcome.NOT_FOUND
         assert record.info is not None
-        assert record.info.get("operation") == "resolve_target"
-        assert record.info.get("reason") == "no_matching_list_entry"
-        assert record.info.get("grandchild_count") is None
+        assert "operation" not in record.info
+        assert "reason" not in record.info
+        assert record.info.get("trackable_count") == "1"
+        assert record.info.get("library_grandchild_items") is None
+        assert "attempted_descriptors" not in record.info
 
 
 @pytest.mark.asyncio

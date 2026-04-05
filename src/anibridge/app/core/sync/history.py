@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from anibridge.library import LibraryEntry
-from anibridge.list import ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from sqlalchemy.sql import tuple_
 
@@ -49,62 +48,6 @@ class SyncHistoryManager:
         """Clear all history manager caches."""
         pass
 
-    @staticmethod
-    def stringify_info_value(value: Any) -> str | None:
-        """Serialize a history metadata value to a string.
-
-        Args:
-            value (Any): Value to serialize.
-
-        Returns:
-            str | None: Serialized value, or None when the input is empty.
-        """
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, datetime):
-            dt = (
-                value.replace(tzinfo=UTC)
-                if value.tzinfo is None
-                else value.astimezone(UTC)
-            )
-            return dt.isoformat()
-        if isinstance(value, ListStatus):
-            return value.value
-        if isinstance(value, (list, tuple, set)):
-            joined = ", ".join(
-                serialized
-                for serialized in (
-                    SyncHistoryManager.stringify_info_value(item) for item in value
-                )
-                if serialized
-            )
-            return joined or None
-        text = str(value).strip()
-        return text or None
-
-    def normalize_info(self, payload: Mapping[str, Any] | None) -> dict[str, str]:
-        """Normalize history metadata to a flat string mapping.
-
-        Args:
-            payload (Mapping[str, Any] | None): Raw metadata payload.
-
-        Returns:
-            dict[str, str]: Normalized metadata with empty keys and values removed.
-        """
-        if not payload:
-            return {}
-        normalized: dict[str, str] = {}
-        for key, value in payload.items():
-            normalized_key = str(key).strip()
-            if not normalized_key:
-                continue
-            normalized_value = self.stringify_info_value(value)
-            if normalized_value is not None:
-                normalized[normalized_key] = normalized_value
-        return normalized
-
     async def create_sync_history(
         self,
         *,
@@ -145,6 +88,14 @@ class SyncHistoryManager:
         before_state = before_snapshot.serialize() if before_snapshot else None
         after_state = after_snapshot.serialize() if after_snapshot else None
 
+        section = item.section()
+
+        library_section = f"{section.title} ({section.key})"
+        library_item = f"{item.title} ({item.key})"
+        library_child_item = (
+            f"{child_item.title} ({child_item.key})" if child_item else None
+        )
+
         resolved_list_media_key = list_media_key
         if resolved_list_media_key is None:
             resolved_list_media_key = (
@@ -155,31 +106,33 @@ class SyncHistoryManager:
                 else None
             )
 
-        library_section_key = str(item.section().key)
-        library_media_key = str(item.key)
         mapping_source_descriptors = tuple(
-            dict.fromkeys(mapping.source for mapping in mappings or ())
+            descriptor_key(mapping.source) for mapping in mappings or ()
+        )
+        mapping_target_descriptors = tuple(
+            descriptor_key(mapping.target) for mapping in mappings or ()
+        )
+        unused_mapping_sources = sorted(
+            set(descriptor_key(d) for d in item.mapping_descriptors())
+            - set(mapping_source_descriptors)
         )
 
-        base_info = self.normalize_info(
-            {
-                "outcome": outcome.value,
-                "library_section_key": library_section_key,
-                "library_media_key": library_media_key,
+        history_info = {
+            str(key): str(value)
+            for key, value in {
+                "library_section": library_section,
+                "library_item": library_item,
+                "library_child_item": library_child_item,
                 "list_media_key": resolved_list_media_key,
-                "mapping_sources": [
-                    descriptor_key(descriptor)
-                    for descriptor in mapping_source_descriptors
-                ],
-                "mapping_count": len(mapping_source_descriptors),
-                "grandchild_count": (
+                "library_grandchild_items": (
                     len(grandchild_items) if grandchild_items is not None else None
                 ),
-            }
-        )
-        history_info = {
-            **base_info,
-            **self.normalize_info(info),
+                "mapping_sources": ", ".join(mapping_source_descriptors),
+                "mapping_targets": ", ".join(mapping_target_descriptors),
+                "unused_mapping_sources": ", ".join(unused_mapping_sources),
+                **(info or {}),
+            }.items()
+            if key and value
         }
 
         with self._db_factory() as ctx:
@@ -201,8 +154,8 @@ class SyncHistoryManager:
             if outcome in (SyncOutcome.NOT_FOUND, SyncOutcome.FAILED):
                 updated = self._update_existing_failure_record(
                     session=ctx.session,
-                    library_section_key=library_section_key,
-                    library_media_key=library_media_key,
+                    library_section_key=section.key,
+                    library_media_key=item.key,
                     list_media_key=resolved_list_media_key,
                     outcome=outcome,
                     before_state=before_state,
@@ -218,8 +171,8 @@ class SyncHistoryManager:
             history_record = SyncHistory(
                 profile_name=self.profile_name,
                 library_namespace=self.library_namespace,
-                library_section_key=library_section_key,
-                library_media_key=library_media_key,
+                library_section_key=section.key,
+                library_media_key=item.key,
                 list_namespace=self.list_namespace,
                 list_media_key=resolved_list_media_key,
                 animap_provider=mapping_entry_info[1] if mapping_entry_info else None,

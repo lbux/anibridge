@@ -10,7 +10,7 @@ from typing import Any
 
 from anibridge.library import LibraryEntry, LibraryProvider
 from anibridge.list import ListEntry, ListProvider, ListStatus
-from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
+from anibridge.utils.mappings import AnibridgeDescriptorMapping
 from anibridge.utils.types import Comparable
 
 from anibridge.app import log
@@ -261,9 +261,6 @@ class BaseSyncClient[
                 self.sync_stats.track_item(item_identifier, SyncOutcome.SKIPPED)
                 return
 
-            attempted_descriptors = tuple(
-                sorted(item.mapping_descriptors(), key=descriptor_key)
-            )
             log.warning(
                 "[%s] No list entries found for %s %s %s",
                 self.profile_name,
@@ -271,7 +268,7 @@ class BaseSyncClient[
                 self._debug_log_title(item=item, child_item=None),
                 ids_summary,
             )
-            await self._create_sync_history(
+            await self._history.create_sync_history(
                 item=item,
                 child_item=None,
                 grandchild_items=None,
@@ -279,14 +276,9 @@ class BaseSyncClient[
                 list_media_key=None,
                 outcome=SyncOutcome.NOT_FOUND,
                 info={
-                    "operation": "resolve_target",
-                    "reason": "no_matching_list_entry",
-                    "trackable_items": str(len(remaining_trackable)),
-                    "mapping_descriptor_count": str(len(attempted_descriptors)),
-                    "mapping_sources": ", ".join(
-                        descriptor_key(d) for d in attempted_descriptors
-                    ),
+                    "trackable_count": len(remaining_trackable),
                 },
+                ephemeral=self.dry_run,
             )
             self.sync_stats.track_items(remaining_trackable, SyncOutcome.NOT_FOUND)
             self.sync_stats.track_item(item_identifier, SyncOutcome.NOT_FOUND)
@@ -420,7 +412,7 @@ class BaseSyncClient[
                         debug_title,
                         debug_ids,
                     )
-                    await self._create_sync_history(
+                    await self._history.create_sync_history(
                         item=item,
                         child_item=child_item,
                         grandchild_items=grandchild_items,
@@ -428,20 +420,12 @@ class BaseSyncClient[
                         list_media_key=resolved_list_key,
                         mappings=mappings,
                         outcome=SyncOutcome.DELETED,
-                        info={
-                            "operation": "delete_entry",
-                            "reason": "status_resolved_to_none",
-                            "destructive_sync": self.destructive_sync,
-                            "disabled_fields": sorted(disabled_fields),
-                            "pinned_fields": ", ".join(sorted(skip_fields)),
-                            "mapping_count": len(mappings or ()),
-                            "dry_run": True,
-                        },
+                        ephemeral=self.dry_run,
                     )
                     return SyncOutcome.DELETED
                 await self.list_provider.delete_entry(before_snapshot.media_key)
                 self._cache.remove_entry(before_snapshot.media_key)
-                await self._create_sync_history(
+                await self._history.create_sync_history(
                     item=item,
                     child_item=child_item,
                     grandchild_items=grandchild_items,
@@ -449,14 +433,7 @@ class BaseSyncClient[
                     list_media_key=resolved_list_key,
                     mappings=mappings,
                     outcome=SyncOutcome.DELETED,
-                    info={
-                        "operation": "delete_entry",
-                        "reason": "status_resolved_to_none",
-                        "destructive_sync": self.destructive_sync,
-                        "disabled_fields": sorted(disabled_fields),
-                        "pinned_fields": ", ".join(sorted(skip_fields)),
-                        "mapping_count": len(mappings or ()),
-                    },
+                    ephemeral=self.dry_run,
                 )
                 return SyncOutcome.DELETED
 
@@ -515,30 +492,18 @@ class BaseSyncClient[
 
         after_snapshot = EntrySnapshot.from_entry(planned_entry)
         diff = diff_snapshots(before_snapshot, after_snapshot, considered_attrs)
-        sync_diagnostics = self._normalize_history_info(
-            {
-                "computed_status": status_rule.value,
-                "final_status": planned_entry.status,
-                "disabled_fields": sorted(disabled_fields),
-                "applied_sync_rules": [
-                    f"{k}({v})" if v else k
-                    for k, v in sorted(field_state.applied_sync_rules.items())
-                ],
-                "pinned_blocked": sorted(field_state.pinned_blocked_fields),
-                "sync_rules_blocked": [
-                    f"{k}({v})" if v else k
-                    for k, v in sorted(field_state.sync_rules_blocked.items())
-                ],
-                "status_gate_blocked": [
-                    f"{k}({v})" if v else k
-                    for k, v in sorted(field_state.status_gate_blocked.items())
-                ],
-                "destructive_blocked": sorted(field_state.destructive_blocked_fields),
-                "unchanged_fields": sorted(field_state.unchanged_fields),
-                "considered_fields": sorted(considered_attrs),
-                "applied_fields": sorted(diff.keys()),
-            }
-        )
+        sync_diagnostics = {
+            "field_blocks": ", ".join(
+                self._format_field_blocks(
+                    field_state=field_state,
+                    disabled_fields=disabled_fields,
+                )
+            ),
+            "applied_rules": ", ".join(
+                f"{k}({v})" if v else k
+                for k, v in sorted(field_state.applied_sync_rules.items())
+            ),
+        }
 
         if not diff:
             log.info(
@@ -613,7 +578,7 @@ class BaseSyncClient[
                 debug_ids,
             )
             log.success("\tDRY RUN UPDATE: %s", diff_str)
-            await self._create_sync_history(
+            await self._history.create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
                 grandchild_items=plan.grandchildren,
@@ -621,12 +586,8 @@ class BaseSyncClient[
                 list_media_key=plan.list_media_key,
                 mappings=plan.mappings,
                 outcome=SyncOutcome.SYNCED,
-                info={
-                    **plan.diagnostics,
-                    "operation": "update_entry",
-                    "mode": "single",
-                    "dry_run": True,
-                },
+                info={**plan.diagnostics},
+                ephemeral=self.dry_run,
             )
             return SyncOutcome.SYNCED
 
@@ -645,7 +606,7 @@ class BaseSyncClient[
                 debug_ids,
             )
             log.success("\tUPDATE: %s", diff_str)
-            await self._create_sync_history(
+            await self._history.create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
                 grandchild_items=plan.grandchildren,
@@ -653,11 +614,8 @@ class BaseSyncClient[
                 list_media_key=plan.list_media_key,
                 mappings=plan.mappings,
                 outcome=SyncOutcome.SYNCED,
-                info={
-                    **plan.diagnostics,
-                    "operation": "update_entry",
-                    "mode": "single",
-                },
+                info={**plan.diagnostics},
+                ephemeral=self.dry_run,
             )
             return SyncOutcome.SYNCED
         except Exception as exc:
@@ -670,7 +628,7 @@ class BaseSyncClient[
                 exc,
             )
             log.exception("[%s] Sync update error details", self.profile_name)
-            await self._create_sync_history(
+            await self._history.create_sync_history(
                 item=plan.item,
                 child_item=plan.child,
                 grandchild_items=plan.grandchildren,
@@ -679,12 +637,8 @@ class BaseSyncClient[
                 mappings=plan.mappings,
                 outcome=SyncOutcome.FAILED,
                 error_message=str(exc),
-                info={
-                    **plan.diagnostics,
-                    "operation": "update_entry",
-                    "mode": "single",
-                    "error_type": type(exc).__name__,
-                },
+                info={**plan.diagnostics, "error_type": type(exc).__name__},
+                ephemeral=self.dry_run,
             )
             raise
 
@@ -873,7 +827,7 @@ class BaseSyncClient[
                     self._debug_log_title(item=update.item, child_item=update.child),
                 )
                 log.success("\tDRY RUN BATCH UPDATE: %s", self._render_diff(update))
-                await self._create_sync_history(
+                await self._history.create_sync_history(
                     item=update.item,
                     child_item=update.child,
                     grandchild_items=update.grandchildren,
@@ -881,12 +835,8 @@ class BaseSyncClient[
                     list_media_key=update.list_media_key,
                     mappings=update.mappings,
                     outcome=SyncOutcome.SYNCED,
-                    info={
-                        **update.diagnostics,
-                        "operation": "update_entry",
-                        "mode": "batch",
-                        "dry_run": True,
-                    },
+                    info={**update.diagnostics},
+                    ephemeral=self.dry_run,
                 )
             self._pending_updates.clear()
             return
@@ -908,7 +858,7 @@ class BaseSyncClient[
                         planned_entry=update.entry,
                         fields=[f.value for f in SyncField],
                     )
-                await self._create_sync_history(
+                await self._history.create_sync_history(
                     item=update.item,
                     child_item=update.child,
                     grandchild_items=update.grandchildren,
@@ -916,11 +866,8 @@ class BaseSyncClient[
                     list_media_key=update.list_media_key,
                     mappings=update.mappings,
                     outcome=outcome,
-                    info={
-                        **update.diagnostics,
-                        "operation": "update_entry",
-                        "mode": "batch",
-                    },
+                    info={**update.diagnostics},
+                    ephemeral=self.dry_run,
                 )
 
             log.success(
@@ -933,7 +880,7 @@ class BaseSyncClient[
             log.error("Batch sync failed: %s", exc)
             log.exception("Batch sync error details")
             for update in self._pending_updates:
-                await self._create_sync_history(
+                await self._history.create_sync_history(
                     item=update.item,
                     child_item=update.child,
                     grandchild_items=update.grandchildren,
@@ -942,49 +889,12 @@ class BaseSyncClient[
                     mappings=update.mappings,
                     outcome=SyncOutcome.FAILED,
                     error_message=str(exc),
-                    info={
-                        **update.diagnostics,
-                        "operation": "update_entry",
-                        "mode": "batch",
-                        "error_type": type(exc).__name__,
-                    },
+                    info={**update.diagnostics, "error_type": type(exc).__name__},
+                    ephemeral=self.dry_run,
                 )
             raise
         finally:
             self._pending_updates.clear()
-
-    def _normalize_history_info(
-        self, payload: Mapping[str, Any] | None
-    ) -> dict[str, str]:
-        """Normalize history metadata to a flat string dictionary."""
-        return self._history.normalize_info(payload)
-
-    async def _create_sync_history(
-        self,
-        *,
-        item,
-        child_item,
-        grandchild_items,
-        snapshots,
-        list_media_key,
-        mappings=None,
-        outcome,
-        error_message=None,
-        info=None,
-    ) -> None:
-        """Record the outcome of a sync attempt."""
-        await self._history.create_sync_history(
-            item=item,
-            child_item=child_item,
-            grandchild_items=grandchild_items,
-            snapshots=snapshots,
-            list_media_key=list_media_key,
-            mappings=mappings,
-            outcome=outcome,
-            error_message=error_message,
-            info=info,
-            ephemeral=self.dry_run,
-        )
 
     def flush_failure_history_cleanup(self) -> None:
         """Flush queued failure-history cleanup operations.
@@ -1016,6 +926,32 @@ class BaseSyncClient[
             f"{f}: {self._format_value(b)} {ARROW} {self._format_value(a)}"
             for f, (b, a) in sorted(diff.items())
         )
+
+    def _format_field_blocks(
+        self,
+        *,
+        field_state: _FieldApplicationState,
+        disabled_fields: set[str],
+    ) -> list[str]:
+        """Render a compact summary of why fields were not applied."""
+        blocked: list[str] = []
+        blocked.extend(f"{field}(disabled)" for field in sorted(disabled_fields))
+        blocked.extend(
+            f"{field}(pinned)" for field in sorted(field_state.pinned_blocked_fields)
+        )
+        blocked.extend(
+            f"{field}({reason})"
+            for field, reason in sorted(field_state.sync_rules_blocked.items())
+        )
+        blocked.extend(
+            f"{field}({reason})"
+            for field, reason in sorted(field_state.status_gate_blocked.items())
+        )
+        blocked.extend(
+            f"{field}(destructive_disabled)"
+            for field in sorted(field_state.destructive_blocked_fields)
+        )
+        return blocked
 
     @staticmethod
     def _format_value(value: Any) -> str:

@@ -1,6 +1,6 @@
 """Synchronization statistics and tracking module."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -391,4 +391,4 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     source_entry: ListEntry | None
     list_media_key: str | None
     mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
-    diagnostics: dict[str, str] = field(default_factory=dict)
+    diagnostics: Mapping[str, str] = field(default_factory=dict)

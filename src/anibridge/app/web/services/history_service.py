@@ -556,9 +556,7 @@ class HistoryService:
 
         with db() as ctx:
             source_info = {
-                str(key): str(value)
-                for key, value in (row.info or {}).items()
-                if str(key).strip() and value is not None
+                key: value for key, value in (row.info or {}).items() if value
             }
             undo_row = SyncHistory(
                 profile_name=row.profile_name,
@@ -577,7 +575,6 @@ class HistoryService:
                 ephemeral=bridge.profile_config.dry_run,
                 info={
                     **source_info,
-                    "operation": "undo",
                     "source_history_id": str(row.id),
                     "source_outcome": str(row.outcome),
                 },
