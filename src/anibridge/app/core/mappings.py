@@ -1,7 +1,6 @@
 """Mappings Client Module."""
 
 import asyncio
-import copy
 from compression import zstd
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -369,21 +368,19 @@ class MappingsClient:
             log.warning("Invalid mappings source: $$'%s'$$, skipping", src)
             return {}
 
-    def _deep_merge(self, d1: AnimapDict, d2: AnimapDict) -> AnimapDict:
-        """Recursively merge two dictionaries with last-write-wins semantics."""
-        result = d1.copy()
-
-        for key, value in d2.items():
-            if key not in result:
-                result[key] = value
-                continue
-
-            if isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = self._deep_merge(result[key], value)
+    def _deep_merge(self, base: AnimapDict, override: AnimapDict) -> AnimapDict:
+        """Recursively merge override into base in-place."""
+        for key, value in override.items():
+            existing = base.get(key)
+            if (
+                existing is not None
+                and isinstance(existing, dict)
+                and isinstance(value, dict)
+            ):
+                self._deep_merge(existing, value)
             else:
-                result[key] = value
-
-        return result
+                base[key] = value
+        return base
 
     async def load_mappings(self) -> AnimapDict:
         """Load mappings from files and URLs and merge them together.
@@ -444,9 +441,11 @@ class MappingsClient:
             len(merged_mappings),
         )
 
-        return {k: v for k, v in merged_mappings.items() if not k.startswith("$")}
+        for key in [k for k in merged_mappings if k.startswith("$")]:
+            del merged_mappings[key]
+        return merged_mappings
 
-    @ttl_cache(ttl=300)
+    @ttl_cache(ttl=300, per_instance=False, key=lambda self, src: src)
     async def _load_source_snapshot(
         self, src: str
     ) -> tuple[AnimapDict, dict[str, tuple[str, ...]], tuple[str, ...]]:
@@ -455,7 +454,7 @@ class MappingsClient:
         self._provenance = {}
         mappings = await self._load_mappings(src)
         return (
-            copy.deepcopy(mappings),
+            mappings,
             {
                 str(descriptor): tuple(sources)
                 for descriptor, sources in self._provenance.items()
@@ -485,7 +484,7 @@ class MappingsClient:
             str(descriptor): list(sources)
             for descriptor, sources in cached_provenance.items()
         }
-        return copy.deepcopy(mappings)
+        return mappings
 
     def get_provenance(self) -> dict[str, list[str]]:
         """Return a copy of the provenance map collected during the last load."""

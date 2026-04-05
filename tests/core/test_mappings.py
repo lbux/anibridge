@@ -326,7 +326,7 @@ async def test_load_source_cache_hit_restores_matching_provenance(
     third = await client.load_source("a.json")
 
     assert first == third
-    assert first is not third
+    assert first is third  # cached results return the same object
     assert client.get_provenance() == {"a.json": ["a.json"]}
 
 

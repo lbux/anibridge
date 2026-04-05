@@ -1,7 +1,6 @@
 """Service helpers for managing custom mapping overrides (v3 graph)."""
 
 import asyncio
-import copy
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -37,6 +36,9 @@ class MappingOverridesService:
     def __init__(self) -> None:
         """Initialise synchronization primitives for override operations."""
         self._lock = asyncio.Lock()
+        self._mapping_client = MappingsClient(
+            config.data_path, get_config().mappings_url
+        )
 
     def _ensure_scheduler(self):
         """Ensure the scheduler is available and return it."""
@@ -97,9 +99,7 @@ class MappingOverridesService:
         upstream_url = get_config().mappings_url
         if not upstream_url:
             return {}
-
-        async with MappingsClient(config.data_path, upstream_url) as client:
-            return await client.load_source(str(upstream_url)) or {}
+        return await self._mapping_client.load_source(upstream_url)
 
     def _normalize_targets(self, raw: Any) -> dict[str, dict[str, str | None] | None]:
         """Normalize a raw descriptor payload into target-range maps.
@@ -142,7 +142,9 @@ class MappingOverridesService:
         custom: dict[str, dict[str, str | None] | None],
     ) -> dict[str, dict[str, str | None] | None]:
         """Overlay custom targets onto upstream targets, honoring deletions."""
-        merged: dict[str, dict[str, str | None] | None] = copy.deepcopy(upstream)
+        merged: dict[str, dict[str, str | None] | None] = {
+            k: dict(v) if v is not None else None for k, v in upstream.items()
+        }
         for target, ranges in custom.items():
             if ranges is None:
                 merged[target] = None
