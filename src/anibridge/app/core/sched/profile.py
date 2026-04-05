@@ -113,8 +113,8 @@ class ProfileScheduler:
         finally:
             self._current_task = None
             if sync_slot_acquired and self._after_sync is not None:
-                with contextlib.suppress(Exception):
-                    await self._after_sync(self.profile_name)
+                with contextlib.suppress(BaseException):
+                    await asyncio.shield(self._after_sync(self.profile_name))
 
     async def _enqueue_sync(
         self,
@@ -196,6 +196,10 @@ class ProfileScheduler:
                         await task
 
                 if wait_task in done and self.stop_event.is_set():
+                    if queue_task in done:
+                        request = queue_task.result()
+                        if not request.future.done():
+                            request.future.cancel()
                     break
                 if queue_task not in done:
                     continue

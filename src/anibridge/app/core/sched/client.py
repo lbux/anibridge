@@ -598,7 +598,10 @@ class SchedulerClient:
         try:
             await bridge_client.sync(poll=poll, library_keys=library_keys)
         finally:
-            await self._sync_coordinator.release_profile_slot(profile_name)
+            with contextlib.suppress(BaseException):
+                await asyncio.shield(
+                    self._sync_coordinator.release_profile_slot(profile_name)
+                )
 
     async def __aenter__(self):
         """Async context manager entry."""

@@ -23,9 +23,9 @@ class GlobalSyncCoordinator:
 
     async def release_profile_slot(self, _profile_name: str) -> None:
         """Release an active profile sync slot."""
+        # Synchronous so cancellation cannot leak the counter.
+        self._active_profile_syncs = max(0, self._active_profile_syncs - 1)
         async with self._condition:
-            if self._active_profile_syncs > 0:
-                self._active_profile_syncs -= 1
             self._condition.notify_all()
 
     async def run_maintenance(self, work: Callable[[], Awaitable[None]]) -> None:
@@ -42,8 +42,9 @@ class GlobalSyncCoordinator:
         try:
             await work()
         finally:
+            # Synchronously so cancellation cannot leave it stuck.
+            self._maintenance_active = False
             async with self._condition:
-                self._maintenance_active = False
                 self._condition.notify_all()
 
     async def get_metrics(self) -> dict[str, int | bool]:
