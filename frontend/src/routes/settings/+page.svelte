@@ -378,7 +378,7 @@
                 </div>
             {:else}
                 <div
-                    class="h-130 min-h-70 overflow-hidden rounded-md border border-slate-900/80">
+                    class="h-[60vh] overflow-hidden rounded-md border border-slate-900/80">
                     <YamlEditor
                         bind:value={editorValue}
                         theme="dark"
