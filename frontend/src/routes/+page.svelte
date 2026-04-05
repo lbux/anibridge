@@ -10,6 +10,7 @@
         Wrench,
     } from "@lucide/svelte";
     import { Meter } from "bits-ui";
+    import { fade } from "svelte/transition";
 
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
@@ -240,6 +241,7 @@
         {#if isLoading && Object.keys(profiles).length === 0}
             {#each [1, 2, 3] as i (i)}
                 <div
+                    in:fade={{ duration: 150 }}
                     class="animate-pulse rounded-md border border-slate-800/60 bg-slate-900/40 p-4">
                     <div class="h-4 w-1/3 rounded-md bg-slate-700/60"></div>
                     <div class="mt-3 h-3 w-1/2 rounded-md bg-slate-800/60"></div>
@@ -252,16 +254,15 @@
             {/each}
         {/if}
         {#if !isLoading && Object.keys(profiles).length === 0}
-            {#if !isLoading && Object.keys(profiles).length === 0}
-                <a
-                    href={resolve("/settings")}
-                    class="flex flex-col items-center justify-center rounded-md border-2 border-dashed border-slate-700/70 bg-slate-900/30 p-6 text-center transition hover:border-slate-500">
-                    <div class="text-sm text-slate-400">
-                        No profiles configured yet. Get started by adding a profile in
-                        your configuration
-                    </div>
-                </a>
-            {/if}
+            <a
+                href={resolve("/settings")}
+                in:fade={{ duration: 150 }}
+                class="flex flex-col items-center justify-center rounded-md border-2 border-dashed border-slate-700/70 bg-slate-900/30 p-6 text-center transition hover:border-slate-500 hover:bg-slate-900/50">
+                <div class="text-sm text-slate-400">
+                    No profiles configured yet. Get started by adding a profile in your
+                    configuration
+                </div>
+            </a>
         {/if}
         {#each profileEntries() as [name, p] (name)}
             {@const profileDisabled = isProfileDisabled(p)}

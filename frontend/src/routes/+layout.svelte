@@ -12,6 +12,7 @@
         Terminal,
         X,
     } from "@lucide/svelte";
+    import { fade } from "svelte/transition";
 
     import { resolve } from "$app/paths";
     import { page } from "$app/state";
@@ -86,6 +87,7 @@
         <!-- Mobile backdrop -->
         {#if sidebarOpen}
             <div
+                transition:fade={{ duration: 200 }}
                 class="fixed inset-0 z-30 bg-slate-900/70 backdrop-blur-sm lg:hidden"
                 role="button"
                 aria-label="Close sidebar"
