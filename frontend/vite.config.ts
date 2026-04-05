@@ -2,9 +2,10 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { SvelteKitPWA } from "@vite-pwa/sveltekit";
 import { defineConfig } from "vite";
+import { compression } from "vite-plugin-compression2";
 
 export default defineConfig({
-    build: { target: "es2022" },
+    build: { target: "es2022", cssMinify: "lightningcss" },
     plugins: [
         tailwindcss(),
         sveltekit(),
@@ -18,7 +19,7 @@ export default defineConfig({
                 "pwa-maskable-192x192.png",
                 "pwa-maskable-512x512.png",
             ],
-            workbox: { maximumFileSizeToCacheInBytes: 8000000 },
+            workbox: { maximumFileSizeToCacheInBytes: 8_000_000 },
             manifest: {
                 name: "AniBridge",
                 short_name: "AniBridge",
@@ -56,6 +57,7 @@ export default defineConfig({
                     "The smart way to keep your anime lists perfectly synchronized.",
             },
         }),
+        compression({ algorithms: ["gzip", "brotli"] }),
     ],
     server: {
         proxy: {
