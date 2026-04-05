@@ -251,6 +251,18 @@
                 </div>
             {/each}
         {/if}
+        {#if !isLoading && Object.keys(profiles).length === 0}
+            {#if !isLoading && Object.keys(profiles).length === 0}
+                <a
+                    href={resolve("/settings")}
+                    class="flex flex-col items-center justify-center rounded-md border-2 border-dashed border-slate-700/70 bg-slate-900/30 p-6 text-center transition hover:border-slate-500">
+                    <div class="text-sm text-slate-400">
+                        No profiles configured yet. Get started by adding a profile in
+                        your configuration
+                    </div>
+                </a>
+            {/if}
+        {/if}
         {#each profileEntries() as [name, p] (name)}
             {@const profileDisabled = isProfileDisabled(p)}
             {@const profileInitError = getProfileInitError(p)}

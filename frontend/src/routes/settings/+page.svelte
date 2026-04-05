@@ -402,7 +402,8 @@
             <Languages class="inline h-4 w-4 text-slate-400" /> AniList Title Language
         </h4>
         <p class="text-[11px] leading-relaxed text-slate-500">
-            Choose which title language to prefer. Stored only in this browser.
+            Choose which title language to prefer on the mappings page. Stored only in
+            this browser.
         </p>
         <div class="flex flex-wrap gap-2">
             {#each LANG_OPTS as opt (opt)}
