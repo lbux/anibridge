@@ -11,9 +11,6 @@ import "monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController.js
 import "monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import "monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon-modifiers.css";
 
-import { shikiToMonaco } from "@shikijs/monaco";
-import { createHighlighter } from "shiki";
-
 import {
     clearYamlSchemaForModel,
     registerYamlProviders,
@@ -28,20 +25,35 @@ export async function initShiki(monacoInstance: typeof monaco) {
     if (shikiPromise) return shikiPromise;
 
     shikiPromise = (async () => {
-        const highlighter = await createHighlighter({
-            themes: ["catppuccin-mocha", "catppuccin-latte"],
-            langs: ["yaml"],
+        // only import YAML grammar instead of all ~300 language grammars.
+        const [
+            { shikiToMonaco },
+            { createHighlighterCore },
+            { createOnigurumaEngine },
+            langYaml,
+            themeMocha,
+            themeLatte,
+        ] = await Promise.all([
+            import("@shikijs/monaco"),
+            import("shiki/core"),
+            import("shiki/engine/oniguruma"),
+            import("shiki/langs/yaml.mjs"),
+            import("shiki/themes/catppuccin-mocha.mjs"),
+            import("shiki/themes/catppuccin-latte.mjs"),
+        ]);
+
+        const highlighter = await createHighlighterCore({
+            engine: createOnigurumaEngine(import("shiki/wasm")),
+            themes: [themeMocha.default, themeLatte.default],
+            langs: [langYaml.default],
         });
 
         const registeredLanguages = monacoInstance.languages
             .getLanguages()
             .map((lang: monaco.languages.ILanguageExtensionPoint) => lang.id);
-        const langsToRegister = ["yaml"];
 
-        for (const lang of langsToRegister) {
-            if (!registeredLanguages.includes(lang)) {
-                monacoInstance.languages.register({ id: lang });
-            }
+        if (!registeredLanguages.includes("yaml")) {
+            monacoInstance.languages.register({ id: "yaml" });
         }
 
         shikiToMonaco(highlighter, monacoInstance);
