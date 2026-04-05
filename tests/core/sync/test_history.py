@@ -261,7 +261,7 @@ def test_update_existing_failure_record_handles_misses_and_identical_rows(
                 after_state=None,
                 history_info={"outcome": "failed"},
                 error_message="boom",
-                mapping_entry_id=None,
+                mapping_entry_info=None,
             )
             is False
         )
@@ -294,7 +294,7 @@ def test_update_existing_failure_record_handles_misses_and_identical_rows(
                 after_state=None,
                 history_info={"outcome": "failed"},
                 error_message="boom",
-                mapping_entry_id=None,
+                mapping_entry_info=None,
             )
             is True
         )

@@ -98,11 +98,16 @@
     }: Props = $props();
 
     function mappingUrl(item: HistoryItem): string | null {
-        if (!item.animap_entry_id) return null;
+        if (!item.animap_provider || !item.animap_id) return null;
+        const parts = [
+            `source.provider:${item.animap_provider}`,
+            `source.id:${item.animap_id}`,
+        ];
+        if (item.animap_scope) parts.push(`source.scope:${item.animap_scope}`);
         return (
             resolve("/mappings") +
             "?" +
-            new SvelteURLSearchParams({ q: `id:${item.animap_entry_id}` }).toString()
+            new SvelteURLSearchParams({ q: parts.join(" ") }).toString()
         );
     }
 

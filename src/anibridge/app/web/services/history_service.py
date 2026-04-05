@@ -38,7 +38,9 @@ class HistoryItem(BaseModel):
     library_media_key: str | None = None
     list_namespace: str | None = None
     list_media_key: str | None = None
-    animap_entry_id: int | None = None
+    animap_provider: str | None = None
+    animap_id: str | None = None
+    animap_scope: str | None = None
     media_kind: str | None = None
     outcome: str
     before_state: dict | None = None
@@ -176,7 +178,9 @@ class HistoryService:
                     library_media_key=row.library_media_key,
                     list_namespace=row.list_namespace,
                     list_media_key=row.list_media_key,
-                    animap_entry_id=row.animap_entry_id,
+                    animap_provider=row.animap_provider,
+                    animap_id=row.animap_id,
+                    animap_scope=row.animap_scope,
                     media_kind=row.media_kind.value if row.media_kind else None,
                     outcome=str(row.outcome),
                     before_state=row.before_state,
@@ -563,7 +567,9 @@ class HistoryService:
                 library_media_key=row.library_media_key,
                 list_namespace=row.list_namespace,
                 list_media_key=row.list_media_key,
-                animap_entry_id=row.animap_entry_id,
+                animap_provider=row.animap_provider,
+                animap_id=row.animap_id,
+                animap_scope=row.animap_scope,
                 media_kind=row.media_kind,
                 outcome=SyncOutcome.UNDONE,
                 before_state=row.after_state,

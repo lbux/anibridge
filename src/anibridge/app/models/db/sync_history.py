@@ -6,7 +6,7 @@ from typing import Any
 
 from anibridge.library import MediaKind
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.schema import ForeignKey, Index
+from sqlalchemy.schema import ForeignKeyConstraint, Index
 from sqlalchemy.sql.sqltypes import JSON, Boolean, DateTime, Enum, Integer, String
 
 from anibridge.app.models.db.base import Base
@@ -43,12 +43,11 @@ class SyncHistory(Base):
         String, nullable=True, index=True
     )
 
-    animap_entry_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("animap_entry.id", ondelete="SET NULL", onupdate="CASCADE"),
-        nullable=True,
-        index=True,
+    animap_provider: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
     )
+    animap_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    animap_scope: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     media_kind: Mapped[MediaKind] = mapped_column(Enum(MediaKind), index=True)
     outcome: Mapped[SyncOutcome] = mapped_column(Enum(SyncOutcome), index=True)
@@ -72,6 +71,16 @@ class SyncHistory(Base):
     )
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["animap_provider", "animap_id", "animap_scope"],
+            [
+                "animap_entry.provider",
+                "animap_entry.entry_id",
+                "animap_entry.entry_scope",
+            ],
+            ondelete="SET NULL",
+            onupdate="CASCADE",
+        ),
         Index("ix_sync_history_profile_timestamp", "profile_name", "timestamp"),
         Index(
             "ix_sync_history_profile_library_media_outcome",

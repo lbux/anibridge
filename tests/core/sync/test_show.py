@@ -1125,7 +1125,6 @@ async def test_history_entry_id_matches_descriptor_from_list_resolution(
         )
         ctx.session.add_all([preferred, secondary])
         ctx.session.commit()
-        preferred_id = preferred.id
 
     results = [
         result
@@ -1148,7 +1147,9 @@ async def test_history_entry_id_matches_descriptor_from_list_resolution(
 
     with sync_db as ctx:
         row = ctx.session.query(SyncHistory).one()
-        assert row.animap_entry_id == preferred_id
+        assert row.animap_provider == "tmdb_show"
+        assert row.animap_id == "tmdb-1"
+        assert row.animap_scope == "s1"
 
 
 @pytest.mark.asyncio

@@ -193,7 +193,7 @@ class SyncHistoryManager:
             if outcome == SyncOutcome.SKIPPED:
                 return
 
-            mapping_entry_id = self._get_mapping_entry_id(
+            mapping_entry_info = self._get_mapping_entry_info(
                 mappings=mappings,
                 session=ctx.session,
             )
@@ -209,7 +209,7 @@ class SyncHistoryManager:
                     after_state=after_state,
                     history_info=history_info,
                     error_message=error_message,
-                    mapping_entry_id=mapping_entry_id,
+                    mapping_entry_info=mapping_entry_info,
                 )
                 if updated:
                     ctx.session.commit()
@@ -222,7 +222,9 @@ class SyncHistoryManager:
                 library_media_key=library_media_key,
                 list_namespace=self.list_namespace,
                 list_media_key=resolved_list_media_key,
-                animap_entry_id=mapping_entry_id,
+                animap_provider=mapping_entry_info[1] if mapping_entry_info else None,
+                animap_id=mapping_entry_info[2] if mapping_entry_info else None,
+                animap_scope=mapping_entry_info[3] if mapping_entry_info else None,
                 media_kind=item.media_kind,
                 outcome=outcome,
                 before_state=before_state,
@@ -342,6 +344,16 @@ class SyncHistoryManager:
         session: Any,
     ) -> int | None:
         """Return the Animap entry id for the first ordered source descriptor."""
+        result = self._get_mapping_entry_info(mappings=mappings, session=session)
+        return result[0] if result else None
+
+    def _get_mapping_entry_info(
+        self,
+        *,
+        mappings: Sequence[AnibridgeDescriptorMapping] | None,
+        session: Any,
+    ) -> tuple[int, str, str, str | None] | None:
+        """Return the Animap entry ID and descriptor info for the first descriptor."""
         if not mappings:
             return None
         descriptor = mappings[0].source
@@ -356,7 +368,9 @@ class SyncHistoryManager:
             )
             .first()
         )
-        return entry.id if entry else None
+        if entry:
+            return (entry.id, entry.provider, entry.entry_id, entry.entry_scope)
+        return None
 
     def _update_existing_failure_record(
         self,
@@ -370,7 +384,7 @@ class SyncHistoryManager:
         after_state: Mapping[str, Any] | None,
         history_info: Mapping[str, str],
         error_message: str | None,
-        mapping_entry_id: int | None,
+        mapping_entry_info: tuple[int, str, str, str | None] | None,
     ) -> bool:
         """Update an existing NOT_FOUND or FAILED history record if one exists."""
         filters = [
@@ -404,5 +418,13 @@ class SyncHistoryManager:
         existing.info = dict(history_info)
         existing.error_message = error_message
         existing.timestamp = datetime.now(UTC)
-        existing.animap_entry_id = mapping_entry_id
+
+        if mapping_entry_info:
+            existing.animap_provider = mapping_entry_info[1]
+            existing.animap_id = mapping_entry_info[2]
+            existing.animap_scope = mapping_entry_info[3]
+        else:
+            existing.animap_provider = None
+            existing.animap_id = None
+            existing.animap_scope = None
         return True
