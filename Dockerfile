@@ -33,7 +33,7 @@ RUN npm install -g pnpm
 
 RUN --mount=type=bind,source=frontend/pnpm-lock.yaml,target=/app/pnpm-lock.yaml,ro \
     --mount=type=bind,source=frontend/package.json,target=/app/package.json,ro \
-    --mount=type=cache,id=pnpm-store-${BUILDPLATFORM},target=/pnpm/store \
+    --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 COPY ./frontend /app
