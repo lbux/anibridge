@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 
 import aiohttp
 from anibridge.providers.list.anilist.client import global_anilist_limiter
-from anibridge.utils.cache import cache, ttl_cache
+from anibridge.utils.cache import LRUDict, cache, ttl_cache
 
 from anibridge.app import __version__, log
 from anibridge.app.exceptions import AniListFilterError, AniListSearchError
@@ -34,7 +34,7 @@ class AniListClient:
         """
         self.anilist_token = anilist_token
         self._session: aiohttp.ClientSession | None = None
-        self.offline_anilist_entries: dict[int, Media] = {}
+        self.offline_anilist_entries: LRUDict[int, Media] = LRUDict(maxsize=1024)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session.
