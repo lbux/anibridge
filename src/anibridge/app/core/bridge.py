@@ -1,5 +1,6 @@
 """Bridge Client Module."""
 
+import gc
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -349,15 +350,11 @@ class BridgeClient:
         try:
             for idx, section in enumerate(sections, start=1):
                 if self.current_sync is not None:
-                    self.current_sync = self.current_sync.model_copy(
-                        update={
-                            "section_index": idx,
-                            "section_title": section.title,
-                            "stage": "enumerating",
-                            "section_items_total": 0,
-                            "section_items_processed": 0,
-                        }
-                    )
+                    self.current_sync.section_index = idx
+                    self.current_sync.section_title = section.title
+                    self.current_sync.stage = "enumerating"
+                    self.current_sync.section_items_total = 0
+                    self.current_sync.section_items_processed = 0
 
                 section_stats = await self._sync_section(
                     section,
@@ -414,9 +411,12 @@ class BridgeClient:
             raise
         finally:
             if self.current_sync is not None:
-                self.current_sync = self.current_sync.model_copy(
-                    update={"stage": "completed", "state": "idle"}
-                )
+                self.current_sync.stage = "completed"
+                self.current_sync.state = "idle"
+
+            await movie_sync.clear_cache()
+            await show_sync.clear_cache()
+            gc.collect()
 
     async def parse_webhook(
         self, request: Request
@@ -506,19 +506,13 @@ class BridgeClient:
         )
 
         if self.current_sync is not None:
-            self.current_sync = self.current_sync.model_copy(
-                update={
-                    "section_index": section_index,
-                    "section_count": section_count,
-                    "section_title": section.title,
-                    "section_items_total": len(items),
-                    "section_items_processed": 0,
-                    "stage": (
-                        "prefetching"
-                        if self.profile_config.batch_requests
-                        else "processing"
-                    ),
-                }
+            self.current_sync.section_index = section_index
+            self.current_sync.section_count = section_count
+            self.current_sync.section_title = section.title
+            self.current_sync.section_items_total = len(items)
+            self.current_sync.section_items_processed = 0
+            self.current_sync.stage = (
+                "prefetching" if self.profile_config.batch_requests else "processing"
             )
 
         sync_client: MovieSyncClient | ShowSyncClient
@@ -558,9 +552,7 @@ class BridgeClient:
                     self.profile_name,
                 )
             if self.current_sync is not None:
-                self.current_sync = self.current_sync.model_copy(
-                    update={"stage": "processing"}
-                )
+                self.current_sync.stage = "processing"
 
         for item in items:
             try:
@@ -575,14 +567,8 @@ class BridgeClient:
                     )
 
                 if self.current_sync is not None:
-                    self.current_sync = self.current_sync.model_copy(
-                        update={
-                            "stage": "processing",
-                            "section_items_processed": (
-                                self.current_sync.section_items_processed + 1
-                            ),
-                        }
-                    )
+                    self.current_sync.stage = "processing"
+                    self.current_sync.section_items_processed += 1
 
             except Exception:
                 log.error(
@@ -598,9 +584,7 @@ class BridgeClient:
         try:
             if self.profile_config.batch_requests:
                 if self.current_sync is not None:
-                    self.current_sync = self.current_sync.model_copy(
-                        update={"stage": "finalizing"}
-                    )
+                    self.current_sync.stage = "finalizing"
                 await sync_client.batch_sync()
         finally:
             sync_client.flush_failure_history_cleanup()

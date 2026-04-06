@@ -8,7 +8,7 @@ from typing import Any, Literal
 from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import ListEntry, ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from anibridge.app.models.db.sync_history import SyncOutcome
 
@@ -294,6 +294,8 @@ class SyncProgress(BaseModel):
 
     Fields are serialized to JSON in scheduler status responses.
     """
+
+    model_config = ConfigDict(validate_assignment=True)
 
     state: Literal["running", "idle"]
     started_at: datetime
