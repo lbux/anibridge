@@ -20,6 +20,10 @@
             return true;
         }),
     );
+
+    const prettyPath = (path: string) => {
+        return path.replaceAll("_", " ");
+    };
 </script>
 
 <div
@@ -61,7 +65,7 @@
                         <div class="flex flex-wrap items-start gap-2">
                             <span
                                 class="max-w-full rounded bg-slate-800/80 px-1.5 py-0.5 font-mono text-[10px] break-all text-slate-300 group-hover:bg-slate-700/80">
-                                {diff.path}
+                                {prettyPath(diff.path)}
                             </span>
                             <div class="flex min-w-40 flex-1 items-start gap-1.5">
                                 <span
