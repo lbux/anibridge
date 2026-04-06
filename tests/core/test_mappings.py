@@ -58,17 +58,6 @@ def test_resolve_path_handles_relative_paths_and_urls(tmp_path: Path) -> None:
     assert resolved_url == "https://example.com/mappings/child.json"
 
 
-def test_dict_str_keys_normalizes_nested_structures(tmp_path: Path) -> None:
-    """Normalizing dictionary keys to strings works for nested structures."""
-    client = _make_client(tmp_path)
-    data = {1: {"nested": {2: "value"}}, "list": [{3: "v"}]}
-    normalized = client._dict_str_keys(data)
-    assert normalized == {
-        "1": {"nested": {"2": "value"}},
-        "list": [{"3": "v"}],
-    }
-
-
 @pytest.mark.asyncio
 async def test_get_provenance_preservesdescriptor_keys(tmp_path: Path) -> None:
     """Getting provenance preserves the original descriptor keys."""

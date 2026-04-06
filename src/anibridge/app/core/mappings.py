@@ -135,9 +135,7 @@ class MappingsClient:
         suffix = suffixes[-1] if suffixes else ""
         try:
             if suffix in {".yaml", ".yml"}:
-                return self._dict_str_keys(
-                    yaml.load(payload.decode(), Loader=YamlLoader)
-                )
+                return yaml.load(payload.decode(), Loader=YamlLoader)
             if suffix == ".json":
                 return orjson.loads(payload)
 
@@ -186,22 +184,6 @@ class MappingsClient:
                     lst.append(src)
 
         return merged
-
-    def _dict_str_keys(self, d: dict | list) -> Any:
-        """Ensure all keys in a dictionary are strings.
-
-        Args:
-            d (dict | list): Dictionary or list to convert
-
-        Returns:
-            dict | list: Dictionary with all keys as strings or a list
-        """
-        if isinstance(d, dict):
-            return {str(k): self._dict_str_keys(v) for k, v in d.items()}
-        elif isinstance(d, list):
-            return [self._dict_str_keys(i) for i in d]
-        else:
-            return d
 
     def _resolve_path(self, include_path: str, parent_path: str) -> str:
         """Resolve a path relative to the parent path.

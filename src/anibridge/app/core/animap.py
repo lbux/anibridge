@@ -326,12 +326,14 @@ class AnimapClient:
                     continue
 
                 for source_range, destination_range in ranges.items():
-                    if not isinstance(source_range, str) or not source_range:
+                    source_range = str(source_range)
+                    if not source_range:
                         invalid_count += 1
                         continue
                     if destination_range is None:
                         continue
-                    if not isinstance(destination_range, str):
+                    destination_range = str(destination_range)
+                    if not destination_range:
                         invalid_count += 1
                         continue
                     try:
