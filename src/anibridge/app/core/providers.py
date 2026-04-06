@@ -18,15 +18,17 @@ __all__ = [
 
 _ROOT_LIBRARY_PACKAGE = "anibridge.providers.library"
 _ROOT_LIST_PACKAGE = "anibridge.providers.list"
-_DEFAULT_LIBRARY_PROVIDER_CLASSES: tuple[str, ...] = (
-    f"{_ROOT_LIBRARY_PACKAGE}.emby.EmbyLibraryProvider",
-    f"{_ROOT_LIBRARY_PACKAGE}.jellyfin.JellyfinLibraryProvider",
-    f"{_ROOT_LIBRARY_PACKAGE}.plex.PlexLibraryProvider",
-)
-_DEFAULT_LIST_PROVIDER_CLASSES: tuple[str, ...] = (
-    f"{_ROOT_LIST_PACKAGE}.anilist.AnilistListProvider",
-    f"{_ROOT_LIST_PACKAGE}.mal.MalListProvider",
-)
+
+# Map provider namespaces to their default class paths for on-demand loading.
+_DEFAULT_LIBRARY_CLASSES_BY_NS: dict[str, str] = {
+    "emby": f"{_ROOT_LIBRARY_PACKAGE}.emby.EmbyLibraryProvider",
+    "jellyfin": f"{_ROOT_LIBRARY_PACKAGE}.jellyfin.JellyfinLibraryProvider",
+    "plex": f"{_ROOT_LIBRARY_PACKAGE}.plex.PlexLibraryProvider",
+}
+_DEFAULT_LIST_CLASSES_BY_NS: dict[str, str] = {
+    "anilist": f"{_ROOT_LIST_PACKAGE}.anilist.AnilistListProvider",
+    "mal": f"{_ROOT_LIST_PACKAGE}.mal.MalListProvider",
+}
 _LOADED_CLASSES: set[str] = set()
 
 library_registry: ProviderRegistry[LibraryProvider] = ProviderRegistry()
@@ -90,6 +92,15 @@ def _collect_class_overrides(config: AnibridgeConfig) -> set[str]:
     return classes
 
 
+def _ensure_default_provider(namespace: str) -> None:
+    """Import the default provider class for a namespace if not yet loaded."""
+    class_path = _DEFAULT_LIBRARY_CLASSES_BY_NS.get(
+        namespace
+    ) or _DEFAULT_LIST_CLASSES_BY_NS.get(namespace)
+    if class_path and class_path not in _LOADED_CLASSES:
+        _register_classes((class_path,))
+
+
 def build_library_provider(profile: AnibridgeProfileConfig) -> LibraryProvider:
     """Instantiate the configured library provider for the profile.
 
@@ -100,6 +111,7 @@ def build_library_provider(profile: AnibridgeProfileConfig) -> LibraryProvider:
         LibraryProvider: The instantiated library provider.
     """
     _register_classes(_collect_class_overrides(profile.parent))
+    _ensure_default_provider(profile.library_provider)
 
     namespace = profile.library_provider
     config = profile.library_provider_config.get(namespace)
@@ -124,6 +136,7 @@ def build_list_provider(profile: AnibridgeProfileConfig) -> ListProvider:
         ListProvider: The instantiated list provider.
     """
     _register_classes(_collect_class_overrides(profile.parent))
+    _ensure_default_provider(profile.list_provider)
 
     namespace = profile.list_provider
     config = profile.list_provider_config.get(namespace)
@@ -136,7 +149,3 @@ def build_list_provider(profile: AnibridgeProfileConfig) -> ListProvider:
             "Ensure the provider package is installed and listed under "
             "provider_classes."
         ) from exc
-
-
-# Pre-register default provider classes at factory load time
-_register_classes(_DEFAULT_LIBRARY_PROVIDER_CLASSES + _DEFAULT_LIST_PROVIDER_CLASSES)
