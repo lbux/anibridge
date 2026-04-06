@@ -308,29 +308,6 @@ async def test_load_source_resets_provenance(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_load_source_cache_hit_restores_matching_provenance(
-    tmp_path: Path,
-) -> None:
-    """Cached load_source calls should restore the provenance for that source."""
-    client = _make_client(tmp_path)
-
-    async def _load(src: str, _chain: set[str] | None = None):
-        client._loaded_sources = {src}
-        client._provenance = {src: [src]}
-        return {src: {"tmdb:1": {"1": None}}}
-
-    client._load_mappings = _load  # ty:ignore[invalid-assignment]
-
-    first = await client.load_source("a.json")
-    await client.load_source("b.json")
-    third = await client.load_source("a.json")
-
-    assert first == third
-    assert first is third  # cached results return the same object
-    assert client.get_provenance() == {"a.json": ["a.json"]}
-
-
-@pytest.mark.asyncio
 async def test_load_mappings_url_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,5 +1,6 @@
 """Animap client for v3 provider-range mappings."""
 
+import gc
 from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import md5
@@ -381,9 +382,7 @@ class AnimapClient:
         mappings = await self.mappings_client.load_mappings()
         provenance_by_descriptor = self.mappings_client.get_provenance()
 
-        curr_mappings_hash = md5(
-            orjson.dumps(mappings, option=orjson.OPT_SORT_KEYS)
-        ).hexdigest()
+        curr_mappings_hash = self.mappings_client.get_content_hash()
         curr_provenance_hash = md5(
             orjson.dumps(provenance_by_descriptor, option=orjson.OPT_SORT_KEYS)
         ).hexdigest()
@@ -407,6 +406,8 @@ class AnimapClient:
         descriptors, edges, provenance, invalid_count = self._build_edges(
             mappings, provenance_by_descriptor
         )
+        del mappings, provenance_by_descriptor
+
         log.debug(
             "Parsed mappings into %s descriptors, %s edges",
             len(descriptors),
@@ -428,29 +429,6 @@ class AnimapClient:
                         AnimapEntry.entry_scope,
                     )
                 )
-            }
-            existing_entry_ids = {
-                entry_id_db: descriptor
-                for descriptor, entry_id_db in existing_entries.items()
-            }
-            previous_mapping_keys = {
-                (src_desc, dst_desc, source_range, destination_range)
-                for (
-                    source_entry_id,
-                    destination_entry_id,
-                    source_range,
-                    destination_range,
-                ) in ctx.session.execute(
-                    select(
-                        AnimapMapping.source_entry_id,
-                        AnimapMapping.destination_entry_id,
-                        AnimapMapping.source_range,
-                        AnimapMapping.destination_range,
-                    )
-                )
-                if (src_desc := existing_entry_ids.get(source_entry_id)) is not None
-                and (dst_desc := existing_entry_ids.get(destination_entry_id))
-                is not None
             }
 
             new_entry_keys = set(descriptors)
@@ -498,6 +476,9 @@ class AnimapClient:
                     )
                 ctx.session.flush()
 
+            del descriptors, new_entry_keys, existing_entry_keys
+            del to_delete_entries, to_insert_entries
+
             # Refresh entry map after inserts
             existing_entries = {
                 descriptor_key((provider, entry_id, entry_scope)): entry_id_db
@@ -511,7 +492,8 @@ class AnimapClient:
                 )
             }
 
-            # Translate edge keys to entry-id keyed tuples
+            # Translate edge keys to entry-id keyed tuples and release the
+            # descriptor-keyed dicts immediately afterwards.
             edge_id_keys: set[tuple[int, int, str, str | None]] = set()
             provenance_by_id_key: dict[tuple[int, int, str, str | None], list[str]] = {}
             for key in edges:
@@ -523,6 +505,8 @@ class AnimapClient:
                 id_key = (src_entry_id, dst_entry_id, source_range, destination_range)
                 edge_id_keys.add(id_key)
                 provenance_by_id_key[id_key] = provenance.get(key, [])
+
+            del edges, provenance, existing_entries
 
             existing_mappings: dict[tuple[int, int, str, str | None], int] = {
                 (
@@ -607,6 +591,10 @@ class AnimapClient:
                     )
                 ctx.session.flush()
 
+            n_removed = len(to_delete_mappings)
+            n_created = len(to_insert_mappings)
+            del to_delete_mappings, to_insert_mappings, existing_keys, new_keys
+
             # Refresh mapping map to include newly inserted rows (ids now populated)
             existing_mappings = {
                 (
@@ -638,7 +626,10 @@ class AnimapClient:
                 if mapping_id is not None:
                     desired_provenance[mapping_id] = sources
 
+            del edge_id_keys, provenance_by_id_key, existing_mappings
+
             self._sync_provenance_rows(ctx.session, desired_provenance)
+            del desired_provenance
 
             ctx.session.merge(
                 Housekeeping(key=self._MAPPINGS_HASH_KEY, value=curr_mappings_hash)
@@ -652,29 +643,10 @@ class AnimapClient:
 
             ctx.session.commit()
 
-            current_mapping_keys = set(edges)
-            existing_pairs = {
-                (src_desc, dst_desc)
-                for src_desc, dst_desc, _, _ in previous_mapping_keys
-            }
-            new_pairs = {
-                (src_desc, dst_desc)
-                for src_desc, dst_desc, _, _ in current_mapping_keys
-            }
-            removed_pairs = existing_pairs - new_pairs
-            created_pairs = new_pairs - existing_pairs
-            changed_pairs = {
-                (src_desc, dst_desc)
-                for src_desc, dst_desc, _, _ in (
-                    (previous_mapping_keys - current_mapping_keys)
-                    | (current_mapping_keys - previous_mapping_keys)
-                )
-            }
-            updated_pairs = changed_pairs - removed_pairs - created_pairs
-
             log.success(
-                "Mappings database sync complete: %s removed, %s updated, %s created",
-                len(removed_pairs),
-                len(updated_pairs),
-                len(created_pairs),
+                "Mappings database sync complete: %s removed, %s created",
+                n_removed,
+                n_created,
             )
+
+        gc.collect()

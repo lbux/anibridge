@@ -31,11 +31,21 @@ class FakeMappingsClient:
         self.mappings = mappings
         self.provenance = provenance
         self.load_calls = 0
+        self._content_hash: str = ""
 
     async def load_mappings(self) -> dict[str, Any]:
         """Return the predefined mappings."""
         self.load_calls += 1
+        from hashlib import md5
+
+        self._content_hash = md5(
+            orjson.dumps(self.mappings, option=orjson.OPT_SORT_KEYS)
+        ).hexdigest()
         return self.mappings
+
+    def get_content_hash(self) -> str:
+        """Return a hash of the mappings."""
+        return self._content_hash
 
     def get_provenance(self) -> dict[str, list[str]]:
         """Return the predefined provenance."""
@@ -355,7 +365,7 @@ def test_sync_db_logs_distinct_mapping_changes(
 
     assert messages
     assert re.search(
-        r"Mappings database sync complete: 1 removed, 1 updated, 1 created",
+        r"Mappings database sync complete: 2 removed, 2 created",
         messages[-1],
     )
 

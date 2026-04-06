@@ -2,6 +2,7 @@
 
 import asyncio
 from compression import zstd
+from hashlib import md5
 from pathlib import Path
 from typing import Any, ClassVar, cast
 from urllib.parse import urljoin, urlparse
@@ -10,7 +11,6 @@ import aiohttp
 import anyio
 import orjson
 import yaml
-from anibridge.utils.cache import ttl_cache
 from yaml import CSafeLoader as YamlLoader
 
 from anibridge.app import __version__, log
@@ -45,6 +45,7 @@ class MappingsClient:
         self._loaded_sources: set[str] = set()
         self._provenance: dict[str, list[str]] = {}
         self._session: aiohttp.ClientSession | None = None
+        self._content_hash = md5()  # tracks raw content hashes during loading
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session."""
@@ -128,6 +129,8 @@ class MappingsClient:
                 )
                 log.exception("Zstandard decompression error details")
                 return {}
+
+        self._content_hash.update(payload)
 
         suffix = suffixes[-1] if suffixes else ""
         try:
@@ -394,6 +397,7 @@ class MappingsClient:
         """
         self._loaded_sources = set()
         self._provenance = {}
+        self._content_hash = md5()
 
         if self.upstream_url is not None:
             log.debug(
@@ -432,12 +436,15 @@ class MappingsClient:
                 custom_mappings_path,
             )
 
+        n_upstream = len(db_mappings)
+        n_custom = len(custom_mappings)
         merged_mappings = self._deep_merge(db_mappings, custom_mappings)
+        del db_mappings, custom_mappings
 
         log.debug(
             "Loaded %s upstream, %s custom, and %s merged mappings entries",
-            len(db_mappings),
-            len(custom_mappings),
+            n_upstream,
+            n_custom,
             len(merged_mappings),
         )
 
@@ -445,30 +452,12 @@ class MappingsClient:
             del merged_mappings[key]
         return merged_mappings
 
-    @ttl_cache(ttl=300, per_instance=False, key=lambda self, src: src)
-    async def _load_source_snapshot(
-        self, src: str
-    ) -> tuple[AnimapDict, dict[str, tuple[str, ...]], tuple[str, ...]]:
-        """Load one source and capture the provenance snapshot for cache reuse."""
-        self._loaded_sources = set()
-        self._provenance = {}
-        mappings = await self._load_mappings(src)
-        return (
-            mappings,
-            {
-                str(descriptor): tuple(sources)
-                for descriptor, sources in self._provenance.items()
-            },
-            tuple(sorted(self._loaded_sources)),
-        )
-
     async def load_source(self, src: str) -> AnimapDict:
         """Load mappings from a single source without merging.
 
         This resets internal provenance and loaded-source tracking so callers can
         inspect the raw payload and provenance produced by that specific source
-        (plus any of its includes), including when the underlying payload is served
-        from the TTL cache.
+        (plus any of its includes).
 
         Args:
             src (str): File path or URL to load.
@@ -476,15 +465,14 @@ class MappingsClient:
         Returns:
             AnimapDict: Parsed mapping payload, or an empty dict on failure.
         """
-        mappings, cached_provenance, loaded_sources = await self._load_source_snapshot(
-            src
-        )
-        self._loaded_sources = set(loaded_sources)
-        self._provenance = {
-            str(descriptor): list(sources)
-            for descriptor, sources in cached_provenance.items()
-        }
-        return mappings
+        self._loaded_sources = set()
+        self._provenance = {}
+        self._content_hash = md5()
+        return await self._load_mappings(src)
+
+    def get_content_hash(self) -> str:
+        """Return the hex digest of all raw payloads decoded in the last load."""
+        return self._content_hash.hexdigest()
 
     def get_provenance(self) -> dict[str, list[str]]:
         """Return a copy of the provenance map collected during the last load."""
