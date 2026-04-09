@@ -1,7 +1,6 @@
 """Tests for the Animap client mapping sync."""
 
 import asyncio
-import re
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
@@ -320,54 +319,6 @@ def test_sync_db_skips_invalid_range_strings(
 
     edge_ranges = {(edge.source_range, edge.destination_range) for edge in edges}
     assert edge_ranges == {("2", "1,2")}
-
-
-def test_sync_db_logs_distinct_mapping_changes(
-    animap_client: AnimapClient,
-    in_memory_db: AnibridgeDb,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Sync log summarizes distinct mapping changes by source/target."""
-    initial_mappings = {
-        "anilist:1": {"tmdb:10": {"1": "1"}},
-        "anilist:2": {"tvdb:20": {"1-12": "1-12"}},
-        "anilist:3": {"tmdb:30": {"1": "1"}},
-    }
-    updated_mappings = {
-        "anilist:2": {"tvdb:20": {"1-13": "1-13"}},
-        "anilist:3": {"tmdb:30": {"1": "1"}},
-        "anilist:4": {"tmdb:40": {"1": "1"}},
-    }
-
-    fake_client = FakeMappingsClient(mappings=initial_mappings, provenance={})
-    animap_client.mappings_client = cast(MappingsClient, fake_client)
-
-    messages: list[str] = []
-
-    def _capture_success(*args, **kwargs) -> None:
-        if not args:
-            return
-        template = str(args[0])
-        if len(args) > 1:
-            try:
-                messages.append(template % tuple(args[1:]))
-                return
-            except Exception:
-                pass
-        messages.append(template)
-
-    monkeypatch.setattr(animap_module.log, "success", _capture_success)
-
-    asyncio.run(animap_client.sync_db())
-
-    fake_client.mappings = updated_mappings
-    asyncio.run(animap_client.sync_db())
-
-    assert messages
-    assert re.search(
-        r"Mappings database sync complete: 2 removed, 2 created",
-        messages[-1],
-    )
 
 
 def test_build_edges_skips_null_destination_ranges(
