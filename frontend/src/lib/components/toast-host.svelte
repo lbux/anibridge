@@ -24,13 +24,13 @@
     aria-relevant="additions removals">
     {#each list as t (t.id)}
         <div
-            class={`group relative flex overflow-hidden rounded-md border p-3 pr-8 text-sm shadow-lg shadow-slate-950/50 backdrop-blur ${COLORS[t.type]}`}
+            class={`pointer-events-auto group relative flex overflow-hidden rounded-md border p-3 pr-8 text-sm shadow-lg shadow-slate-950/50 backdrop-blur ${COLORS[t.type]}`}
             role="alert">
-            <span class="block leading-snug">{t.message}</span>
+            <span class="block cursor-text select-text leading-snug">{t.message}</span>
             <button
                 type="button"
                 title="Dismiss"
-                class="pointer-events-auto absolute top-1.5 right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-950/30 text-[11px] text-slate-400 hover:bg-slate-950/50 hover:text-slate-200"
+                class="pointer-events-auto absolute top-1.5 right-1.5 inline-flex h-6 w-6 select-none items-center justify-center rounded-md bg-slate-950/30 text-[11px] text-slate-400 hover:bg-slate-950/50 hover:text-slate-200"
                 onclick={() => dismiss(t.id)}>
                 <X class="inline h-3.5 w-3.5" />
             </button>
