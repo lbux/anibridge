@@ -244,7 +244,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             mapping_entry.source_range
             for descriptor_mapping in mappings
             for mapping_entry in descriptor_mapping.mappings
-            if mapping_entry.target_ratio != 0
         ]
         if not all_source_ranges:
             return []
