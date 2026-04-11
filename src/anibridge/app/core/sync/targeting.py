@@ -10,8 +10,10 @@ from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from anibridge.utils.types import MappingDescriptor
 from rapidfuzz import fuzz
 
+from anibridge.app import log
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.sync.stats import EntrySnapshot
+from anibridge.app.utils.terminal import ARROW
 
 __all__ = [
     "ResolvedListTarget",
@@ -205,6 +207,24 @@ async def resolve_list_targets_batch(
                     source_range=source_range,
                     target_ranges=destination_range,
                 )
+
+            # Filter out mappings with a zero ratio (stubs).
+            before_prune = len(descriptor_mapping.mappings)
+            descriptor_mapping.mappings[:] = [
+                mapping_entry
+                for mapping_entry in descriptor_mapping.mappings
+                if mapping_entry.target_ratio != 0
+            ]
+            pruned = before_prune - len(descriptor_mapping.mappings)
+            if pruned:
+                log.debug(
+                    "Dropped %d zero-ratio stub mapping(s) from %s %s %s",
+                    pruned,
+                    descriptor_key(source_descriptor),
+                    ARROW,
+                    descriptor_key(target_descriptor),
+                )
+
             if descriptor_mapping.mappings:
                 source_map[source_descriptor] = descriptor_mapping
         if source_map:

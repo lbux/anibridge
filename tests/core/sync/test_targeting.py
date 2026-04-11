@@ -101,3 +101,32 @@ async def test_resolve_list_targets_supports_one_to_many() -> None:
     keys = {target.list_media_key for target in targets}
 
     assert keys == {"100", "101"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_list_targets_skips_stub_only_mapping_ranges() -> None:
+    """Stubbed (zero-ratio) mapping segments should not produce sync targets."""
+
+    class StubAnimapClient(FakeAnimapClient):
+        def resolve_edges_grouped(self, descriptors, *, target_providers=None):
+            return {
+                ("anilist", "31", None): {
+                    ("plex", "eoe", None): [("1", "1|0")],
+                }
+            }
+
+    provider = cast(ListProvider, FakeListProvider())
+    provider.resolved_targets = {("anilist", "31", None): ["31"]}  # ty:ignore[unresolved-attribute]
+    movie = FakeLibraryMovie(
+        key="movie-1",
+        title="End of Evangelion",
+        mapping_descriptors=[("plex", "eoe", None)],
+    )
+
+    targets = await resolve_list_targets(
+        animap_client=cast(AnimapClient, StubAnimapClient()),
+        list_provider=provider,
+        media_items=(movie,),
+    )
+
+    assert targets == ()
