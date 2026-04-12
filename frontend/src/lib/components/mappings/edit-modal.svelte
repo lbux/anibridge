@@ -333,11 +333,7 @@
                 // should revert to inherited mode (use upstream) rather than
                 // creating a null override
                 if (normalized === "" && r.upstream_value) {
-                    return {
-                        ...r,
-                        mode: "inherited" as RangeMode,
-                        custom_value: null,
-                    };
+                    return { ...r, mode: "inherited" as RangeMode, custom_value: null };
                 }
                 return {
                     ...r,
