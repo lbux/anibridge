@@ -86,6 +86,7 @@
     }
 
     async function saveSelection(fields: string[] = selected) {
+        if (saving) return;
         const identifier = getListIdentifier();
         if (!identifier) {
             toast("Pins require a linked list entry.", "error");
