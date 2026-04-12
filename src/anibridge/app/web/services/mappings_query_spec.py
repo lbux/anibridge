@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from anibridge.utils.cache import cache
+from sqlalchemy import case, literal
 from sqlalchemy.sql import select
 
 from anibridge.app.config.database import db
@@ -90,14 +91,28 @@ _STRING_OPS = (
     QueryFieldOperator.IN,
 )
 
+
+def _descriptor_expr(entry_model=AnimapEntry):
+    """Build a SQL expression matching a serialized mapping descriptor."""
+    return (
+        entry_model.provider
+        + literal(":")
+        + entry_model.entry_id
+        + case(
+            (entry_model.entry_scope.is_(None), literal("")),
+            else_=literal(":") + entry_model.entry_scope,
+        )
+    )
+
+
 _DB_FIELDS: tuple[QueryFieldSpec, ...] = (
     QueryFieldSpec(
-        key="id",
-        desc="AniBridge mapping entry ID",
+        key="source.descriptor",
+        desc="Source descriptor (provider:id[:scope])",
         kind=QueryFieldKind.DB_SCALAR,
-        type=QueryFieldType.INT,
-        operators=_INT_OPS,
-        column=AnimapEntry.id,
+        type=QueryFieldType.STRING,
+        operators=_STRING_OPS,
+        column=_descriptor_expr(),
     ),
     QueryFieldSpec(
         key="source.provider",
@@ -122,6 +137,14 @@ _DB_FIELDS: tuple[QueryFieldSpec, ...] = (
         type=QueryFieldType.STRING,
         operators=(QueryFieldOperator.EQ,),
         column=AnimapEntry.entry_scope,
+    ),
+    QueryFieldSpec(
+        key="target.descriptor",
+        desc="Destination descriptor (provider:id[:scope])",
+        kind=QueryFieldKind.DB_EDGE_TARGET,
+        type=QueryFieldType.STRING,
+        operators=_STRING_OPS,
+        column=_descriptor_expr(),
     ),
     QueryFieldSpec(
         key="target.provider",

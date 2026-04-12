@@ -237,25 +237,81 @@ async def test_filter_custom_entry_ids_batches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_by_entry_id() -> None:
-    """Booru query supports filtering by Animap entry ID."""
+async def test_search_by_descriptor_string() -> None:
+    """Booru query supports source and target descriptor filters."""
     service = MappingsService()
     with _fresh_tables():
-        _seed_graph()
         with db() as ctx:
-            entry_id = (
-                ctx.session.query(AnimapEntry.id)
-                .filter(AnimapEntry.provider == "anilist")
-                .scalar()
+            plain = AnimapEntry(provider="tmdb", entry_id="10", entry_scope=None)
+            scoped = AnimapEntry(provider="tmdb", entry_id="11", entry_scope="s1")
+            target_plain = AnimapEntry(
+                provider="anilist", entry_id="1", entry_scope=None
             )
+            target_scoped = AnimapEntry(
+                provider="anilist", entry_id="2", entry_scope="s1"
+            )
+            ctx.session.add_all([plain, scoped, target_plain, target_scoped])
+            ctx.session.flush()
+
+            ctx.session.add_all(
+                [
+                    AnimapMapping(
+                        source_entry_id=plain.id,
+                        destination_entry_id=target_plain.id,
+                        source_range="1",
+                        destination_range=None,
+                    ),
+                    AnimapMapping(
+                        source_entry_id=scoped.id,
+                        destination_entry_id=target_scoped.id,
+                        source_range="1",
+                        destination_range=None,
+                    ),
+                ]
+            )
+            ctx.session.commit()
 
         items, total = await service.list_mappings(
-            page=1, per_page=10, q=f"id:{entry_id}", custom_only=False
+            page=1,
+            per_page=10,
+            q="source.descriptor:tmdb:11:s1",
+            custom_only=False,
         )
 
         assert total == 1
         assert len(items) == 1
-        assert items[0]["descriptor"].startswith("anilist:")
+        assert items[0]["descriptor"] == "tmdb:11:s1"
+
+        items, total = await service.list_mappings(
+            page=1,
+            per_page=10,
+            q="source.descriptor:tmdb:1*",
+            custom_only=False,
+        )
+
+        assert total == 2
+        assert {item["descriptor"] for item in items} == {"tmdb:10", "tmdb:11:s1"}
+
+        items, total = await service.list_mappings(
+            page=1,
+            per_page=10,
+            q="target.descriptor:anilist:2:s1",
+            custom_only=False,
+        )
+
+        assert total == 1
+        assert len(items) == 1
+        assert items[0]["descriptor"] == "tmdb:11:s1"
+
+        items, total = await service.list_mappings(
+            page=1,
+            per_page=10,
+            q="target.descriptor:anilist:*",
+            custom_only=False,
+        )
+
+        assert total == 2
+        assert {item["descriptor"] for item in items} == {"tmdb:10", "tmdb:11:s1"}
 
 
 def test_build_anilist_term_filters_string_and_enum() -> None:

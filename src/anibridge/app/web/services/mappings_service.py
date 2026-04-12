@@ -499,12 +499,16 @@ class MappingsService:
     def _filter_edge_target(
         self,
         ctx,
-        attr: str,
+        attr_or_column,
         raw_value: str | None,
         values: tuple[str | None, ...] | None = None,
     ) -> set[int]:
         """Filter entries that have outgoing edges matching destination attributes."""
-        dest_column = getattr(AnimapEntry, attr)
+        dest_column = (
+            getattr(AnimapEntry, attr_or_column)
+            if isinstance(attr_or_column, str)
+            else attr_or_column
+        )
         stmt = select(AnimapMapping.source_entry_id).join(
             AnimapEntry, AnimapEntry.id == AnimapMapping.destination_entry_id
         )
@@ -624,15 +628,18 @@ class MappingsService:
         )
 
         if spec.kind == QueryFieldKind.DB_SCALAR:
-            if not spec.column:
+            if spec.column is None:
                 return set()
             return self._filter_entry_column(ctx, spec.column, raw_value, value_parts)
 
         if spec.kind == QueryFieldKind.DB_EDGE_TARGET:
-            if not spec.edge_field:
+            if spec.edge_field is None and spec.column is None:
                 return set()
             return self._filter_edge_target(
-                ctx, spec.edge_field, raw_value, value_parts
+                ctx,
+                spec.edge_field if spec.edge_field is not None else spec.column,
+                raw_value,
+                value_parts,
             )
 
         if spec.kind == QueryFieldKind.DB_EDGE_RANGE:

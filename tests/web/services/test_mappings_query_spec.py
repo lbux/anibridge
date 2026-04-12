@@ -19,8 +19,22 @@ def _clear_tables() -> None:
 def test_query_field_map_contains_core_fields() -> None:
     """The mappings query field map contains core fields."""
     field_map = get_query_field_map()
-    core_keys = {"source.provider", "source.id", "source.scope"}
+    core_keys = {
+        "source.descriptor",
+        "source.provider",
+        "source.id",
+        "source.scope",
+        "target.descriptor",
+    }
     assert core_keys.issubset(set(field_map.keys()))
+    assert "descriptor" not in field_map
+    assert (
+        field_map["source.descriptor"].desc == "Source descriptor (provider:id[:scope])"
+    )
+    assert (
+        field_map["target.descriptor"].desc
+        == "Destination descriptor (provider:id[:scope])"
+    )
     assert field_map["source.provider"].desc == "Source provider"
 
 
