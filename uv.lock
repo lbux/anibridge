@@ -114,7 +114,6 @@ dependencies = [
     { name = "anibridge-list-base" },
     { name = "anibridge-mal-provider" },
     { name = "anibridge-plex-provider" },
-    { name = "anibridge-trakt-provider" },
     { name = "anibridge-utils" },
     { name = "bcrypt" },
     { name = "colorama" },
@@ -144,15 +143,14 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "alembic", specifier = ">=1.18.4" },
-    { name = "anibridge-anilist-provider", git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=main" },
-    { name = "anibridge-emby-provider", git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main" },
-    { name = "anibridge-jellyfin-provider", git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main" },
-    { name = "anibridge-library-base", git = "https://github.com/anibridge/anibridge-library-base.git?tag=main" },
-    { name = "anibridge-list-base", git = "https://github.com/anibridge/anibridge-list-base.git?tag=main" },
-    { name = "anibridge-mal-provider", git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=main" },
-    { name = "anibridge-plex-provider", git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main" },
-    { name = "anibridge-trakt-provider", git = "https://github.com/anibridge/anibridge-trakt-provider.git?tag=main" },
-    { name = "anibridge-utils", git = "https://github.com/anibridge/anibridge-utils.git?tag=main" },
+    { name = "anibridge-anilist-provider", specifier = ">=0.2.0" },
+    { name = "anibridge-emby-provider", specifier = ">=0.2.0" },
+    { name = "anibridge-jellyfin-provider", specifier = ">=0.2.0" },
+    { name = "anibridge-library-base", specifier = ">=0.2.0,<1.0.0" },
+    { name = "anibridge-list-base", specifier = ">=0.2.0,<1.0.0" },
+    { name = "anibridge-mal-provider", specifier = ">=0.2.0" },
+    { name = "anibridge-plex-provider", specifier = ">=0.2.0" },
+    { name = "anibridge-utils", specifier = ">=0.2.0,<1.0.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "croniter", specifier = ">=6.2.2" },
@@ -179,19 +177,23 @@ dev = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=main#cd647c6613e5676db2c30e0adfe7200f2d838588" }
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
     { name = "anibridge-utils" },
     { name = "pydantic" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/20/52cd8267120c5ef93051b6a68cab792a7360bd14b7ba58b1217bda863aef/anibridge_anilist_provider-0.2.1.tar.gz", hash = "sha256:f1495d0c77a53ddc88f96ea1b92d67387876e438934e49fd5e62e4da5cff1d7d", size = 15422, upload-time = "2026-04-12T21:23:05.096Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/7d/c43ea0973a4d8ef67a5e0b5159024a6961ba512ac51a07b9da0c3760bd2d/anibridge_anilist_provider-0.2.1-py3-none-any.whl", hash = "sha256:8331a84800d289bee8af2cf0fbf47e6ab51cf9df28b4d483c67c069b1e45c132", size = 18437, upload-time = "2026-04-12T21:23:03.871Z" },
+]
 
 [[package]]
 name = "anibridge-emby-provider"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#5b0d97aafd7775b1dae67f9147dec10cb7f5b0fd" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "anibridge-utils" },
@@ -199,11 +201,15 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/75/0a/93dd93f82c37f235b65e5eb44b98e57fb34d6570c5c33b3fd1d884d6cc98/anibridge_emby_provider-0.2.0.tar.gz", hash = "sha256:9f58d469c60db38c8e9e04a9115bf401a3c2445f607fcac7f898fef104f645d6", size = 13353, upload-time = "2026-04-02T16:58:13.123Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/5c/94e99ff5e227aefc56084e03ab6f969dbe0650e6dffe94733b7601f7e29c/anibridge_emby_provider-0.2.0-py3-none-any.whl", hash = "sha256:d3a4516457421883a207869f0eaf6d7ee2a5517c667a01b92933b0a6daf6ebb5", size = 16395, upload-time = "2026-04-02T16:58:12.053Z" },
+]
 
 [[package]]
 name = "anibridge-jellyfin-provider"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#678f4ad91c7271a6d210cb1275e21b54d8c6a4df" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "anibridge-utils" },
@@ -211,39 +217,55 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/72/c6/4bcb755f61731513fca5acc44e79bc40c2cb3d4e2f9004fbde103ace5348/anibridge_jellyfin_provider-0.2.0.tar.gz", hash = "sha256:615dc728c61fde51e7a5e8e400a018c91369a6bfbe1ebd6f7028b4308170e182", size = 13200, upload-time = "2026-04-02T16:58:04.206Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/f6/fde0d9ddf7bff49cc92ec97c432935a72b22957b14b472f5904a9f993510/anibridge_jellyfin_provider-0.2.0-py3-none-any.whl", hash = "sha256:0c91a54bcbe56221acab6c81492176d85ea1cbf01c62bbbbfeffbb87fbfd6607", size = 16423, upload-time = "2026-04-02T16:58:04.983Z" },
+]
 
 [[package]]
 name = "anibridge-library-base"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-library-base.git?tag=main#7170f572c78c6c6f8e1b2571441759ca322f7856" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anibridge-utils" },
     { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5f/cd/fde5ab1c5f0ae42e1dd0708e5d79fbdf2ba4a54dc70382ca0190b12ea15d/anibridge_library_base-0.2.0.tar.gz", hash = "sha256:585696cbab428ef0d45d64574c2f70e9055a4584d5e8617b4327aed2db687b71", size = 5797, upload-time = "2026-04-02T16:48:12.736Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/85/ea5615d6e008db3f1bee02c6c4c364521826ee1517f2308230e2bb7e9ecf/anibridge_library_base-0.2.0-py3-none-any.whl", hash = "sha256:4f05a71fd9b55cf1d77e4ced471a9f963579261ce4ff717a5261b6e792fb079d", size = 7317, upload-time = "2026-04-02T16:48:14.183Z" },
 ]
 
 [[package]]
 name = "anibridge-list-base"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-list-base.git?tag=main#56944bde7ffecd01b4cbcf23c8b1a4f545f2f869" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anibridge-utils" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/17/63/2ae9cf4623286ff3953a17d6a54a3b7e7b2365947efc55ef912c61f6ff85/anibridge_list_base-0.2.0.tar.gz", hash = "sha256:cca873043c27c2e76727c2fcacd8ecdbf1a408288a3fda19b8c5e385c85cfb52", size = 6705, upload-time = "2026-04-02T16:48:42.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/04/89189fda1e95a108ecb9ea5ee57e4c447496c68b3b2942d9bf57b05ed1af/anibridge_list_base-0.2.0-py3-none-any.whl", hash = "sha256:f3090b312757c7b76f9b5340e643ec5df6e8eda490228532e4150ffc9071d973", size = 8021, upload-time = "2026-04-02T16:48:43.256Z" },
 ]
 
 [[package]]
 name = "anibridge-mal-provider"
-version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=main#850da39a672189733425cb4ea00a5b5380a57383" }
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },
     { name = "anibridge-utils" },
     { name = "pydantic" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/e0/c2/13421a37ad919d70ee3aa0882513cc2a43d793e76b043fafb6b56fb93229/anibridge_mal_provider-0.2.1.tar.gz", hash = "sha256:76ba4578b355d9780f6deaef698ea8057015c6c7253a1587607b2e1de0deb793", size = 11779, upload-time = "2026-04-12T21:22:11.518Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/c5/d5e2bdd6e77d4ef9efd468c941d64ceb950ce9e49697eb8730a73ffea7da/anibridge_mal_provider-0.2.1-py3-none-any.whl", hash = "sha256:9f047fd05eb7ad683499eeae8acdaaeec2258c9e6bb78cd2a499a7787e23f6ef", size = 14800, upload-time = "2026-04-12T21:22:12.207Z" },
+]
 
 [[package]]
 name = "anibridge-plex-provider"
-version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main#1e1ba8c263e249b0ee5b9021c3c4a30fd92cafae" }
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-library-base" },
@@ -252,27 +274,23 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
 ]
-
-[[package]]
-name = "anibridge-trakt-provider"
-version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-trakt-provider.git?tag=main#f45e62f330aa6f2814e927997e146de34a39e431" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "anibridge-list-base" },
-    { name = "anibridge-utils" },
-    { name = "pydantic" },
-    { name = "pytrakt" },
+sdist = { url = "https://files.pythonhosted.org/packages/6b/b1/62ed97507a7f9525496d72cf4713aa49c302106a18d0a2fc28d3238ad53e/anibridge_plex_provider-0.2.1.tar.gz", hash = "sha256:859bca515d82ba0954bb24dbef5931ab0cbe4fb6d166cb32bb86c2f778216988", size = 17124, upload-time = "2026-04-12T21:21:17.365Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/70/95/ecc4ee24360a4ad13a7d9c76872901afff3c058c308c42e3b0a0f96762f4/anibridge_plex_provider-0.2.1-py3-none-any.whl", hash = "sha256:44236090907685c43fc375b20484678982870c8e6c2b70d1303b843bd95162e8", size = 21032, upload-time = "2026-04-12T21:21:18.3Z" },
 ]
 
 [[package]]
 name = "anibridge-utils"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-utils.git?tag=main#691bdff2ec0d174f96a58d56a4efde03fec76ddb" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cachetools" },
     { name = "diskcache" },
     { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/9c/00f1429eb9008c985684a3b8c8445ba2ccb6ef932f22631772cc22e8de7f/anibridge_utils-0.2.0.tar.gz", hash = "sha256:087625a107c79ff03b65970f89ea3ee6738d6b9b70d491353812ccdc6d0cf321", size = 15249, upload-time = "2026-04-02T16:50:27.043Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/a1/fa682fe89dccb5be3cb9e6f808b4941309e8dcb490fd9423bcd8497733a9/anibridge_utils-0.2.0-py3-none-any.whl", hash = "sha256:680de26a427c0d7bcb9a864658582476e625b4f9a273636605ed853254746dd3", size = 18344, upload-time = "2026-04-02T16:50:27.959Z" },
 ]
 
 [[package]]
@@ -494,18 +512,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/de/5832661ed55107b8a09af3f0a2e71e0957226a59eb1dcf0a445cce6daf20/croniter-6.2.2.tar.gz", hash = "sha256:ba60832a5ec8e12e51b8691c3309a113d1cf6526bdf1a48150ce8ec7a532d0ab", size = 113762, upload-time = "2026-03-15T08:43:48.112Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/39/783980e78cb92c2d7bdb1fc7dbc86e94ccc6d58224d76a7f1f51b6c51e30/croniter-6.2.2-py3-none-any.whl", hash = "sha256:a5d17b1060974d36251ea4faf388233eca8acf0d09cbd92d35f4c4ac8f279960", size = 45422, upload-time = "2026-03-15T08:43:46.626Z" },
-]
-
-[[package]]
-name = "deprecated"
-version = "1.2.18"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/98/97/06afe62762c9a8a86af0cfb7bfdab22a43ad17138b07af5b1a58442690a2/deprecated-1.2.18.tar.gz", hash = "sha256:422b6f6d859da6f2ef57857761bfb392480502a64c3028ca9bbe86085d72115d", size = 2928744, upload-time = "2025-01-27T10:46:25.7Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/c6/ac0b6c1e2d138f1002bcf799d330bd6d85084fece321e662a14223794041/Deprecated-1.2.18-py2.py3-none-any.whl", hash = "sha256:bd5011788200372a32418f888e326a09ff80d0214bd961147cfed01b5c018eec", size = 9998, upload-time = "2025-01-27T10:46:09.186Z" },
 ]
 
 [[package]]
@@ -964,15 +970,6 @@ wheels = [
 ]
 
 [[package]]
-name = "oauthlib"
-version = "3.3.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
-]
-
-[[package]]
 name = "orjson"
 version = "3.11.8"
 source = { registry = "https://pypi.org/simple" }
@@ -1250,20 +1247,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytrakt"
-version = "4.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "deprecated" },
-    { name = "requests" },
-    { name = "requests-oauthlib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/d7/cd4d77fc305460d90eb86a0b5b08f1143e5c9f0771cf7f4450c34c801e68/pytrakt-4.2.3.tar.gz", hash = "sha256:d24fbc2715ecabb56aa083bb1f7e0bcb1fd6f45f009488981db7f539c740dc1b", size = 47020, upload-time = "2026-03-01T21:01:42.065Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ce/eb/17683e3867dc2734306284c1b6b15532f4ed8c3b93a063a0be412d1ba812/pytrakt-4.2.3-py3-none-any.whl", hash = "sha256:7c4549f2b3c6d88b4c65f4185712ec8341765c848c3ae4a94ec0c890643cebfb", size = 43080, upload-time = "2026-03-01T21:01:39.781Z" },
-]
-
-[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1335,29 +1318,16 @@ wheels = [
 ]
 
 [[package]]
-name = "requests-oauthlib"
-version = "2.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "oauthlib" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
-]
-
-[[package]]
 name = "rich"
-version = "14.3.3"
+version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b3/c6/f3b320c27991c46f43ee9d856302c70dc2d0fb2dba4842ff739d5f46b393/rich-14.3.3.tar.gz", hash = "sha256:b8daa0b9e4eef54dd8cf7c86c03713f53241884e814f4e2f5fb342fe520f639b", size = 230582, upload-time = "2026-02-19T17:23:12.474Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/25/b208c5683343959b670dc001595f2f3737e051da617f66c31f7c4fa93abc/rich-14.3.3-py3-none-any.whl", hash = "sha256:793431c1f8619afa7d3b52b2cdec859562b950ea0d4b6b505397612db8d5362d", size = 310458, upload-time = "2026-02-19T17:23:13.732Z" },
+    { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
 ]
 
 [[package]]
@@ -1635,35 +1605,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/3b/2ed38e52eed4cf277f9df5f0463a99199a04d9e29c9e227cfafa57bd3993/websockets-11.0.3.tar.gz", hash = "sha256:88fc51d9a26b10fc331be344f1781224a375b78488fc343620184e95a4b27016", size = 104235, upload-time = "2023-05-07T14:25:20.083Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/47/96/9d5749106ff57629b54360664ae7eb9afd8302fad1680ead385383e33746/websockets-11.0.3-py3-none-any.whl", hash = "sha256:6681ba9e7f8f3b19440921e99efbb40fc89f26cd71bf539e45d8c8a25c976dc6", size = 118056, upload-time = "2023-05-07T14:25:18.508Z" },
-]
-
-[[package]]
-name = "wrapt"
-version = "1.17.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/95/8f/aeb76c5b46e273670962298c23e7ddde79916cb74db802131d49a85e4b7d/wrapt-1.17.3.tar.gz", hash = "sha256:f66eb08feaa410fe4eebd17f2a2c8e2e46d3476e9f8c783daa8e09e0faa666d0", size = 55547, upload-time = "2025-08-12T05:53:21.714Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/a2/cd864b2a14f20d14f4c496fab97802001560f9f41554eef6df201cd7f76c/wrapt-1.17.3-cp314-cp314-macosx_10_13_universal2.whl", hash = "sha256:cf30f6e3c077c8e6a9a7809c94551203c8843e74ba0c960f4a98cd80d4665d39", size = 54132, upload-time = "2025-08-12T05:51:49.864Z" },
-    { url = "https://files.pythonhosted.org/packages/d5/46/d011725b0c89e853dc44cceb738a307cde5d240d023d6d40a82d1b4e1182/wrapt-1.17.3-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:e228514a06843cae89621384cfe3a80418f3c04aadf8a3b14e46a7be704e4235", size = 39091, upload-time = "2025-08-12T05:51:38.935Z" },
-    { url = "https://files.pythonhosted.org/packages/2e/9e/3ad852d77c35aae7ddebdbc3b6d35ec8013af7d7dddad0ad911f3d891dae/wrapt-1.17.3-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:5ea5eb3c0c071862997d6f3e02af1d055f381b1d25b286b9d6644b79db77657c", size = 39172, upload-time = "2025-08-12T05:51:59.365Z" },
-    { url = "https://files.pythonhosted.org/packages/c3/f7/c983d2762bcce2326c317c26a6a1e7016f7eb039c27cdf5c4e30f4160f31/wrapt-1.17.3-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:281262213373b6d5e4bb4353bc36d1ba4084e6d6b5d242863721ef2bf2c2930b", size = 87163, upload-time = "2025-08-12T05:52:40.965Z" },
-    { url = "https://files.pythonhosted.org/packages/e4/0f/f673f75d489c7f22d17fe0193e84b41540d962f75fce579cf6873167c29b/wrapt-1.17.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:dc4a8d2b25efb6681ecacad42fca8859f88092d8732b170de6a5dddd80a1c8fa", size = 87963, upload-time = "2025-08-12T05:52:20.326Z" },
-    { url = "https://files.pythonhosted.org/packages/df/61/515ad6caca68995da2fac7a6af97faab8f78ebe3bf4f761e1b77efbc47b5/wrapt-1.17.3-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:373342dd05b1d07d752cecbec0c41817231f29f3a89aa8b8843f7b95992ed0c7", size = 86945, upload-time = "2025-08-12T05:52:21.581Z" },
-    { url = "https://files.pythonhosted.org/packages/d3/bd/4e70162ce398462a467bc09e768bee112f1412e563620adc353de9055d33/wrapt-1.17.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:d40770d7c0fd5cbed9d84b2c3f2e156431a12c9a37dc6284060fb4bec0b7ffd4", size = 86857, upload-time = "2025-08-12T05:52:43.043Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/b8/da8560695e9284810b8d3df8a19396a6e40e7518059584a1a394a2b35e0a/wrapt-1.17.3-cp314-cp314-win32.whl", hash = "sha256:fbd3c8319de8e1dc79d346929cd71d523622da527cca14e0c1d257e31c2b8b10", size = 37178, upload-time = "2025-08-12T05:53:12.605Z" },
-    { url = "https://files.pythonhosted.org/packages/db/c8/b71eeb192c440d67a5a0449aaee2310a1a1e8eca41676046f99ed2487e9f/wrapt-1.17.3-cp314-cp314-win_amd64.whl", hash = "sha256:e1a4120ae5705f673727d3253de3ed0e016f7cd78dc463db1b31e2463e1f3cf6", size = 39310, upload-time = "2025-08-12T05:53:11.106Z" },
-    { url = "https://files.pythonhosted.org/packages/45/20/2cda20fd4865fa40f86f6c46ed37a2a8356a7a2fde0773269311f2af56c7/wrapt-1.17.3-cp314-cp314-win_arm64.whl", hash = "sha256:507553480670cab08a800b9463bdb881b2edeed77dc677b0a5915e6106e91a58", size = 37266, upload-time = "2025-08-12T05:52:56.531Z" },
-    { url = "https://files.pythonhosted.org/packages/77/ed/dd5cf21aec36c80443c6f900449260b80e2a65cf963668eaef3b9accce36/wrapt-1.17.3-cp314-cp314t-macosx_10_13_universal2.whl", hash = "sha256:ed7c635ae45cfbc1a7371f708727bf74690daedc49b4dba310590ca0bd28aa8a", size = 56544, upload-time = "2025-08-12T05:51:51.109Z" },
-    { url = "https://files.pythonhosted.org/packages/8d/96/450c651cc753877ad100c7949ab4d2e2ecc4d97157e00fa8f45df682456a/wrapt-1.17.3-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:249f88ed15503f6492a71f01442abddd73856a0032ae860de6d75ca62eed8067", size = 40283, upload-time = "2025-08-12T05:51:39.912Z" },
-    { url = "https://files.pythonhosted.org/packages/d1/86/2fcad95994d9b572db57632acb6f900695a648c3e063f2cd344b3f5c5a37/wrapt-1.17.3-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:5a03a38adec8066d5a37bea22f2ba6bbf39fcdefbe2d91419ab864c3fb515454", size = 40366, upload-time = "2025-08-12T05:52:00.693Z" },
-    { url = "https://files.pythonhosted.org/packages/64/0e/f4472f2fdde2d4617975144311f8800ef73677a159be7fe61fa50997d6c0/wrapt-1.17.3-cp314-cp314t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:5d4478d72eb61c36e5b446e375bbc49ed002430d17cdec3cecb36993398e1a9e", size = 108571, upload-time = "2025-08-12T05:52:44.521Z" },
-    { url = "https://files.pythonhosted.org/packages/cc/01/9b85a99996b0a97c8a17484684f206cbb6ba73c1ce6890ac668bcf3838fb/wrapt-1.17.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:223db574bb38637e8230eb14b185565023ab624474df94d2af18f1cdb625216f", size = 113094, upload-time = "2025-08-12T05:52:22.618Z" },
-    { url = "https://files.pythonhosted.org/packages/25/02/78926c1efddcc7b3aa0bc3d6b33a822f7d898059f7cd9ace8c8318e559ef/wrapt-1.17.3-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:e405adefb53a435f01efa7ccdec012c016b5a1d3f35459990afc39b6be4d5056", size = 110659, upload-time = "2025-08-12T05:52:24.057Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/ee/c414501ad518ac3e6fe184753632fe5e5ecacdcf0effc23f31c1e4f7bfcf/wrapt-1.17.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:88547535b787a6c9ce4086917b6e1d291aa8ed914fdd3a838b3539dc95c12804", size = 106946, upload-time = "2025-08-12T05:52:45.976Z" },
-    { url = "https://files.pythonhosted.org/packages/be/44/a1bd64b723d13bb151d6cc91b986146a1952385e0392a78567e12149c7b4/wrapt-1.17.3-cp314-cp314t-win32.whl", hash = "sha256:41b1d2bc74c2cac6f9074df52b2efbef2b30bdfe5f40cb78f8ca22963bc62977", size = 38717, upload-time = "2025-08-12T05:53:15.214Z" },
-    { url = "https://files.pythonhosted.org/packages/79/d9/7cfd5a312760ac4dd8bf0184a6ee9e43c33e47f3dadc303032ce012b8fa3/wrapt-1.17.3-cp314-cp314t-win_amd64.whl", hash = "sha256:73d496de46cd2cdbdbcce4ae4bcdb4afb6a11234a1df9c085249d55166b95116", size = 41334, upload-time = "2025-08-12T05:53:14.178Z" },
-    { url = "https://files.pythonhosted.org/packages/46/78/10ad9781128ed2f99dbc474f43283b13fea8ba58723e98844367531c18e9/wrapt-1.17.3-cp314-cp314t-win_arm64.whl", hash = "sha256:f38e60678850c42461d4202739f9bf1e3a737c7ad283638251e79cc49effb6b6", size = 38471, upload-time = "2025-08-12T05:52:57.784Z" },
-    { url = "https://files.pythonhosted.org/packages/1f/f6/a933bd70f98e9cf3e08167fc5cd7aaaca49147e48411c0bd5ae701bb2194/wrapt-1.17.3-py3-none-any.whl", hash = "sha256:7171ae35d2c33d326ac19dd8facb1e82e5fd04ef8c6c0e394d7af55a55051c22", size = 23591, upload-time = "2025-08-12T05:53:20.674Z" },
 ]
 
 [[package]]
