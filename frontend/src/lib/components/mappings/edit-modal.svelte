@@ -305,7 +305,20 @@
         updateEntry(key, (entry) => ({
             ...entry,
             ranges: entry.ranges.map((r, i) =>
-                i === index ? { ...r, source_range: value, mode: "custom" } : r,
+                i === index
+                    ? {
+                          ...r,
+                          source_range: value,
+                          mode: "custom" as RangeMode,
+                          // When switching from inherited to custom via source edit,
+                          // preserve the upstream destination so we don't accidentally
+                          // create a null override.
+                          custom_value:
+                              r.mode === "inherited"
+                                  ? (r.upstream_value ?? r.custom_value)
+                                  : r.custom_value,
+                      }
+                    : r,
             ),
         }));
     }
@@ -314,15 +327,24 @@
         const normalized = value.trim();
         updateEntry(key, (entry) => ({
             ...entry,
-            ranges: entry.ranges.map((r, i) =>
-                i === index
-                    ? {
-                          ...r,
-                          mode: "custom",
-                          custom_value: normalized === "" ? null : normalized,
-                      }
-                    : r,
-            ),
+            ranges: entry.ranges.map((r, i) => {
+                if (i !== index) return r;
+                // Clearing the destination field when an upstream value exists
+                // should revert to inherited mode (use upstream) rather than
+                // creating a null override
+                if (normalized === "" && r.upstream_value) {
+                    return {
+                        ...r,
+                        mode: "inherited" as RangeMode,
+                        custom_value: null,
+                    };
+                }
+                return {
+                    ...r,
+                    mode: "custom" as RangeMode,
+                    custom_value: normalized === "" ? null : normalized,
+                };
+            }),
         }));
     }
 
@@ -336,10 +358,17 @@
                     continue;
                 }
                 seen.push(source);
+                // Only keep ranges that have an upstream value. Custom-only
+                // ranges (no upstream counterpart) should be dropped entirely
+                // on revert so they don't create phantom null overrides in
+                // the payload.
+                if (!r.upstream_value) {
+                    continue;
+                }
                 ranges.push({
                     ...r,
                     source_range: source,
-                    mode: (r.upstream_value ? "inherited" : "custom") as RangeMode,
+                    mode: "inherited" as RangeMode,
                     custom_value: null,
                     original_source_range: source,
                 });
