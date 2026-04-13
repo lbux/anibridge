@@ -178,7 +178,7 @@
             </div>
         {:else}
             <div
-                class="timeline-cover timeline-cover-fallback flex shrink-0 self-start items-center justify-center rounded-md border border-dashed border-slate-700 bg-slate-800/30 text-[9px] text-slate-500 select-none">
+                class="timeline-cover timeline-cover-fallback flex shrink-0 items-center justify-center self-start rounded-md border border-dashed border-slate-700 bg-slate-800/30 text-[9px] text-slate-500 select-none">
                 No Art
             </div>
         {/if}
