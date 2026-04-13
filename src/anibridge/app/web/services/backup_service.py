@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import orjson
+import msgspec.json
 from anibridge.utils.cache import cache
 from pydantic import BaseModel
 
@@ -143,7 +143,7 @@ class BackupService:
         bdir = scheduler.global_config.data_path / "backups" / profile
         path = self._resolve_backup_path(bdir, filename)
 
-        return orjson.loads(path.read_bytes())
+        return msgspec.json.decode(path.read_text(encoding="utf-8"))
 
     def _resolve_backup_path(self, bdir: Path, filename: str) -> Path:
         """Resolve and validate a backup filename for a profile."""

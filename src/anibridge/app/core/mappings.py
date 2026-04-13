@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 import aiohttp
 import anyio
-import orjson
+import msgspec.json
 import yaml
 from yaml import CSafeLoader as YamlLoader
 
@@ -143,14 +143,14 @@ class MappingsClient:
             if suffix in {".yaml", ".yml"}:
                 return yaml.load(payload.decode(), Loader=YamlLoader)
             if suffix == ".json":
-                return orjson.loads(payload)
+                return msgspec.json.decode(payload)
 
             log.warning(
                 "Unknown file type for $$'%s'$$, defaulting to JSON parsing",
                 src,
             )
-            return orjson.loads(payload)
-        except orjson.JSONDecodeError, yaml.YAMLError:
+            return msgspec.json.decode(payload)
+        except msgspec.DecodeError, yaml.YAMLError:
             log.error("Error decoding file $$'%s'$$", src)
             log.exception("Decode error details")
         except Exception:

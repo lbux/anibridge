@@ -7,7 +7,7 @@ from hashlib import md5
 from itertools import batched
 from pathlib import Path
 
-import orjson
+import msgspec.json
 from anibridge.utils.mappings import (
     AnibridgeMapping,
     descriptor_key,
@@ -386,7 +386,7 @@ class AnimapClient:
 
         curr_mappings_hash = self.mappings_client.get_content_hash()
         curr_provenance_hash = md5(
-            orjson.dumps(provenance_by_descriptor, option=orjson.OPT_SORT_KEYS)
+            msgspec.json.encode(dict(sorted(provenance_by_descriptor.items())))
         ).hexdigest()
 
         with db() as ctx:

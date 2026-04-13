@@ -1,9 +1,9 @@
 """Tests for the mapping overrides service (v3)."""
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
-import orjson
 import pytest
 
 from anibridge.app import config as app_config
@@ -79,7 +79,7 @@ async def test_save_override_writes_file_and_syncs_db(
     assert result["descriptor"] == "anilist:101"
     assert result["layers"]["effective"]["tmdb:202"]["1"] is None
 
-    data = orjson.loads((tmp_path / "mappings.json").read_bytes())
+    data = json.loads((tmp_path / "mappings.json").read_text(encoding="utf-8"))
     assert data["anilist:101"] == {"tmdb:202": {"1": None}}
     assert scheduler.synced is True
     assert scheduler.sync_sources == ["service:mapping_overrides"]
@@ -183,7 +183,7 @@ async def test_save_override_allows_ratio_ranges(
     )
 
     assert result["layers"]["effective"]["tmdb:901"]["1-6"] == "1-3|2"
-    data = orjson.loads((tmp_path / "mappings.json").read_bytes())
+    data = json.loads((tmp_path / "mappings.json").read_text(encoding="utf-8"))
     assert data["anilist:501"]["tmdb:901"]["1-6"] == "1-3|2"
 
 
@@ -307,11 +307,12 @@ async def test_save_override_requires_descriptor_and_removes_entry(
     with pytest.raises(MissingDescriptorError):
         await service.save_override(descriptor=None, targets=[])
 
-    (tmp_path / "mappings.json").write_bytes(
-        orjson.dumps({"anilist:123": {"tmdb:456": {"1": "1"}}})
+    (tmp_path / "mappings.json").write_text(
+        json.dumps({"anilist:123": {"tmdb:456": {"1": "1"}}}),
+        encoding="utf-8",
     )
     result = await service.save_override(descriptor="anilist:123", targets=[])
 
     assert result["layers"]["custom"] == {}
-    raw = orjson.loads((tmp_path / "mappings.json").read_bytes())
+    raw = json.loads((tmp_path / "mappings.json").read_text(encoding="utf-8"))
     assert raw == {}

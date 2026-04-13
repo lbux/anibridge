@@ -1,11 +1,11 @@
 """Tests for the Animap client mapping sync."""
 
 import asyncio
+import json
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
 
-import orjson
 import pytest
 from sqlalchemy.sql import select
 
@@ -38,7 +38,7 @@ class FakeMappingsClient:
         from hashlib import md5
 
         self._content_hash = md5(
-            orjson.dumps(self.mappings, option=orjson.OPT_SORT_KEYS)
+            json.dumps(self.mappings, sort_keys=True).encode("utf-8")
         ).hexdigest()
         return self.mappings
 
@@ -88,7 +88,7 @@ def _mapping_data():
 
 def _write_mapping_file(base: Path, data: dict) -> Path:
     mappings_path = base / "mappings.json"
-    mappings_path.write_bytes(orjson.dumps(data))
+    mappings_path.write_bytes(json.dumps(data, sort_keys=True).encode("utf-8"))
     return mappings_path
 
 
@@ -185,7 +185,7 @@ def test_sync_db_creates_entries_mappings_and_provenance(
     asyncio.run(animap_client.sync_db())
 
     expected_hash = md5(
-        orjson.dumps(mapping_data, option=orjson.OPT_SORT_KEYS)
+        json.dumps(mapping_data, sort_keys=True).encode("utf-8")
     ).hexdigest()
 
     with in_memory_db as ctx:

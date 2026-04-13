@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, ClassVar
 
-import orjson
+import msgspec.json
 import yaml
 from anibridge.utils.cache import cache
 from anibridge.utils.mappings import (
@@ -26,6 +26,15 @@ from anibridge.app.exceptions import (
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["MappingOverridesService", "get_mapping_overrides_service"]
+
+
+def _sort_keys(obj: Any) -> Any:
+    """Recursively sort dictionary keys for deterministic JSON output."""
+    if isinstance(obj, dict):
+        return {k: _sort_keys(v) for k, v in sorted(obj.items())}
+    if isinstance(obj, list):
+        return [_sort_keys(item) for item in obj]
+    return obj
 
 
 class MappingOverridesService:
@@ -64,7 +73,7 @@ class MappingOverridesService:
 
         try:
             if fmt == "json":
-                data = orjson.loads(path.read_bytes())
+                data = msgspec.json.decode(path.read_bytes())
             else:
                 with path.open("r", encoding="utf-8") as fh:
                     data = yaml.safe_load(fh)
@@ -82,14 +91,8 @@ class MappingOverridesService:
         """Persist raw override data to the custom mappings file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         if fmt == "json":
-            path.write_bytes(
-                orjson.dumps(
-                    raw,
-                    option=orjson.OPT_INDENT_2
-                    | orjson.OPT_SORT_KEYS
-                    | orjson.OPT_APPEND_NEWLINE,
-                )
-            )
+            encoded = msgspec.json.encode(_sort_keys(raw))
+            path.write_bytes(msgspec.json.format(encoded) + b"\n")
         else:
             with path.open("w", encoding="utf-8") as fh:
                 yaml.safe_dump(raw, fh, sort_keys=False, allow_unicode=False)
