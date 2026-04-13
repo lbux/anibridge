@@ -7,18 +7,19 @@ The smart way to keep your anime lists perfectly synchronized.
 > [!IMPORTANT]
 > Visit the [AniBridge documentation](https://anibridge.eliasbenb.dev) for detailed setup instructions and usage information.
 
-AniBridge is a media synchronization tool designed to keep your activity synchronized across different media viewing and tracking platforms. With its [mappings database](https://github.com/anibridge/anibridge-mappings) of over 60K entries tailored specifically for anime titles, AniBridge is particularly focused on anime content, however can be expanded to support more with [custom mappings](https://anibridge.eliasbenb.dev/mappings/custom-mappings).
+AniBridge is a media synchronization tool designed to keep your anime watch activity synchronized across different viewing and tracking platforms. It is powered by a [mappings database](https://github.com/anibridge/anibridge-mappings) containing over 250,000 entries tailored to anime titles.
 
 [![Plex](https://img.shields.io/badge/Plex-F5A623?style=for-the-badge&logo=plex&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/plex)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-00A4DC?style=for-the-badge&logo=jellyfin&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/jellyfin)
 [![Emby](https://img.shields.io/badge/Emby-52b54b?style=for-the-badge&logo=emby&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/emby)
 [![AniList](https://img.shields.io/badge/AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/anilist)
 [![MyAnimeList](https://img.shields.io/badge/MyAnimeList-2E51A2?style=for-the-badge&logo=myanimelist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/mal)
+[![Trakt](https://img.shields.io/badge/Trakt-1DB954?style=for-the-badge&logo=trakt&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/trakt)
 
 ## Key Features
 
 - **🔄 Comprehensive Synchronization**: Synchronizes watch status, progress, ratings, reviews, and start/completion dates between your anime library and list.
-- **🔗 Provider-Agnostic**: Supports multiple media library and anime list providers through a flexible plugin system (Plex, Jellyfin, Emby, AniList, MyAnimeList).
+- **🔗 Provider-Agnostic**: Supports multiple media library and anime list providers through a flexible plugin system (Plex, Jellyfin, Emby, AniList, MyAnimeList, Trakt).
 - **🎯 Smart Content Matching**: Uses a curated mappings database with fuzzy title search fallback and support for custom mapping overrides.
 - **⚡ Optimized Performance**: Intelligent batch processing, rate limiting, and caching to minimize API usage while maximizing sync speed.
 - **👥 Multi-User & Multi-Profile**: Define multiple profiles to simultaneously synchronize different users, libraries, and servers with granular configuration.
@@ -26,27 +27,7 @@ AniBridge is a media synchronization tool designed to keep your activity synchro
 - **🛡️ Safe & Reliable**: Built-in dry run mode for testing and automatic backups with restoration through the web UI for easy recovery.
 - **🐳 Easy Deployment**: Docker-ready with easy YAML-based configuration.
 
-```mermaid
-flowchart LR
-    User1([👤 User 1])
-    User2([👤 User 2])
-    User3([👤 User 3])
-    Library[(📺 Media Library)]
-    AniBridge[<img src='https://anibridge.eliasbenb.dev/assets/images/logo.png' /> AniBridge]
-    List[(📱 Anime List)]
-    Mappings[(🗺️ anibridge-mappings)]
-
-    User1 -->|Watches episodes| Library
-    User2 -->|Watches movies| Library
-    User3 -->|Rates & reviews| Library
-
-    Library -->|Watch data & ratings| AniBridge
-    List -->|Current anime lists| AniBridge
-
-    AniBridge -->|ID lookups| Mappings
-
-    AniBridge -->|Intelligent sync| List
-```
+[![](https://mermaid.ink/img/pako:eNp1k8Fum0AQhl9lNYcmkWywAQeD2khtcqkUXyJVkWr7sIbxsgrsot0lqWv7GaKqhx5zyQv0VuWlmkfoQkrBVctpd_9v5t9_gC0kMkWIYZ3LuySjypDLq4Ug9vmgUY2P588PXx6bNRkvTzrF6yteX_H7it8ql3ylqNrMj58fvj6RGaactmcnyxfkreDvFE8Zzl_zghGtkjdHmTGljl2XCsvWmoM5p3qFYuWkeOtSrdFolxeUoXZzyaRTCnZE3LOu3bK9gTaN_fdaKrA5aL1ntCy5YLoGvj39_HFP_jgOi99azfZGQ4bDs901NUmGmmDJtR2k3rWhepM6AAt5y_-J-Q12RY2FXhGFFrvrcwdj7FqSlBpaF1BT33HXxe5SN_R5pRQKU-ey2XN7fAj_9Q6amvcXJJfypiot2k7oP6QwmOec1Q56I5JdYwwDYJaB2KgKB1CgKmi9hW3dYwEmwwIXENtlStXNAhZib2tKKj5KWbRlSlYsg3hNc213VWkT4wWnTNEOQZGiOpeVMBB7p9OmB8Rb-ARxMHHGYRRMJ743HgVB5A1gA_HEmzinQehHUTTy_MCf7gfwuTEdOdNwHETTYBR5_sQP_XAA9nM1Us1efpVEijVnsP8FYR4WzA?type=png)](https://mermaid.live/edit#pako:eNp1k8Fum0AQhl9lNYcmkWywAQeD2khtcqkUXyJVkWr7sIbxsgrsot0lqWv7GaKqhx5zyQv0VuWlmkfoQkrBVctpd_9v5t9_gC0kMkWIYZ3LuySjypDLq4Ug9vmgUY2P588PXx6bNRkvTzrF6yteX_H7it8ql3ylqNrMj58fvj6RGaactmcnyxfkreDvFE8Zzl_zghGtkjdHmTGljl2XCsvWmoM5p3qFYuWkeOtSrdFolxeUoXZzyaRTCnZE3LOu3bK9gTaN_fdaKrA5aL1ntCy5YLoGvj39_HFP_jgOi99azfZGQ4bDs901NUmGmmDJtR2k3rWhepM6AAt5y_-J-Q12RY2FXhGFFrvrcwdj7FqSlBpaF1BT33HXxe5SN_R5pRQKU-ey2XN7fAj_9Q6amvcXJJfypiot2k7oP6QwmOec1Q56I5JdYwwDYJaB2KgKB1CgKmi9hW3dYwEmwwIXENtlStXNAhZib2tKKj5KWbRlSlYsg3hNc213VWkT4wWnTNEOQZGiOpeVMBB7p9OmB8Rb-ARxMHHGYRRMJ743HgVB5A1gA_HEmzinQehHUTTy_MCf7gfwuTEdOdNwHETTYBR5_sQP_XAA9nM1Us1efpVEijVnsP8FYR4WzA)
 
 ## Web UI Screenshot
 
