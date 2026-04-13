@@ -40,8 +40,6 @@ __all__ = [
     "parse_query",
 ]
 
-pp.ParserElement.enable_packrat()  # Supposed to speed up parsing
-
 DbResolver = Callable[["KeyTerm"], set[int]]
 AniListResolver = Callable[[str], list[int]]
 
