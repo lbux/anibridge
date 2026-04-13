@@ -166,7 +166,7 @@
     </div>
     <div class="flex min-w-0 flex-1 items-stretch gap-3">
         {#if coverImage(item)}
-            <div class="timeline-cover shrink-0">
+            <div class="timeline-cover shrink-0 self-start">
                 <div
                     class="timeline-cover-frame relative h-full w-full overflow-hidden rounded-md border border-slate-800 bg-slate-800/40">
                     <img
@@ -178,11 +178,11 @@
             </div>
         {:else}
             <div
-                class="timeline-cover timeline-cover-fallback flex shrink-0 items-center justify-center rounded-md border border-dashed border-slate-700 bg-slate-800/30 text-[9px] text-slate-500 select-none">
+                class="timeline-cover timeline-cover-fallback flex shrink-0 self-start items-center justify-center rounded-md border border-dashed border-slate-700 bg-slate-800/30 text-[9px] text-slate-500 select-none">
                 No Art
             </div>
         {/if}
-        <div class="flex max-h-19.5 min-w-0 flex-1 flex-col overflow-hidden">
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
             <header class="flex items-start gap-2">
                 <div class="min-w-0 flex-1 space-y-1.5">
                     <div class="flex items-center gap-x-2 gap-y-1 whitespace-nowrap">
