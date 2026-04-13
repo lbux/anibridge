@@ -403,6 +403,10 @@ class AnimapClient:
                 and stored_provenance_hash.value == curr_provenance_hash
             ):
                 log.debug("Mappings and provenance unchanged; skipping sync")
+                del mappings, provenance_by_descriptor
+                self.mappings_client.clear_cache()
+                await self.mappings_client.close()
+                gc.collect()
                 return
 
         descriptors, edges, provenance, invalid_count = self._build_edges(
@@ -651,4 +655,6 @@ class AnimapClient:
                 n_created,
             )
 
+        self.mappings_client.clear_cache()
+        await self.mappings_client.close()
         gc.collect()

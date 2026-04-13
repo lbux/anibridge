@@ -63,6 +63,12 @@ class MappingsClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
+    def clear_cache(self) -> None:
+        """Release loaded mapping data to free memory."""
+        self._provenance.clear()
+        self._loaded_sources.clear()
+        self._content_hash = md5()
+
     async def __aenter__(self) -> MappingsClient:
         """Context manager enter method.
 

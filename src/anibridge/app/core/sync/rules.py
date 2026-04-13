@@ -300,7 +300,7 @@ class SyncRuleEngine:
 
         Args:
             variables (Mapping[str, str] | None): Named expressions exposed under
-                ``vars`` in rule evaluation.
+                `vars` in rule evaluation.
             field_rules (Mapping[str, bool | Sequence[Mapping[str, Any]]] | None):
                 Runtime rule payload keyed by sync field name.
 
@@ -333,7 +333,7 @@ class SyncRuleEngine:
             field_name (str): Sync field name to inspect.
 
         Returns:
-            bool: True when the field is disabled by a ``false`` rule value.
+            bool: True when the field is disabled by a `false` rule value.
         """
         return self._field_rules.get(field_name) is False
 
@@ -357,7 +357,7 @@ class SyncRuleEngine:
             computed_values (Mapping[str, Any]): Newly computed field values before
                 declarative overrides.
             rule_context (Mapping[str, Any] | None): Shimmed sync metadata exposed
-                under ``ctx`` for rule expressions.
+                under `ctx` for rule expressions.
 
         Returns:
             SyncRuleDecision: Decision describing whether the field may sync and
