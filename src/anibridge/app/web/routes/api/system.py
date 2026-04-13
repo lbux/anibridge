@@ -3,15 +3,10 @@
 import os
 import platform
 import sqlite3
-import sys
 from datetime import UTC, datetime
 from typing import Any
 
-try:
-    import resource
-except ImportError:  # Windows does not have resource module
-    resource = None  # ty:ignore[invalid-assignment]
-
+import psutil
 from fastapi import Depends
 from fastapi.routing import APIRouter
 from pydantic import BaseModel
@@ -236,17 +231,8 @@ async def api_about() -> AboutResponse:
     )
 
     pid = os.getpid()
-    cpu_count = os.cpu_count()
-    memory_mb: float | None = None
-    if resource is not None:
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        rss = getattr(usage, "ru_maxrss", None)
-        if rss is not None:
-            if sys.platform == "darwin":
-                memory_mb = round(rss / (1024 * 1024), 2)
-            else:
-                memory_mb = round(rss / 1024, 2)
-
+    cpu_count = psutil.cpu_count(logical=True)
+    memory_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
     process_info = ProcessInfoModel.model_construct(
         pid=pid, cpu_count=cpu_count, memory_mb=memory_mb
     )
