@@ -156,13 +156,12 @@ async def test_api_about_returns_runtime_summary(monkeypatch, patch_app_state) -
     monkeypatch.setattr(system_api_module.platform, "python_version", lambda: "3.14.0")
     monkeypatch.setattr(system_api_module.platform, "platform", lambda: "Linux")
     monkeypatch.setattr(system_api_module.os, "getpid", lambda: 123)
-    monkeypatch.setattr(system_api_module.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(system_api_module.psutil, "cpu_count", lambda logical=True: 8)
     monkeypatch.setattr(
-        system_api_module,
-        "resource",
-        SimpleNamespace(
-            RUSAGE_SELF=1,
-            getrusage=lambda _kind: SimpleNamespace(ru_maxrss=2048),
+        system_api_module.psutil,
+        "Process",
+        lambda pid: SimpleNamespace(
+            memory_info=lambda: SimpleNamespace(rss=2048 * 1024)
         ),
     )
 
