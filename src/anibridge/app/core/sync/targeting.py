@@ -8,7 +8,6 @@ from anibridge.library import LibraryEntry
 from anibridge.list import ListEntry, ListProvider
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from anibridge.utils.types import MappingDescriptor
-from rapidfuzz import fuzz
 
 from anibridge.app import log
 from anibridge.app.core.animap import AnimapClient
@@ -92,6 +91,8 @@ def find_best_search_result(
         ListEntry | None: The best matching entry, or None if no result meets
             the threshold.
     """
+    from rapidfuzz import fuzz
+
     best_entry: ListEntry | None = None
     best_ratio = 0
     for entry in results:
