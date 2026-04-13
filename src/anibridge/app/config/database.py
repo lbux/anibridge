@@ -111,12 +111,31 @@ class AnibridgeDb:
                 cur.execute("PRAGMA journal_mode=WAL;")
                 cur.execute("PRAGMA synchronous=NORMAL;")
                 cur.execute("PRAGMA temp_store=MEMORY;")
-                cur.execute("PRAGMA cache_size=-20000;")
+                cur.execute("PRAGMA cache_size=-4000;")
                 cur.execute("PRAGMA foreign_keys=ON;")
             finally:
                 cur.close()
 
         return engine
+
+    @staticmethod
+    def _get_head_revision() -> str | None:
+        """Determine the head migration revision without importing alembic.
+
+        Parses migration filenames (`YYYY-MM-DD-HH-MM_<rev>.py`) to find the
+        latest revision.
+        """
+        versions_dir = PROJECT_ROOT / "alembic" / "versions"
+        if not versions_dir.is_dir():
+            return None
+        migration_files = sorted(
+            f
+            for f in versions_dir.glob("*.py")
+            if "_" in f.stem and not f.stem.startswith("_")
+        )
+        if not migration_files:
+            return None
+        return migration_files[-1].stem.split("_", 1)[1]
 
     def _do_migrations(self) -> None:
         """Executes database migrations using Alembic.
@@ -128,6 +147,31 @@ class AnibridgeDb:
             AlembicError: If migration execution fails
             FileNotFoundError: If Alembic migration scripts are not found
         """
+        import sqlite3
+
+        # The alembic import is ~12 MB and 100+ modules. We avoid it by only importing
+        # if the current DB revision doesn't match the head revision (most cases).
+        head_rev = self._get_head_revision()
+        if head_rev is not None:
+            try:
+                conn = sqlite3.connect(str(self.db_path))
+                try:
+                    row = conn.execute(
+                        "SELECT version_num FROM alembic_version"
+                    ).fetchone()
+                    if row and row[0] == head_rev:
+                        log.debug("Database migrations up-to-date")
+                        from anibridge.app.models.db import Base
+
+                        Base.metadata.create_all(self.engine)
+                        return
+                except sqlite3.OperationalError:
+                    pass
+                finally:
+                    conn.close()
+            except Exception:
+                pass
+
         from alembic.config import Config
 
         from alembic import command

@@ -54,6 +54,10 @@ class FakeMappingsClient:
         """No-op for closing the fake client."""
         return None
 
+    def clear_cache(self) -> None:
+        """Clear cache."""
+        self._content_hash = ""
+
 
 @pytest.fixture
 def in_memory_db(monkeypatch: pytest.MonkeyPatch, in_memory_db_factory):
