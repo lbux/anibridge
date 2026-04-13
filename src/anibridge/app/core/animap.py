@@ -1,6 +1,5 @@
 """Animap client for v3 provider-range mappings."""
 
-import gc
 from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import md5
@@ -24,6 +23,7 @@ from anibridge.app.config.database import db
 from anibridge.app.core.mappings import MappingsClient
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.models.db.housekeeping import Housekeeping
+from anibridge.app.utils.memory import release_memory
 
 __all__ = [
     "AnimapClient",
@@ -406,7 +406,7 @@ class AnimapClient:
                 del mappings, provenance_by_descriptor
                 self.mappings_client.clear_cache()
                 await self.mappings_client.close()
-                gc.collect()
+                release_memory()
                 return
 
         descriptors, edges, provenance, invalid_count = self._build_edges(
@@ -657,4 +657,4 @@ class AnimapClient:
 
         self.mappings_client.clear_cache()
         await self.mappings_client.close()
-        gc.collect()
+        release_memory()
