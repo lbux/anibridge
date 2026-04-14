@@ -383,7 +383,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             return False
         if self.full_scan or self.destructive_sync or self.empty_sync:
             return False
-        if item.on_watching or season.on_watching:
+        if item.on_watching:
             return False
         if item.on_watchlist or season.on_watchlist:
             return False
@@ -391,9 +391,15 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             return False
         return not any(
             episode.view_count
-            or episode.on_watching
-            or episode.on_watchlist
-            or episode.user_rating is not None
+            # or episode.on_watchlist
+            # or episode.review is not None
+            # or episode.user_rating is not None
+            # ==========================================================================
+            # It is highly unlikely for a provider to allow an episode to be on the
+            # watchlist without the parent season/show also being on the watchlist.
+            #
+            # User ratings and reviews are gated by the completed status, so without
+            # watch activity it's unlikely to be used.
             for episode in episodes
         )
 
