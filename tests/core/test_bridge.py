@@ -852,9 +852,7 @@ async def test_sync_updates_last_synced_and_progress(
     await client.sync()
 
     assert client.last_synced is not None
-    assert client.current_sync is not None
-    assert client.current_sync.state == "idle"
-    assert client.current_sync.stage == "completed"
+    assert client.current_sync is None
 
 
 @pytest.mark.asyncio
@@ -880,6 +878,4 @@ async def test_sync_failure_sets_completed_state(
     with pytest.raises(RuntimeError):
         await client.sync()
 
-    assert client.current_sync is not None
-    assert client.current_sync.stage == "completed"
-    assert client.current_sync.state == "idle"
+    assert client.current_sync is None

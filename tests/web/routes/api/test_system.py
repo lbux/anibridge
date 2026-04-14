@@ -36,9 +36,12 @@ class _DummyGlobalConfig:
 
 
 class _AboutScheduler:
-    def __init__(self) -> None:
+    def __init__(self, *, current_sync: dict[str, Any] | None = None) -> None:
         self.global_config = _DummyGlobalConfig()
         self.is_running = True
+        self._current_sync = (
+            current_sync if current_sync is not None else {"state": "running"}
+        )
 
     async def get_status(self) -> dict[str, Any]:
         return {
@@ -51,7 +54,7 @@ class _AboutScheduler:
                 "status": {
                     "running": True,
                     "last_synced": "2026-01-01T00:00:00+00:00",
-                    "current_sync": {"state": "running"},
+                    "current_sync": self._current_sync,
                     "initialization_error": None,
                 },
             }
@@ -180,6 +183,40 @@ async def test_api_about_returns_runtime_summary(monkeypatch, patch_app_state) -
     assert response.scheduler.syncing_profiles == 1
     assert response.scheduler.most_recent_sync_profile == "primary"
     assert response.scheduler.next_database_sync_at == "2026-01-02T00:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_api_about_ignores_non_running_sync_payloads(
+    monkeypatch, patch_app_state
+) -> None:
+    scheduler = _AboutScheduler(current_sync={"state": "idle", "stage": "completed"})
+    patch_app_state(
+        system_api_module,
+        scheduler=scheduler,
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    monkeypatch.setattr(system_api_module.platform, "python_version", lambda: "3.14.0")
+    monkeypatch.setattr(system_api_module.platform, "platform", lambda: "Linux")
+    monkeypatch.setattr(system_api_module.os, "getpid", lambda: 123)
+    monkeypatch.setattr(system_api_module.psutil, "cpu_count", lambda logical=True: 8)
+    monkeypatch.setattr(
+        system_api_module.psutil,
+        "Process",
+        lambda pid: SimpleNamespace(
+            memory_info=lambda: SimpleNamespace(rss=2048 * 1024)
+        ),
+    )
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(system_api_module, "datetime", FrozenDateTime)
+
+    response = await system_api_module.api_about()
+
+    assert response.scheduler.syncing_profiles == 0
 
 
 @pytest.mark.asyncio

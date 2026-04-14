@@ -410,9 +410,7 @@ class BridgeClient:
             )
             raise
         finally:
-            if self.current_sync is not None:
-                self.current_sync.stage = "completed"
-                self.current_sync.state = "idle"
+            self.current_sync = None
 
             await movie_sync.clear_cache()
             await show_sync.clear_cache()

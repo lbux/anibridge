@@ -188,7 +188,7 @@ async def api_about() -> AboutResponse:
             running_profiles += 1
 
         current_sync = converted[name].status.current_sync
-        if current_sync is not None:
+        if current_sync is not None and current_sync.get("state") == "running":
             syncing_profiles += 1
 
         for mode in converted[name].config.scan_modes:
