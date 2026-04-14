@@ -197,7 +197,7 @@ dependencies = [
 [[package]]
 name = "anibridge-emby-provider"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#5b0d97aafd7775b1dae67f9147dec10cb7f5b0fd" }
+source = { git = "https://github.com/anibridge/anibridge-emby-provider.git?tag=main#528dfe0bb2b3f2a2c4a49e6c49d4764e646e77f3" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "anibridge-utils" },
@@ -209,7 +209,7 @@ dependencies = [
 [[package]]
 name = "anibridge-jellyfin-provider"
 version = "0.2.0"
-source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#4b276c4e17868a6579e947366b1291865240661b" }
+source = { git = "https://github.com/anibridge/anibridge-jellyfin-provider.git?tag=main#595f85f5d8fc7dbdfa11a77a6a742eef20d28acd" }
 dependencies = [
     { name = "anibridge-library-base" },
     { name = "anibridge-utils" },
