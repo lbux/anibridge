@@ -75,7 +75,7 @@ async def test_execute_sync_runs_callbacks(profile_scheduler: ProfileScheduler) 
     async def _before(profile: str) -> None:
         events.append(f"before:{profile}")
 
-    async def _after(profile: str) -> None:
+    def _after(profile: str) -> None:
         events.append(f"after:{profile}")
 
     profile_scheduler._before_sync = _before

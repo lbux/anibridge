@@ -41,7 +41,7 @@ class ProfileScheduler:
         scan_modes: list[ScanMode],
         max_pending_waiters: int = DEFAULT_MAX_PENDING_WAITERS,
         before_sync: Callable[[str], Awaitable[None]] | None = None,
-        after_sync: Callable[[str], Awaitable[None]] | None = None,
+        after_sync: Callable[[str], None] | None = None,
         stop_event: asyncio.Event | None = None,
     ) -> None:
         """Initialize the queue-backed profile scheduler.
@@ -57,8 +57,8 @@ class ProfileScheduler:
             max_pending_waiters (int): The maximum number of sync requests to queue.
             before_sync (Callable[[str], Awaitable[None]] | None): Optional callback to
                 run before each sync, receiving the profile name.
-            after_sync (Callable[[str], Awaitable[None]] | None): Optional callback to
-                run after each sync, receiving the profile name.
+            after_sync (Callable[[str], None] | None): Optional callback to run after
+                each sync, receiving the profile name.
             stop_event (asyncio.Event | None): Optional event to signal the scheduler
                 to stop, allowing external control over the scheduler lifecycle.
         """
@@ -113,8 +113,7 @@ class ProfileScheduler:
         finally:
             self._current_task = None
             if sync_slot_acquired and self._after_sync is not None:
-                with contextlib.suppress(BaseException):
-                    await asyncio.shield(self._after_sync(self.profile_name))
+                self._after_sync(self.profile_name)
 
     async def _enqueue_sync(
         self,

@@ -420,7 +420,7 @@ class SchedulerClient:
             "bridge_count": len(self.bridge_clients),
             "daily_sync_active": self._daily_sync_task is not None
             and not self._daily_sync_task.done(),
-            "coordinator": await self._sync_coordinator.get_metrics(),
+            "coordinator": self._sync_coordinator.get_metrics(),
         }
 
     async def trigger_database_sync(self, source: str = "manual:database") -> None:
@@ -602,10 +602,7 @@ class SchedulerClient:
         try:
             await bridge_client.sync(poll=poll, library_keys=library_keys)
         finally:
-            with contextlib.suppress(BaseException):
-                await asyncio.shield(
-                    self._sync_coordinator.release_profile_slot(profile_name)
-                )
+            self._sync_coordinator.release_profile_slot(profile_name)
 
     async def __aenter__(self):
         """Async context manager entry."""
