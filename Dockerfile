@@ -4,10 +4,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PROJECT_ENVIRONMENT=/venv \
     UV_PYTHON_INSTALL_DIR=/python \
     UV_PYTHON_PREFERENCE=only-managed \
-    VIRTUAL_ENV=/opt/venv
+    VIRTUAL_ENV=/venv
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ LABEL maintainer="Elias Benbourenane <eliasbenbourenane@gmail.com>" \
     org.opencontainers.image.source="https://github.com/anibridge/anibridge" \
     org.opencontainers.image.licenses="MIT"
 
-ENV PATH=/opt/venv/bin:$PATH \
+ENV PATH=/venv/bin:$PATH \
     PYTHONMALLOC=malloc \
     PYTHONUNBUFFERED=1 \
     PYTHON_JIT=1 \
@@ -68,7 +68,7 @@ COPY . /app
 COPY ./scripts/docker_init.sh /init
 
 COPY --from=python-builder /python /python
-COPY --from=python-builder /opt/venv /opt/venv
+COPY --from=python-builder /venv /venv
 COPY --from=node-builder /app/build /app/frontend/build
 
 RUN mkdir -p /config

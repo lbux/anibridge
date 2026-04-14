@@ -14,6 +14,11 @@
 # Pytest
 tests/
 
+# dockerignore handles recursive ignoring differently than gitignore
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
 ##################################################################
 # https://github.com/github/gitignore/blob/main/Python.gitignore #
 ##################################################################
