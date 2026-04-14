@@ -1,12 +1,10 @@
-FROM alpine:3.23 AS python-builder
+FROM python:3.14-alpine AS python-builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
+ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/venv \
-    UV_PYTHON_INSTALL_DIR=/python \
-    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON_PREFERENCE=only-system \
     VIRTUAL_ENV=/venv
 
 WORKDIR /app
@@ -18,7 +16,8 @@ COPY ./src ./LICENSE ./README.md /app/
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock,ro \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml,ro \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev && \
+    find /venv -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null; true
 
 FROM --platform=$BUILDPLATFORM node:25-alpine AS node-builder
 
@@ -40,7 +39,7 @@ COPY ./frontend /app
 
 RUN pnpm build
 
-FROM alpine:3.23
+FROM python:3.14-alpine
 
 RUN apk add --no-cache shadow su-exec tzdata
 
@@ -67,7 +66,6 @@ WORKDIR /app
 COPY . /app
 COPY ./scripts/docker_init.sh /init
 
-COPY --from=python-builder /python /python
 COPY --from=python-builder /venv /venv
 COPY --from=node-builder /app/build /app/frontend/build
 
