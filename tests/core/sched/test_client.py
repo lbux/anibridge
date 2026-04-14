@@ -671,8 +671,8 @@ async def test_daily_db_sync_loop_runs(
 ) -> None:
     """Daily loop should invoke sync and backups."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    scheduler.shared_animap_client = FakeAnimapClient()
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
+    scheduler.shared_animap_client = cast(sched_module.AnimapClient, FakeAnimapClient())
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
 
     scheduler._running = True
@@ -695,7 +695,7 @@ async def test_daily_db_sync_loop_runs(
 
     await scheduler._daily_db_sync_loop()
 
-    assert scheduler.shared_animap_client.synced is True
+    assert cast(FakeAnimapClient, scheduler.shared_animap_client).synced is True
     assert cast(FakeBridgeClient, scheduler.bridge_clients["one"]).backed_up is True
 
 
@@ -703,15 +703,15 @@ async def test_daily_db_sync_loop_runs(
 async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
     """Database sync entrypoint should sync mappings and run profile backups."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    scheduler.shared_animap_client = FakeAnimapClient()
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
+    scheduler.shared_animap_client = cast(sched_module.AnimapClient, FakeAnimapClient())
 
     bridge = FakeBridgeClient("one")
     cast(dict[str, Any], scheduler.bridge_clients)["one"] = bridge
 
     await scheduler.trigger_database_sync(source="test:database")
 
-    assert scheduler.shared_animap_client.synced is True
+    assert cast(FakeAnimapClient, scheduler.shared_animap_client).synced is True
     assert bridge.backed_up is True
 
 
@@ -804,7 +804,7 @@ async def test_profile_scheduler_sync_cancels_inner_task() -> None:
     bridge = Bridge()
     scheduler = ProfileScheduler(
         profile_name="default",
-        bridge_client=cast("sched_module.BridgeClient", bridge),
+        bridge_client=cast(sched_module.BridgeClient, bridge),
         scan_interval=1,
         scan_modes=[],
         poll_interval=1,
@@ -828,7 +828,7 @@ async def test_profile_scheduler_start_returns_when_running(
     """Calling start while running should be a no-op."""
     scheduler = ProfileScheduler(
         profile_name="default",
-        bridge_client=cast("sched_module.BridgeClient", SimpleNamespace()),
+        bridge_client=cast(sched_module.BridgeClient, SimpleNamespace()),
         scan_interval=1,
         scan_modes=[ScanMode.PERIODIC],
         poll_interval=1,
@@ -848,7 +848,7 @@ async def test_profile_scheduler_stop_cancels_current_task() -> None:
     """Stopping should cancel a running current task."""
     scheduler = ProfileScheduler(
         profile_name="default",
-        bridge_client=cast("sched_module.BridgeClient", SimpleNamespace()),
+        bridge_client=cast(sched_module.BridgeClient, SimpleNamespace()),
         scan_interval=1,
         scan_modes=[],
         poll_interval=1,
@@ -909,7 +909,7 @@ async def test_scheduler_start_with_scan_modes(
     monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
     monkeypatch.setattr(sched_module, "ProfileScheduler", StubScheduler)
 
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
     cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
     await scheduler.start()
@@ -923,7 +923,7 @@ async def test_scheduler_start_with_scan_modes(
 async def test_scheduler_start_without_profiles(tmp_path: Path) -> None:
     """Starting without profiles should leave schedulers empty."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
 
     await scheduler.start()
 
@@ -936,7 +936,7 @@ async def test_scheduler_start_without_profiles(tmp_path: Path) -> None:
 async def test_scheduler_stop_returns_when_not_running(tmp_path: Path) -> None:
     """Stop should no-op when scheduler is not running."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
 
     await scheduler.stop()
 
@@ -947,7 +947,7 @@ async def test_scheduler_stop_returns_when_not_running(tmp_path: Path) -> None:
 async def test_wait_for_completion_cancelled(tmp_path: Path) -> None:
     """Cancelling wait_for_completion should propagate the cancellation."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
     scheduler._running = True
 
     task = asyncio.create_task(scheduler.wait_for_completion())
@@ -964,7 +964,7 @@ async def test_daily_db_sync_loop_breaks_on_stop(
 ) -> None:
     """Daily loop should break when stop event is signaled during wait."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
     scheduler._running = True
 
     async def _wait_for(coro, *_args, **_kwargs):
@@ -982,8 +982,8 @@ async def test_daily_db_sync_loop_handles_sync_error(
 ) -> None:
     """Errors during sync_db should be handled and logged."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
-    scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    scheduler.shared_animap_client = FakeAnimapClient()
+    scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
+    scheduler.shared_animap_client = cast(sched_module.AnimapClient, FakeAnimapClient())
     scheduler._running = True
 
     def _next_sync(_now: datetime) -> datetime:
