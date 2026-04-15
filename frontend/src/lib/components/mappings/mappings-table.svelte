@@ -129,10 +129,7 @@
                                     <div class="flex min-w-0 items-center gap-2">
                                         {#if m.anilist}
                                             {@const coverImage =
-                                                m.anilist?.coverImage?.medium ??
-                                                m.anilist?.coverImage?.large ??
-                                                m.anilist?.coverImage?.extraLarge ??
-                                                null}
+                                                m.anilist?.coverImage?.medium ?? null}
                                             {#if coverImage}
                                                 <div
                                                     class="relative h-16 w-12 overflow-hidden rounded-md ring-1 ring-slate-700/60">
