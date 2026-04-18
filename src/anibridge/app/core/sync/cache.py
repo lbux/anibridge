@@ -87,7 +87,20 @@ class SyncCacheManager:
         cached = self._prefetched_entries.get(cache_key)
         if cached is not None:
             return cached
-        entry = await self.list_provider.get_entry(media_key)
+        try:
+            entry = await self.list_provider.get_entry(media_key)
+        except Exception:
+            log.warning(
+                "[%s] Failed to fetch list entry for media key '%s'",
+                self.profile_name,
+                media_key,
+            )
+            log.debug(
+                "[%s] Entry fetch error details",
+                self.profile_name,
+                exc_info=True,
+            )
+            return None
         if entry is not None:
             self.cache_entry(entry)
         return entry
