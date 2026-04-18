@@ -485,3 +485,54 @@ def test_config_string_and_default_template_helpers(
     assert created.exists()
     assert created.read_text(encoding="utf-8").startswith("################")
     assert settings_module._ensure_default_config_file() == created
+
+
+def test_threads_defaults_to_profile_count_plus_one() -> None:
+    """Thread count should default to len(profiles) + 1 when not set."""
+    config = AnibridgeConfig(
+        profiles={
+            "a": AnibridgeProfileConfig(),
+            "b": AnibridgeProfileConfig(),
+            "c": AnibridgeProfileConfig(),
+        }
+    )
+
+    assert config.threads == 4
+
+
+def test_threads_defaults_to_one_with_no_profiles() -> None:
+    """Thread count should be 1 when there are no profiles and threads is unset."""
+    config = AnibridgeConfig()
+
+    assert config.threads == 1
+
+
+def test_threads_defaults_to_two_with_implicit_default_profile() -> None:
+    """Implicit default profile from globals should count toward thread default."""
+    config = AnibridgeConfig(
+        global_config=AnibridgeProfileConfig(
+            library_provider_config={"plex": {"url": "http://plex:32400"}},
+        )
+    )
+
+    assert "default" in config.profiles
+    assert config.threads == 2
+
+
+def test_threads_explicit_value_overrides_default() -> None:
+    """Explicitly set threads should not be overridden by the profile-based default."""
+    config = AnibridgeConfig(
+        threads=8,
+        profiles={
+            "a": AnibridgeProfileConfig(),
+            "b": AnibridgeProfileConfig(),
+        },
+    )
+
+    assert config.threads == 8
+
+
+def test_threads_rejects_zero() -> None:
+    """Thread count of 0 should be rejected by validation."""
+    with pytest.raises(ValueError):
+        AnibridgeConfig(threads=0)

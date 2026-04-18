@@ -349,6 +349,14 @@ class AnibridgeConfig(BaseSettings):
         default_factory=list,
         description="Additional class paths to register provider implementations from",
     )
+    threads: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Number of threads to use for parallel operations. "
+            "Defaults to len(profiles) + 1 when not set."
+        ),
+    )
     web: WebConfig = Field(
         default_factory=WebConfig, description="Embedded web server configuration"
     )
@@ -392,6 +400,10 @@ class AnibridgeConfig(BaseSettings):
         for profile in self.profiles.values():
             profile._parent = self
             profile._merge_globals()
+
+        # Default thread count to len(profiles) + 1 when not explicitly set
+        if self.threads is None:
+            self.threads = len(self.profiles) + 1
 
         if (not self.web.basic_auth.username) != (not self.web.basic_auth.password):
             _log.warning(

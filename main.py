@@ -5,6 +5,7 @@ import contextlib
 import os
 import signal
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import uvicorn
 from pydantic import ValidationError
@@ -91,6 +92,9 @@ async def run() -> int:
 
     ret = 0
     try:
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=config.threads))
+
         log.info("\n" + ANIBDRIGE_HEADER)
 
         if not validate_configuration():
