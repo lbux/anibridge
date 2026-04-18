@@ -19,9 +19,9 @@ Supported syntax:
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, cast
 
+import msgspec
 import pyparsing as pp
 
 from anibridge.app.exceptions import BooruQuerySyntaxError
@@ -48,16 +48,14 @@ class Node:
     """Base AST node for booru-like queries."""
 
 
-@dataclass(frozen=True)
-class ParsedValueToken:
+class ParsedValueToken(msgspec.Struct, frozen=True):
     """Intermediate parsed representation of a key term value."""
 
     text: str
     quoted: bool
 
 
-@dataclass
-class KeyTerm(Node):
+class KeyTerm(Node, msgspec.Struct):
     """A key:value term that targets the local DB."""
 
     key: str
@@ -66,38 +64,33 @@ class KeyTerm(Node):
     quoted: bool = False
 
 
-@dataclass
-class BareTerm(Node):
+class BareTerm(Node, msgspec.Struct):
     """A non-keyed term (word or phrase) that searches AniList."""
 
     text: str
     quoted: bool = False
 
 
-@dataclass
-class Not(Node):
+class Not(Node, msgspec.Struct):
     """Negation of a child expression."""
 
     child: Node
     _ids: set[int] | None = None  # Populated during evaluation
 
 
-@dataclass
-class And(Node):
+class And(Node, msgspec.Struct):
     """Conjunction (implicit by whitespace)."""
 
     children: list[Node]
 
 
-@dataclass
-class Or(Node):
+class Or(Node, msgspec.Struct):
     """Disjunction (explicit with `|` or implicit with `~` prefix)."""
 
     children: list[Node]
 
 
-@dataclass
-class OrMarker(Node):
+class OrMarker(Node, msgspec.Struct):
     """Marker for a term to be included in an OR group within an AND."""
 
     child: Node
@@ -361,8 +354,7 @@ def parse_query(q: str) -> Node:
     return _merge_unquoted_bare_terms(node)
 
 
-@dataclass
-class EvalResult:
+class EvalResult(msgspec.Struct):
     """Evaluation result for a query AST."""
 
     ids: set[int]

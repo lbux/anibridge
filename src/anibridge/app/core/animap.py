@@ -1,11 +1,11 @@
 """Animap client for v3 provider-range mappings."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from hashlib import md5
 from itertools import batched
 from pathlib import Path
 
+import msgspec
 import msgspec.json
 from anibridge.utils.mappings import (
     AnibridgeMapping,
@@ -31,8 +31,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class AnimapEdge:
+class AnimapEdge(msgspec.Struct, frozen=True):
     """Directed mapping between two provider entries with episode ranges."""
 
     source: MappingDescriptor

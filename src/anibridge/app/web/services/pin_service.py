@@ -1,7 +1,6 @@
 """Service for managing provider-specific field pins per profile."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar
 
@@ -83,7 +82,6 @@ class UpdatePinPayload(BaseModel):
         return ordered
 
 
-@dataclass
 class PinService:
     """Service encapsulating pin CRUD operations."""
 

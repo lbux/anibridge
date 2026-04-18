@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
+import msgspec
 from anibridge.library.base import LibraryMedia
 from anibridge.list.base import ListMedia
 from anibridge.utils.cache import cache
@@ -499,10 +500,14 @@ class HistoryService:
             )
 
         before_snapshot = (
-            EntrySnapshot.from_dict(row.before_state) if row.before_state else None
+            msgspec.convert(row.before_state, type=EntrySnapshot)
+            if row.before_state
+            else None
         )
         after_snapshot = (
-            EntrySnapshot.from_dict(row.after_state) if row.after_state else None
+            msgspec.convert(row.after_state, type=EntrySnapshot)
+            if row.after_state
+            else None
         )
 
         if not row.before_state and not after_snapshot:

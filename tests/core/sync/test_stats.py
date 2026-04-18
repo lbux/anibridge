@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from typing import cast
 
+import msgspec
 import pytest
 from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import (
@@ -70,16 +71,16 @@ def test_item_identifier_from_episode_includes_parent_metadata() -> None:
 def test_entry_snapshot_round_trip(list_entry: ListEntry) -> None:
     """Snapshots capture list entry state and serialize to JSON primitives."""
     snapshot = EntrySnapshot.from_entry(list_entry)
-    as_dict = snapshot.to_dict()
+    as_dict = msgspec.structs.asdict(snapshot)
     assert as_dict["media_key"] == "42"
     assert as_dict["status"] == ListStatus.CURRENT
     assert as_dict["progress"] == 6
 
-    serialized = snapshot.serialize()
-    assert serialized["started_at"] == "2025-01-01T00:00:00+00:00"
+    serialized = msgspec.to_builtins(snapshot)
+    assert serialized["started_at"] == "2025-01-01T00:00:00Z"
     assert serialized["finished_at"] is None
 
-    reconstructed = EntrySnapshot.from_dict(serialized)
+    reconstructed = msgspec.convert(serialized, type=EntrySnapshot)
     assert reconstructed.status == ListStatus.CURRENT
     assert reconstructed.progress == 6
 

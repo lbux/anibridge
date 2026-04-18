@@ -1,14 +1,13 @@
 """Synchronization statistics and tracking module."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any, Literal
+from datetime import datetime
+from typing import Literal
 
+import msgspec
 from anibridge.library import LibraryEntry, MediaKind
 from anibridge.list import ListEntry, ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping
-from pydantic import BaseModel, ConfigDict
 
 from anibridge.app.models.db.sync_history import SyncOutcome
 
@@ -21,8 +20,7 @@ __all__ = [
 ]
 
 
-@dataclass(slots=True)
-class ItemIdentifier:
+class ItemIdentifier(msgspec.Struct, frozen=True):
     """Immutable identifier for media items in sync operations.
 
     Provides a stable, hashable way to identify media items across
@@ -36,12 +34,7 @@ class ItemIdentifier:
     @classmethod
     def from_item(cls, item: LibraryEntry) -> ItemIdentifier:
         """Create an identifier from a library media entity."""
-        kwargs: dict[str, Any] = {
-            "key": item.key,
-            "media_kind": item.media_kind,
-            "repr": f"{item!r}",
-        }
-        return cls(**kwargs)
+        return cls(key=item.key, media_kind=item.media_kind, repr=f"{item!r}")
 
     @classmethod
     def from_items(cls, items: Sequence[LibraryEntry]) -> Sequence[ItemIdentifier]:
@@ -74,14 +67,16 @@ class ItemIdentifier:
         return super().__repr__()
 
 
-class SyncStats(BaseModel):
+class SyncStats(msgspec.Struct):
     """Statistics tracker for synchronization operations.
 
     Uses an outcome-based approach where each item is tracked with its specific
     result, allowing for accurate reporting and easier debugging.
     """
 
-    _item_outcomes: dict[ItemIdentifier, SyncOutcome] = {}
+    _item_outcomes: dict[ItemIdentifier, SyncOutcome] = msgspec.field(
+        default_factory=dict
+    )
 
     def track_item(self, item_id: ItemIdentifier, outcome: SyncOutcome) -> None:
         """Track the outcome for a specific item.
@@ -289,13 +284,11 @@ class SyncStats(BaseModel):
         return self.combine(other)
 
 
-class SyncProgress(BaseModel):
+class SyncProgress(msgspec.Struct):
     """Live sync progress snapshot exposed to the web UI.
 
     Fields are serialized to JSON in scheduler status responses.
     """
-
-    model_config = ConfigDict(validate_assignment=True)
 
     state: Literal["running", "idle"]
     started_at: datetime
@@ -307,18 +300,17 @@ class SyncProgress(BaseModel):
     section_items_processed: int
 
 
-@dataclass(slots=True)
-class EntrySnapshot:
+class EntrySnapshot(msgspec.Struct):
     """Snapshot of list entry fields used for comparison and history."""
 
-    media_key: str
-    status: ListStatus | None
-    progress: int | None
-    repeats: int | None
-    review: str | None
-    user_rating: int | None
-    started_at: datetime | None
-    finished_at: datetime | None
+    media_key: str = ""
+    status: ListStatus | None = None
+    progress: int | None = None
+    repeats: int | None = None
+    review: str | None = None
+    user_rating: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
     @classmethod
     def from_entry(cls, entry: ListEntry) -> EntrySnapshot:
@@ -334,54 +326,10 @@ class EntrySnapshot:
             finished_at=entry.finished_at,
         )
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> EntrySnapshot:
-        """Create a snapshot from a raw dictionary."""
-        return cls(
-            media_key=data.get("media_key", ""),
-            status=ListStatus(data["status"]) if data.get("status") else None,
-            progress=data.get("progress"),
-            repeats=data.get("repeats"),
-            review=data.get("review"),
-            user_rating=data.get("user_rating"),
-            started_at=datetime.fromisoformat(data["started_at"])
-            if data.get("started_at")
-            else None,
-            finished_at=datetime.fromisoformat(data["finished_at"])
-            if data.get("finished_at")
-            else None,
-        )
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return a raw dictionary representation."""
-        return {
-            "media_key": self.media_key,
-            "status": self.status,
-            "progress": self.progress,
-            "repeats": self.repeats,
-            "review": self.review,
-            "user_rating": self.user_rating,
-            "started_at": self.started_at,
-            "finished_at": self.finished_at,
-        }
-
-    def serialize(self) -> dict[str, Any]:
-        """Serialize values into JSON-friendly primitives."""
-
-        def _serialize(value: Any) -> Any:
-            if isinstance(value, datetime):
-                dt = value
-                dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-                return dt.isoformat()
-            if isinstance(value, ListStatus):
-                return value.value
-            return value
-
-        return {key: _serialize(value) for key, value in self.to_dict().items()}
-
-
-@dataclass(slots=True)
-class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
+class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry](
+    msgspec.Struct
+):
     """Container for deferred sync updates and associated metadata."""
 
     item: ParentMediaT
@@ -393,4 +341,4 @@ class BatchUpdate[ParentMediaT: LibraryEntry, ChildMediaT: LibraryEntry]:
     source_entry: ListEntry | None
     list_media_key: str | None
     mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
-    diagnostics: Mapping[str, str] = field(default_factory=dict)
+    diagnostics: Mapping[str, str] = msgspec.field(default_factory=dict)

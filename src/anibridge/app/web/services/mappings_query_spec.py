@@ -1,10 +1,10 @@
 """Query field specifications for mapping graph search."""
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
 
+import msgspec
 from anibridge.utils.cache import cache
 from sqlalchemy import case, literal
 from sqlalchemy.sql import select
@@ -56,8 +56,7 @@ class QueryFieldKind(StrEnum):
     ANILIST_ENUM = "anilist_enum"
 
 
-@dataclass(frozen=True)
-class QueryFieldSpec:
+class QueryFieldSpec(msgspec.Struct, frozen=True):
     """Describes a single query-capable field."""
 
     key: str
@@ -305,7 +304,7 @@ def get_query_field_specs() -> list[QueryFieldSpec]:
 
     # Inject these values into the relevant field specs.
     return [
-        replace(spec, values=provider_values)
+        msgspec.structs.replace(spec, values=provider_values)
         if spec.key in ("source.provider", "target.provider")
         else spec
         for spec in _QUERY_FIELDS

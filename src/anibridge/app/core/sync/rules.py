@@ -2,11 +2,11 @@
 
 import ast
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
+import msgspec
 from anibridge.list import ListStatus
 
 __all__ = [
@@ -168,8 +168,7 @@ class _ContextNamespace(Mapping[str, Any]):
         return value
 
 
-@dataclass(frozen=True, slots=True)
-class SyncRuleDecision:
+class SyncRuleDecision(msgspec.Struct, frozen=True):
     """Outcome of evaluating declarative rules for a single field."""
 
     allowed: bool

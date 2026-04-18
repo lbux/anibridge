@@ -4,10 +4,10 @@ import asyncio
 import calendar
 import re
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
+import msgspec
 from anibridge.utils.cache import cache
 from anibridge.utils.mappings import descriptor_key, parse_mapping_descriptor
 from sqlalchemy.sql import func, or_, select
@@ -45,8 +45,7 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["MappingsService", "get_mappings_service"]
 
 
-@dataclass(frozen=True)
-class EdgeView:
+class EdgeView(msgspec.Struct, frozen=True):
     """Flattened view of an outgoing mapping edge."""
 
     target_provider: str
@@ -57,8 +56,7 @@ class EdgeView:
     sources: list[str]
 
 
-@dataclass(frozen=True)
-class MappingItem:
+class MappingItem(msgspec.Struct, frozen=True):
     """Flattened mapping entry with outgoing edges."""
 
     provider: str
@@ -81,7 +79,7 @@ class MappingItem:
             "entry_id": self.entry_id,
             "scope": self.scope,
             "descriptor": descriptor_key((self.provider, self.entry_id, self.scope)),
-            "edges": [edge.__dict__ for edge in self.edges],
+            "edges": [msgspec.to_builtins(edge) for edge in self.edges],
             "custom": self.custom,
             "sources": self.sources,
             "anilist": self.anilist.model_dump() if self.anilist else None,
@@ -753,7 +751,8 @@ class MappingsService:
         by_id = {m.id: m for m in metadata}
 
         return [
-            replace(item, anilist=by_id.get(item.anilist_id or -1)) for item in items
+            msgspec.structs.replace(item, anilist=by_id.get(item.anilist_id or -1))
+            for item in items
         ]
 
     def _fetch_entries_for_edges(

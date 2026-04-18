@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+import msgspec
 from anibridge.library import LibraryEntry
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from sqlalchemy.sql import tuple_
@@ -85,8 +86,8 @@ class SyncHistoryManager:
             None: This method writes history rows and updates failure records.
         """
         before_snapshot, after_snapshot = snapshots
-        before_state = before_snapshot.serialize() if before_snapshot else None
-        after_state = after_snapshot.serialize() if after_snapshot else None
+        before_state = msgspec.to_builtins(before_snapshot) if before_snapshot else None
+        after_state = msgspec.to_builtins(after_snapshot) if after_snapshot else None
 
         section = item.section()
 

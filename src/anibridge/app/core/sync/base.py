@@ -3,11 +3,10 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from copy import copy
-from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from typing import Any
 
+import msgspec
 from anibridge.library import LibraryEntry, LibraryProvider
 from anibridge.list import ListEntry, ListProvider, ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping
@@ -33,16 +32,15 @@ from anibridge.app.utils.terminal import ARROW
 __all__ = ["BaseSyncClient"]
 
 
-@dataclass(slots=True)
-class _FieldApplicationState:
+class _FieldApplicationState(msgspec.Struct):
     """Track why individual sync fields were blocked during planning."""
 
-    pinned_blocked_fields: set[str] = dataclass_field(default_factory=set)
-    applied_sync_rules: dict[str, str] = dataclass_field(default_factory=dict)
-    sync_rules_blocked: dict[str, str] = dataclass_field(default_factory=dict)
-    status_gate_blocked: dict[str, str] = dataclass_field(default_factory=dict)
-    destructive_blocked_fields: set[str] = dataclass_field(default_factory=set)
-    unchanged_fields: set[str] = dataclass_field(default_factory=set)
+    pinned_blocked_fields: set[str] = msgspec.field(default_factory=set)
+    applied_sync_rules: dict[str, str] = msgspec.field(default_factory=dict)
+    sync_rules_blocked: dict[str, str] = msgspec.field(default_factory=dict)
+    status_gate_blocked: dict[str, str] = msgspec.field(default_factory=dict)
+    destructive_blocked_fields: set[str] = msgspec.field(default_factory=set)
+    unchanged_fields: set[str] = msgspec.field(default_factory=set)
 
     def mark_block(self, field_name: str, reason: str | None) -> None:
         """Record why a field was blocked during sync planning."""
@@ -795,7 +793,7 @@ class BaseSyncClient[
 
     def _render_diff(self, plan: BatchUpdate[ParentMediaT, ChildMediaT]) -> str:
         """Render a diff string for a planned update."""
-        after_fields = plan.after.to_dict()
+        after_fields = msgspec.structs.asdict(plan.after)
         return self._format_diff(diff_snapshots(plan.before, plan.after, after_fields))
 
     async def batch_sync(self) -> None:

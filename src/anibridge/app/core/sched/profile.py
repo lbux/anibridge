@@ -3,9 +3,10 @@
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+import msgspec
 
 from anibridge.app import log
 from anibridge.app.config.settings import ScanMode
@@ -19,8 +20,7 @@ from anibridge.app.utils.cron import (
 from anibridge.app.utils.human import human_duration
 
 
-@dataclass(slots=True)
-class _SyncRequest:
+class _SyncRequest(msgspec.Struct):
     poll: bool
     library_keys: Sequence[str] | None
     source: str

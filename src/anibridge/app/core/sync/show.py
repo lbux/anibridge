@@ -2,9 +2,9 @@
 
 from collections import defaultdict
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 
+import msgspec
 from anibridge.library import HistoryEntry, LibraryEpisode, LibrarySeason, LibraryShow
 from anibridge.list import ListEntry, ListMediaType, ListStatus
 from anibridge.utils.cache import lru_cache
@@ -25,8 +25,7 @@ from anibridge.app.core.sync.targeting import (
 __all__ = ["ShowSyncClient"]
 
 
-@dataclass(slots=True)
-class _SeasonGroup:
+class _SeasonGroup(msgspec.Struct):
     child_item: LibrarySeason
     first_index: int
     episodes: list[LibraryEpisode]

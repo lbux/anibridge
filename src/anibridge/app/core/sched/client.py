@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import msgspec
 from anibridge.utils.cache import lru_cache
 
 from anibridge.app import log
@@ -397,7 +398,7 @@ class SchedulerClient:
                     if bridge_client and bridge_client.last_synced
                     else None,
                     "current_sync": (
-                        bridge_client.current_sync.model_dump(mode="json")
+                        msgspec.to_builtins(bridge_client.current_sync)
                         if bridge_client and bridge_client.current_sync is not None
                         else None
                     ),

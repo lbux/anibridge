@@ -1,9 +1,9 @@
 """Helpers for resolving list targets from library mappings."""
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from typing import Any
 
+import msgspec
 from anibridge.library import LibraryEntry
 from anibridge.list import ListEntry, ListProvider
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
@@ -40,16 +40,15 @@ def diff_snapshots(
         dict[str, tuple[Any, Any]]: Changed fields mapped to before/after values.
     """
     diff: dict[str, tuple[Any, Any]] = {}
-    before_map = before.to_dict() if before else {}
-    after_map = after.to_dict() if after else {}
+    before_map = msgspec.structs.asdict(before) if before else {}
+    after_map = msgspec.structs.asdict(after) if after else {}
     for field in fields:
         if before_map.get(field) != after_map.get(field):
             diff[field] = (before_map.get(field), after_map.get(field))
     return diff
 
 
-@dataclass(frozen=True)
-class SyncTarget:
+class SyncTarget(msgspec.Struct, frozen=True):
     """Resolved list target for a library media item."""
 
     list_media_key: str
@@ -57,8 +56,7 @@ class SyncTarget:
     mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class ResolvedListTarget:
+class ResolvedListTarget(msgspec.Struct, frozen=True):
     """Resolved list key with mapping descriptors and ranges."""
 
     list_media_key: str
@@ -66,8 +64,7 @@ class ResolvedListTarget:
     mappings: tuple[AnibridgeDescriptorMapping, ...]
 
 
-@dataclass(slots=True)
-class _GroupedTargets:
+class _GroupedTargets(msgspec.Struct):
     descriptors: set[MappingDescriptor]
     mappings: dict[
         tuple[MappingDescriptor, MappingDescriptor],
