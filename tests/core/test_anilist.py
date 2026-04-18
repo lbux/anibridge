@@ -319,7 +319,19 @@ async def test_make_request_retries_on_bad_gateway(
             return False
 
         def raise_for_status(self) -> None:
-            return None
+            if self.status >= 400:
+                request_info = aiohttp.RequestInfo(
+                    url=URL("http://example.com"),
+                    method="POST",
+                    headers=CIMultiDictProxy(CIMultiDict()),
+                    real_url=URL("http://example.com"),
+                )
+                raise aiohttp.ClientResponseError(
+                    request_info,
+                    (),
+                    status=self.status,
+                    message="boom",
+                )
 
         async def json(self):
             return self._json
