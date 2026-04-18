@@ -98,7 +98,6 @@ async def run() -> int:
         loop.set_default_executor(executor)
         if old_executor is not None:
             old_executor.shutdown(wait=False)
-        loop.set_default_executor(ThreadPoolExecutor(max_workers=config.threads))
 
         log.info("\n" + ANIBDRIGE_HEADER)
 
