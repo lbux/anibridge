@@ -39,7 +39,7 @@ async def history_websocket(websocket: WebSocket, profile: str) -> None:
                     }
                 )
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)
 
     except WebSocketDisconnect:
         pass
