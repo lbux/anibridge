@@ -7,7 +7,7 @@ import pytest
 from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
-from anibridge.app.core.anilist import AniListClient
+from anibridge.app.core.anilist import AnilistClient
 from anibridge.app.exceptions import AniListFilterError
 from anibridge.app.models.schemas.anilist import Media, MediaFormat, MediaStatus
 
@@ -15,7 +15,7 @@ from anibridge.app.models.schemas.anilist import Media, MediaFormat, MediaStatus
 @pytest.mark.asyncio
 async def test_search_media_ids_requires_filter() -> None:
     """Reject empty filters when searching for media IDs."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     with pytest.raises(AniListFilterError):
         await client.search_media_ids(filters={})
@@ -26,7 +26,7 @@ async def test_search_media_ids_requires_filter() -> None:
 @pytest.mark.asyncio
 async def test_search_media_ids_rejects_unknown_filter() -> None:
     """Reject unsupported filter arguments."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     with pytest.raises(AniListFilterError):
         await client.search_media_ids(filters={"fake": 1})
@@ -39,12 +39,12 @@ async def test_search_media_ids_collects_unique_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Collect unique identifiers across paged responses."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     call_vars: list[dict] = []
 
     async def fake_make_request(
-        self: AniListClient, query: str, variables: dict | None = None
+        self: AnilistClient, query: str, variables: dict | None = None
     ):
         call_vars.append(variables or {})
         page = (variables or {}).get("page_1", 1)
@@ -67,7 +67,7 @@ async def test_search_media_ids_collects_unique_ids(
         }
 
     monkeypatch.setattr(
-        AniListClient, "_make_request", fake_make_request, raising=False
+        AnilistClient, "_make_request", fake_make_request, raising=False
     )
 
     result = await client.search_media_ids(
@@ -85,7 +85,7 @@ async def test_batch_get_anime_combines_cached_and_remote(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Combine cached entries with freshly fetched media in requested order."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     cached_media = Media(id=1, status=MediaStatus.FINISHED, format=MediaFormat.TV)
     client.offline_anilist_entries[1] = cached_media
@@ -93,7 +93,7 @@ async def test_batch_get_anime_combines_cached_and_remote(
     request_ids: list[list[int]] = []
 
     async def fake_request(
-        self: AniListClient, query: str, variables: dict | None = None
+        self: AnilistClient, query: str, variables: dict | None = None
     ) -> dict:
         request_ids.append(list((variables or {}).get("ids", [])))
         return {
@@ -115,7 +115,7 @@ async def test_batch_get_anime_combines_cached_and_remote(
             }
         }
 
-    monkeypatch.setattr(AniListClient, "_make_request", fake_request, raising=False)
+    monkeypatch.setattr(AnilistClient, "_make_request", fake_request, raising=False)
 
     media = await client.batch_get_anime([1, 2, 3])
 
@@ -129,12 +129,12 @@ async def test_search_media_ids_filters_none_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """None-valued filters should be ignored during search."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     seen: list[dict] = []
 
     async def fake_make_request(
-        self: AniListClient, query: str, variables: dict | None = None
+        self: AnilistClient, query: str, variables: dict | None = None
     ) -> dict:
         seen.append(variables or {})
         return {
@@ -147,7 +147,7 @@ async def test_search_media_ids_filters_none_values(
         }
 
     monkeypatch.setattr(
-        AniListClient, "_make_request", fake_make_request, raising=False
+        AnilistClient, "_make_request", fake_make_request, raising=False
     )
 
     result = await client.search_media_ids(filters={"search": None, "genre": "Drama"})
@@ -161,10 +161,10 @@ async def test_search_media_ids_filters_none_values(
 @pytest.mark.asyncio
 async def test_search_media_ids_empty_results(monkeypatch: pytest.MonkeyPatch) -> None:
     """Empty pages should return an empty result list."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     async def fake_make_request(
-        self: AniListClient, query: str, variables: dict | None = None
+        self: AnilistClient, query: str, variables: dict | None = None
     ) -> dict:
         return {
             "data": {
@@ -176,7 +176,7 @@ async def test_search_media_ids_empty_results(monkeypatch: pytest.MonkeyPatch) -
         }
 
     monkeypatch.setattr(
-        AniListClient, "_make_request", fake_make_request, raising=False
+        AnilistClient, "_make_request", fake_make_request, raising=False
     )
 
     result = await client.search_media_ids(filters={"search": "nothing"})
@@ -188,7 +188,7 @@ async def test_search_media_ids_empty_results(monkeypatch: pytest.MonkeyPatch) -
 
 def test_available_genres_and_tags_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """Genre/tag helpers should return parsed data."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     async def fake_make_request(_query: str, _variables: dict | None = None) -> dict:
         return {
@@ -207,7 +207,7 @@ def test_available_genres_and_tags_uses_cache(monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.asyncio
 async def test_search_media_ids_rejects_all_none_filters() -> None:
     """Filters that only contain None values should be rejected."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     with pytest.raises(AniListFilterError):
         await client.search_media_ids(filters={"search": None})
@@ -216,7 +216,7 @@ async def test_search_media_ids_rejects_all_none_filters() -> None:
 @pytest.mark.asyncio
 async def test_batch_get_anime_returns_empty_for_no_ids() -> None:
     """Empty ID lists should return an empty result."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     assert await client.batch_get_anime([]) == []
 
@@ -224,7 +224,7 @@ async def test_batch_get_anime_returns_empty_for_no_ids() -> None:
 @pytest.mark.asyncio
 async def test_batch_get_anime_uses_cache_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cached entries should be returned without API calls."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
     client.offline_anilist_entries[1] = Media(
         id=1,
         status=MediaStatus.FINISHED,
@@ -234,7 +234,7 @@ async def test_batch_get_anime_uses_cache_only(monkeypatch: pytest.MonkeyPatch) 
     async def _boom(*_args, **_kwargs):
         raise AssertionError("unexpected request")
 
-    monkeypatch.setattr(AniListClient, "_make_request", _boom, raising=False)
+    monkeypatch.setattr(AnilistClient, "_make_request", _boom, raising=False)
 
     media = await client.batch_get_anime([1])
 
@@ -246,7 +246,7 @@ async def test_make_request_retries_on_rate_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate-limited requests should retry and succeed."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     class DummyResponse:
         def __init__(self, status: int, headers: dict | None = None, json_data=None):
@@ -304,7 +304,7 @@ async def test_make_request_retries_on_bad_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bad gateway responses should retry and succeed."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     class DummyResponse:
         def __init__(self, status: int, json_data=None):
@@ -362,7 +362,7 @@ async def test_make_request_retries_until_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Repeated client errors should raise after max attempts."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     class DummySession:
         def __init__(self) -> None:
@@ -394,7 +394,7 @@ async def test_make_request_logs_response_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Response errors should log and retry once."""
-    client = AniListClient(anilist_token=None)
+    client = AnilistClient(anilist_token=None)
 
     class DummyResponse:
         def __init__(self, status: int, json_data=None, text_data: str = "") -> None:
@@ -480,14 +480,14 @@ def test_get_session_sets_auth_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         "anibridge.app.core.anilist.aiohttp.ClientSession", _client_session
     )
 
-    client = AniListClient(anilist_token="token")
+    client = AnilistClient(anilist_token="token")
     session = asyncio.run(client._get_session())
 
     assert session.headers["Authorization"] == "Bearer token"
     assert headers_seen["User-Agent"].startswith("AniBridge/")
 
 
-async def _clear_search_media_ids_cache(client: AniListClient) -> None:
+async def _clear_search_media_ids_cache(client: AnilistClient) -> None:
     cache = getattr(client.search_media_ids, "cache", None)
     if cache is not None:
         await cache.clear()

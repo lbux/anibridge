@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from anibridge.utils.cache import cache
 
-from anibridge.app.core.anilist import AniListClient
+from anibridge.app.core.anilist import AnilistClient
 from anibridge.app.exceptions import ProfileNotFoundError, SchedulerNotInitializedError
 
 __all__ = ["AppState", "get_app_state", "get_bridge"]
@@ -28,7 +28,7 @@ class AppState:
     def __init__(self) -> None:
         """Initialize empty state containers and record process start time."""
         self.scheduler: SchedulerClient | None = None
-        self.public_anilist: AniListClient | None = None
+        self.public_anilist: AnilistClient | None = None
         self.on_shutdown_callbacks: list[Callable[[], Any]] = []
         self.started_at: datetime = datetime.now(UTC)
         self.restart_requested: bool = False
@@ -71,14 +71,14 @@ class AppState:
         """Mark that a full process restart was requested."""
         self.restart_requested = True
 
-    async def ensure_public_anilist(self) -> AniListClient:
+    async def ensure_public_anilist(self) -> AnilistClient:
         """Get or create the shared public AniList client.
 
         Returns:
-            AniListClient: A tokenless AniList client suitable for public queries.
+            AnilistClient: A tokenless AniList client suitable for public queries.
         """
         if self.public_anilist is None:
-            self.public_anilist = AniListClient(anilist_token=None)
+            self.public_anilist = AnilistClient(anilist_token=None)
             await self.public_anilist.initialize()
         return self.public_anilist
 

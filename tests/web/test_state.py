@@ -29,7 +29,7 @@ async def test_app_state_public_anilist_lifecycle(monkeypatch: pytest.MonkeyPatc
     """ensure_public_anilist caches the client and shutdown closes it."""
     dummy = DummyAniListClient()
     monkeypatch.setattr(
-        "anibridge.app.web.state.AniListClient", lambda anilist_token=None: dummy
+        "anibridge.app.web.state.AnilistClient", lambda anilist_token=None: dummy
     )
 
     get_app_state.cache_clear()

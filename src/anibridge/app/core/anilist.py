@@ -12,10 +12,10 @@ from anibridge.app import __version__, log
 from anibridge.app.exceptions import AniListFilterError, AniListSearchError
 from anibridge.app.models.schemas.anilist import Media
 
-__all__ = ["AniListClient"]
+__all__ = ["AnilistClient"]
 
 
-class AniListClient:
+class AnilistClient:
     """Client for interacting with the AniList GraphQL API.
 
     Provides read-only helpers for fetching AniList genres/tags, resolving filtered
