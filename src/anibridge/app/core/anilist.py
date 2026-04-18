@@ -353,92 +353,64 @@ class AniListClient:
         return result
 
     @global_anilist_limiter
-    async def _make_request(
-        self, query: str, variables: dict | None = None, retry_count: int = 0
-    ) -> dict:
-        """Makes a rate-limited request to the AniList GraphQL API.
-
-        Handles rate limiting, authentication, and automatic retries for
-        rate limit exceeded responses.
-
-        Args:
-            query (str): GraphQL query string
-            variables (dict | None): Variables for the GraphQL query
-            retry_count (int): Number of retries attempted (used for temporary errors)
-
-        Returns:
-            dict: JSON response from the API
-
-        Raises:
-            aiohttp.ClientError: If the request fails for any reason other than rate
-                limiting
-
-        Note:
-            - Implements rate limiting of 30 requests per minute
-            - Automatically retries after waiting if rate limit is exceeded
-            - Includes Authorization header using the stored token
-        """
+    async def _make_request(self, query: str, variables: dict | None = None) -> dict:
+        """Make a rate-limited AniList GraphQL request with bounded retries."""
         max_attempts = 3
-        if retry_count >= max_attempts:
-            raise aiohttp.ClientError("Failed to make request after 3 tries")
+        non_retryable_statuses = {
+            401: "Unauthorized API request (401). Verify your AniList token is valid.",
+            403: (
+                "Request forbidden (403). The API may be down or your token may "
+                "lack permissions."
+            ),
+            404: "Not found (404). The requested resource might not exist.",
+        }
 
-        variables = variables or {}
         session = await self._get_session()
-        clean_query = " ".join(query.split())
-        variable_keys = ", ".join(sorted(variables.keys()))
-        log.debug(
-            "AniList request attempt $$'%s'$$ with variables $${%s}$$",
-            retry_count + 1,
-            variable_keys,
-        )
-
-        for attempt in range(retry_count + 1, max_attempts + 1):
+        for attempt in range(1, max_attempts + 1):
             try:
+                await global_anilist_limiter.acquire(asynchronous=True)
+
                 async with session.post(
-                    self.API_URL, json={"query": query, "variables": variables}
+                    self.API_URL, json={"query": query, "variables": variables or {}}
                 ) as response:
-                    if response.status == 429:
-                        retry_after = int(response.headers.get("Retry-After", 60))
-                        if attempt < max_attempts:
-                            log.warning(
-                                "Rate limit exceeded, waiting %s seconds "
-                                "(attempt %s/%s)",
-                                retry_after,
-                                attempt,
-                                max_attempts,
-                            )
-                            await asyncio.sleep(retry_after + 1)
-                            continue
+                    if response.status in non_retryable_statuses:
+                        clean_query = " ".join(query.split())
                         raise aiohttp.ClientError(
-                            "AniList API rate limited (429). "
-                            f"Retry-After: {retry_after}"
+                            non_retryable_statuses[response.status]
+                            + f"; query={clean_query}; variables={variables}"
                         )
 
-                    if response.status == 502:
+                    if response.status == 429:
+                        retry_after = response.headers.get("Retry-After", "3")
+                        delay = int(retry_after) if retry_after.isdigit() else 3
+
                         if attempt < max_attempts:
                             log.warning(
-                                "Received 502 Bad Gateway from AniList, retrying "
-                                "(attempt %s/%s)",
+                                "AniList API rate limited (attempt %s/%s), retrying in "
+                                "%ss",
                                 attempt,
                                 max_attempts,
+                                delay,
                             )
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(delay)
                             continue
+
                         raise aiohttp.ClientError(
-                            "AniList API request failed with status 502"
+                            f"AniList API rate limited (429) after {max_attempts} "
+                            "attempts"
                         )
 
                     response.raise_for_status()
                     return await response.json()
 
             except (
-                aiohttp.ClientResponseError,
-                aiohttp.ClientConnectionError,
                 TimeoutError,
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientResponseError,
             ) as exc:
                 if attempt < max_attempts:
-                    log.error(
-                        "Retrying failed AniList request (attempt %s/%s): %s",
+                    log.warning(
+                        "Retrying AniList request (attempt %s/%s): %s",
                         attempt,
                         max_attempts,
                         exc,
@@ -446,15 +418,15 @@ class AniListClient:
                     await asyncio.sleep(1)
                     continue
 
-                error_message = (
-                    exc.message
-                    if isinstance(exc, aiohttp.ClientResponseError)
-                    else str(exc)
-                )
+                clean_query = " ".join(query.split())
                 raise aiohttp.ClientError(
                     "AniList request failed after 3 attempts. "
-                    f"error={exc.__class__.__name__}: {error_message}; "
+                    f"error={exc.__class__.__name__}: {exc}; "
                     f"query={clean_query}; variables={variables}"
                 ) from exc
 
-        raise aiohttp.ClientError("AniList request failed unexpectedly")
+        clean_query = " ".join(query.split())
+        raise aiohttp.ClientError(
+            f"AniList request failed unexpectedly; query={clean_query}; "
+            f"variables={variables}"
+        )
