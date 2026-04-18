@@ -1,6 +1,7 @@
 """Tests for the profile scheduler actor."""
 
 import asyncio
+import contextlib
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -335,3 +336,38 @@ async def test_sync_queues_requests_while_worker_is_running(
 
     assert captured == [(True, ["7"], "api")]
     profile_scheduler._worker_task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_sync_falls_back_when_worker_task_is_dead(
+    bridge: _Bridge,
+    profile_scheduler: ProfileScheduler,
+) -> None:
+    """sync() should bypass the dead worker and execute directly."""
+    profile_scheduler._running = True
+    # Create a worker task that has already completed (simulating a dead worker).
+    dead = asyncio.get_running_loop().create_future()
+    dead.set_result(None)
+    profile_scheduler._worker_task = dead  #  # ty:ignore[invalid-assignment]
+
+    await profile_scheduler.sync(poll=False, library_keys=["k"], source="fallback")
+
+    assert bridge.calls == [(False, ["k"])]
+
+
+@pytest.mark.asyncio
+async def test_on_worker_exit_logs_unexpected_exception(
+    profile_scheduler: ProfileScheduler,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Worker exit callback should log errors for unexpected task failures."""
+    task = asyncio.get_running_loop().create_future()
+    task.set_exception(RuntimeError("oops"))
+
+    # Consume the exception to prevent "Future exception was never retrieved".
+    with contextlib.suppress(RuntimeError):
+        task.result()
+
+    profile_scheduler._on_worker_exit(task)  # ty:ignore[invalid-argument-type]
+
+    assert any("Sync worker exited unexpectedly" in r.message for r in caplog.records)

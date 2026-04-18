@@ -240,7 +240,7 @@ class ProfileScheduler:
             library_keys (Sequence[str] | None): Optional specific library keys to sync.
             source (str): The source of the sync request, used for logging and metrics.
         """
-        if not self._running or self._worker_task is None:
+        if not self._running or self._worker_task is None or self._worker_task.done():
             self._last_sync_sources = (source,)
             await self._execute_sync(poll=poll, library_keys=library_keys)
             return
@@ -272,12 +272,23 @@ class ProfileScheduler:
 
         self._running = True
         self._worker_task = asyncio.create_task(self._sync_worker())
+        self._worker_task.add_done_callback(self._on_worker_exit)
 
         if ScanMode.PERIODIC in self.scan_modes:
             self._spawn_loop(name="periodic", interval=self.scan_interval, poll=False)
 
         if ScanMode.POLL in self.scan_modes:
             self._spawn_loop(name="poll", interval=self.poll_interval, poll=True)
+
+    def _on_worker_exit(self, task: asyncio.Task) -> None:
+        """Handle unexpected worker task completion."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            log.error(
+                "[%s] Sync worker exited unexpectedly: %s", self.profile_name, exc
+            )
 
     async def stop(self, *, set_stop_event: bool = True) -> None:
         """Stop the profile worker and cancel active tasks."""
