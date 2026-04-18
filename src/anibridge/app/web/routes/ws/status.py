@@ -11,6 +11,9 @@ __all__ = ["router"]
 
 router = APIRouter()
 
+_MAX_IDLE_INTERVAL = 10.0
+_ACTIVE_SYNC_INTERVAL = 0.5
+
 
 @router.websocket("")
 async def status_ws(ws: WebSocket) -> None:
@@ -20,9 +23,10 @@ async def status_ws(ws: WebSocket) -> None:
         ws (WebSocket): The WebSocket connection instance.
     """
     await ws.accept()
+    app_state = get_app_state()
     try:
         while True:
-            scheduler = get_app_state().scheduler
+            scheduler = app_state.scheduler
             data = (
                 {"profiles": await scheduler.get_status()}
                 if scheduler
@@ -30,19 +34,21 @@ async def status_ws(ws: WebSocket) -> None:
             )
             await ws.send_json(data)
 
-            # If any profile reports an active current_sync, increase refresh rate
-            refresh = 5.0
+            # If any profile reports an active current_sync, use a fast refresh.
+            # Otherwise, wait for an explicit status-change notification (or timeout).
             try:
                 profiles = data.get("profiles", {})
-                if any(
+                syncing = any(
                     (p.get("status", {}).get("current_sync") or {}).get("state")
                     == "running"
                     for p in profiles.values()
-                ):
-                    refresh = 0.5
+                )
             except Exception:
-                pass
+                syncing = False
 
-            await asyncio.sleep(refresh)
+            if syncing:
+                await asyncio.sleep(_ACTIVE_SYNC_INTERVAL)
+            else:
+                await app_state.wait_status_change(max_wait=_MAX_IDLE_INTERVAL)
     except WebSocketDisconnect:
         pass

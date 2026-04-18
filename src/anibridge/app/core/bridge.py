@@ -29,6 +29,7 @@ from anibridge.app.models.db.sync_history import SyncOutcome
 from anibridge.app.utils.cron import get_next_interval_seconds
 from anibridge.app.utils.memory import release_memory
 from anibridge.app.utils.terminal import ARROW
+from anibridge.app.web.state import get_app_state
 
 __all__ = ["BridgeClient"]
 
@@ -345,6 +346,7 @@ class BridgeClient:
             section_items_total=0,
             section_items_processed=0,
         )
+        get_app_state().notify_status_change()
         sync_stats = SyncStats()
 
         try:
@@ -411,6 +413,7 @@ class BridgeClient:
             raise
         finally:
             self.current_sync = None
+            get_app_state().notify_status_change()
 
             await movie_sync.clear_cache()
             await show_sync.clear_cache()

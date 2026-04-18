@@ -29,13 +29,16 @@ async def test_status_websocket_streams_scheduler_state(monkeypatch) -> None:
             return {"default": {"status": {"current_sync": {"state": "running"}}}}
 
     async def _disconnect(seconds: float) -> None:
-        assert seconds == 0.5
+        assert seconds == status_ws_module._ACTIVE_SYNC_INTERVAL
         raise WebSocketDisconnect
+
+    class _State:
+        scheduler = _Scheduler()
 
     monkeypatch.setattr(
         status_ws_module,
         "get_app_state",
-        lambda: type("State", (), {"scheduler": _Scheduler()})(),
+        lambda: _State(),
     )
     monkeypatch.setattr(status_ws_module.asyncio, "sleep", _disconnect)
 
@@ -51,16 +54,17 @@ async def test_status_websocket_streams_scheduler_state(monkeypatch) -> None:
 async def test_status_websocket_handles_missing_scheduler(monkeypatch) -> None:
     websocket = _FakeStatusWebSocket()
 
-    async def _disconnect(seconds: float) -> None:
-        assert seconds == 5.0
-        raise WebSocketDisconnect
+    class _State:
+        scheduler = None
+
+        async def wait_status_change(self, *, max_wait: float) -> None:
+            raise WebSocketDisconnect
 
     monkeypatch.setattr(
         status_ws_module,
         "get_app_state",
-        lambda: type("State", (), {"scheduler": None})(),
+        lambda: _State(),
     )
-    monkeypatch.setattr(status_ws_module.asyncio, "sleep", _disconnect)
 
     await status_ws_module.status_ws(cast(Any, websocket))
 

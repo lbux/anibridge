@@ -4,6 +4,7 @@ Holds references to long-lived singletons (scheduler, log broadcaster, etc.) nee
 route handlers and websocket endpoints.
 """
 
+import asyncio
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -31,6 +32,24 @@ class AppState:
         self.on_shutdown_callbacks: list[Callable[[], Any]] = []
         self.started_at: datetime = datetime.now(UTC)
         self.restart_requested: bool = False
+        self._status_changed: asyncio.Event = asyncio.Event()
+
+    def notify_status_change(self) -> None:
+        """Signal that scheduler/profile status has changed.
+
+        Wakes any WebSocket handlers waiting on `wait_status_change`.
+        """
+        self._status_changed.set()
+
+    async def wait_status_change(self, max_wait: float) -> None:
+        """Wait up to `max_wait` seconds for a status change notification.
+
+        After waking (or on timeout) the internal flag is cleared so the next
+        call blocks again until a new notification arrives.
+        """
+        with suppress(TimeoutError):
+            await asyncio.wait_for(self._status_changed.wait(), timeout=max_wait)
+        self._status_changed.clear()
 
     def set_scheduler(self, scheduler: SchedulerClient) -> None:
         """Set the scheduler client.
