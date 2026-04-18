@@ -269,9 +269,37 @@ class MappingsService:
 
         if spec.kind == QueryFieldKind.ANILIST_NUMERIC:
             if values_tuple:
-                raise AniListFilterError(
-                    f"AniList filter '{spec.key}' does not support multiple values"
+                if not spec.anilist_multi_field:
+                    raise AniListFilterError(
+                        f"AniList filter '{spec.key}' does not support multiple values"
+                    )
+
+                parse_numeric = (
+                    self._parse_fuzzy_date_int
+                    if spec.anilist_value_type == "fuzzy_date"
+                    else self._parse_int_value
                 )
+                resolved_values = [
+                    parsed
+                    for item in values_tuple
+                    if (parsed := parse_numeric(item.strip())) is not None
+                ]
+                unique_values = list(dict.fromkeys(resolved_values))
+                if not unique_values:
+                    raise AniListFilterError(
+                        f"AniList filter '{spec.key}' requires at least one value"
+                    )
+                if len(unique_values) != len(values_tuple):
+                    invalid_values = [
+                        item
+                        for item in values_tuple
+                        if parse_numeric(item.strip()) is None
+                    ]
+                    if invalid_values:
+                        raise AniListFilterError(
+                            f"AniList filter '{spec.key}' has an invalid numeric value"
+                        )
+                return {spec.anilist_multi_field: unique_values}
             cmp_filter, range_filter, text_value = self._parse_numeric_filters(value)
             filters_dict = self._build_anilist_numeric_filters(
                 spec, cmp_filter, range_filter, text_value

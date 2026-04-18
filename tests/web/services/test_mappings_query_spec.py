@@ -3,6 +3,7 @@
 from anibridge.app.config.database import db
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.web.services.mappings_query_spec import (
+    QueryFieldOperator,
     get_query_field_map,
     get_query_field_specs,
 )
@@ -63,3 +64,12 @@ def test_query_field_specs_include_distinct_provider_values() -> None:
         ]
     finally:
         _clear_tables()
+
+
+def test_anilist_numeric_operator_metadata_matches_supported_filters() -> None:
+    """Only AniList ID should advertise multi-value numeric support."""
+    field_map = {spec.key: spec for spec in get_query_field_specs()}
+
+    assert QueryFieldOperator.IN in field_map["anilist.id"].operators
+    assert field_map["anilist.id"].anilist_multi_field == "id_in"
+    assert QueryFieldOperator.IN not in field_map["anilist.episodes"].operators

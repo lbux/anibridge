@@ -362,6 +362,25 @@ def test_build_anilist_numeric_filters_fuzzy_ranges() -> None:
         service._build_anilist_term_filters(invalid_spec, "not-a-number")
 
 
+def test_build_anilist_numeric_id_filters_support_multiple_values() -> None:
+    """AniList ID filters should map IN queries to id_in."""
+    service = MappingsService()
+    spec = service._FIELD_MAP["anilist.id"]
+
+    assert service._build_anilist_term_filters(
+        spec,
+        "1",
+        multi_values=("1", "2", "1"),
+    ) == {"id_in": [1, 2]}
+
+    with pytest.raises(AniListFilterError):
+        service._build_anilist_term_filters(
+            spec,
+            "1",
+            multi_values=("1", "bad"),
+        )
+
+
 def test_collect_anilist_and_groups() -> None:
     """AniList key terms are grouped when directly AND-ed."""
     service = MappingsService()

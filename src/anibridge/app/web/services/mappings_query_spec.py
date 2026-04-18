@@ -81,8 +81,8 @@ _INT_OPS = (
     QueryFieldOperator.LT,
     QueryFieldOperator.LTE,
     QueryFieldOperator.RANGE,
-    QueryFieldOperator.IN,
 )
+_INT_MULTI_OPS = (*_INT_OPS, QueryFieldOperator.IN)
 _STRING_OPS = (
     QueryFieldOperator.EQ,
     QueryFieldOperator.STAR_WILDCARD,
@@ -202,9 +202,10 @@ _ANILIST_FIELDS: tuple[QueryFieldSpec, ...] = (
         desc="AniList ID",
         kind=QueryFieldKind.ANILIST_NUMERIC,
         type=QueryFieldType.INT,
-        operators=_INT_OPS,
+        operators=_INT_MULTI_OPS,
         anilist_field="id",
         anilist_value_type="int",
+        anilist_multi_field="id_in",
     ),
     QueryFieldSpec(
         key="anilist.duration",
@@ -269,6 +270,42 @@ _ANILIST_FIELDS: tuple[QueryFieldSpec, ...] = (
         anilist_field="status",
         anilist_value_type="enum",
         anilist_multi_field="status_in",
+    ),
+    QueryFieldSpec(
+        key="anilist.average_score",
+        desc="Average score (0-100)",
+        kind=QueryFieldKind.ANILIST_NUMERIC,
+        type=QueryFieldType.INT,
+        operators=_INT_OPS,
+        anilist_field="averageScore",
+        anilist_value_type="int",
+    ),
+    QueryFieldSpec(
+        key="anilist.popularity",
+        desc="Popularity score",
+        kind=QueryFieldKind.ANILIST_NUMERIC,
+        type=QueryFieldType.INT,
+        operators=_INT_OPS,
+        anilist_field="popularity",
+        anilist_value_type="int",
+    ),
+    QueryFieldSpec(
+        key="anilist.genre",
+        desc="Genre (e.g. Action, Comedy)",
+        kind=QueryFieldKind.ANILIST_STRING,
+        type=QueryFieldType.STRING,
+        operators=_ENUM_OPS,
+        anilist_field="genre_in",
+        anilist_value_type="string",
+    ),
+    QueryFieldSpec(
+        key="anilist.tag",
+        desc="Tag (e.g. Shounen, Isekai)",
+        kind=QueryFieldKind.ANILIST_STRING,
+        type=QueryFieldType.STRING,
+        operators=_ENUM_OPS,
+        anilist_field="tag_in",
+        anilist_value_type="string",
     ),
 )
 

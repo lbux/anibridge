@@ -132,37 +132,40 @@ class AnilistClient:
         max_results = max(1, int(max_results))
 
         variable_types = {
-            "search": "String",
-            "format": "MediaFormat",
-            "format_in": "[MediaFormat]",
-            "status": "MediaStatus",
-            "status_in": "[MediaStatus]",
-            "status_not_in": "[MediaStatus]",
-            "duration": "Int",
-            "duration_greater": "Int",
-            "duration_lesser": "Int",
-            "episodes": "Int",
-            "episodes_greater": "Int",
-            "episodes_lesser": "Int",
-            "genre": "String",
-            "genre_in": "[String]",
-            "genre_not_in": "[String]",
-            "tag": "String",
-            "tag_in": "[String]",
-            "tag_not_in": "[String]",
-            "averageScore": "Int",
             "averageScore_greater": "Int",
             "averageScore_lesser": "Int",
-            "popularity": "Int",
-            "popularity_greater": "Int",
-            "popularity_lesser": "Int",
-            "startDate": "FuzzyDateInt",
-            "startDate_greater": "FuzzyDateInt",
-            "startDate_lesser": "FuzzyDateInt",
-            "endDate": "FuzzyDateInt",
+            "averageScore": "Int",
+            "duration_greater": "Int",
+            "duration_lesser": "Int",
+            "duration": "Int",
             "endDate_greater": "FuzzyDateInt",
             "endDate_lesser": "FuzzyDateInt",
+            "endDate": "FuzzyDateInt",
+            "episodes_greater": "Int",
+            "episodes_lesser": "Int",
+            "episodes": "Int",
+            "format_in": "[MediaFormat]",
+            "format": "MediaFormat",
+            "genre_in": "[String]",
+            "genre_not_in": "[String]",
+            "genre": "String",
+            "id_in": "[Int]",
+            "id_not_in": "[Int]",
+            "id": "Int",
+            "popularity_greater": "Int",
+            "popularity_lesser": "Int",
+            "popularity": "Int",
+            "search": "String",
             "sort": "[MediaSort]",
+            "startDate_greater": "FuzzyDateInt",
+            "startDate_lesser": "FuzzyDateInt",
+            "startDate": "FuzzyDateInt",
+            "status_in": "[MediaStatus]",
+            "status_not_in": "[MediaStatus]",
+            "status": "MediaStatus",
+            "tag_in": "[String]",
+            "tag_not_in": "[String]",
+            "tag": "String",
         }
 
         base_variables: dict[str, Any] = {"perPage": per_page}
@@ -352,7 +355,6 @@ class AnilistClient:
 
         return result
 
-    @global_anilist_limiter
     async def _make_request(self, query: str, variables: dict | None = None) -> dict:
         """Make a rate-limited AniList GraphQL request with bounded retries."""
         max_attempts = 3
