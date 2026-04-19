@@ -22,6 +22,8 @@ from anibridge.app.utils.memory import release_memory
 
 __all__ = ["SchedulerClient"]
 
+_MAINTENANCE_TIMEOUT: float = 3600
+
 
 class SchedulerClient:
     """Application scheduler that manages all profiles and global tasks.
@@ -459,7 +461,18 @@ class SchedulerClient:
                 )
 
         log.info("Starting database sync (source=%s)", source)
-        await self._sync_coordinator.run_maintenance(_sync_and_backup)
+        try:
+            await self._sync_coordinator.run_maintenance(
+                _sync_and_backup, timeout_=_MAINTENANCE_TIMEOUT
+            )
+        except TimeoutError:
+            log.error(
+                "Database sync timed out after %d seconds; "
+                "maintenance lock released (source=%s)",
+                _MAINTENANCE_TIMEOUT,
+                source,
+            )
+            raise
         release_memory()
 
     def _get_next_1am_utc(self, now: datetime) -> datetime:
@@ -556,7 +569,9 @@ class SchedulerClient:
             self.get_profiles_for_library_provider.cache_clear()
             log.success("[%s] Profile reinitialized successfully", profile_name)
 
-        await self._sync_coordinator.run_maintenance(_reinitialize)
+        await self._sync_coordinator.run_maintenance(
+            _reinitialize, timeout_=_MAINTENANCE_TIMEOUT
+        )
 
     @lru_cache(maxsize=128)
     def get_profiles_for_library_provider(self, namespace: str) -> Sequence[str]:

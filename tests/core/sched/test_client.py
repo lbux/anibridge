@@ -680,9 +680,14 @@ async def test_daily_db_sync_loop_runs(
     def _next_sync(_now: datetime) -> datetime:
         return datetime.now(UTC)
 
+    _real_wait_for = asyncio.wait_for
+
     async def _fast_wait(coro, *_args, **_kwargs):
-        coro.close()
-        raise TimeoutError
+        # let maintenance timeout work normally
+        if getattr(coro, "__qualname__", "").endswith(".wait"):
+            coro.close()
+            raise TimeoutError
+        return await _real_wait_for(coro, *_args, **_kwargs)
 
     monkeypatch.setattr(scheduler, "_get_next_1am_utc", _next_sync)
     monkeypatch.setattr(asyncio, "wait_for", _fast_wait)
@@ -989,9 +994,14 @@ async def test_daily_db_sync_loop_handles_sync_error(
     def _next_sync(_now: datetime) -> datetime:
         return datetime.now(UTC)
 
+    _real_wait_for = asyncio.wait_for
+
     async def _fast_wait(coro, *_args, **_kwargs):
-        coro.close()
-        raise TimeoutError
+        # Only skip the stop_event sleep; let maintenance timeout work normally
+        if getattr(coro, "__qualname__", "").endswith(".wait"):
+            coro.close()
+            raise TimeoutError
+        return await _real_wait_for(coro, *_args, **_kwargs)
 
     async def _sync_db() -> None:
         scheduler.stop_event.set()

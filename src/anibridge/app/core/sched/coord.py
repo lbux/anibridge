@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 
 class GlobalSyncCoordinator:
@@ -12,6 +13,7 @@ class GlobalSyncCoordinator:
         self._active_profile_syncs = 0
         self._maintenance_active = False
         self._maintenance_waiting = 0
+        self._maintenance_started_at: float | None = None
         self._changed = asyncio.Event()
 
     def _notify(self) -> None:
@@ -35,8 +37,19 @@ class GlobalSyncCoordinator:
         self._active_profile_syncs = max(0, self._active_profile_syncs - 1)
         self._notify()
 
-    async def run_maintenance(self, work: Callable[[], Awaitable[None]]) -> None:
-        """Execute maintenance work with exclusive access against profile syncs."""
+    async def run_maintenance(
+        self,
+        work: Callable[[], Awaitable[None]],
+        timeout_: float | None = None,
+    ) -> None:
+        """Execute maintenance work with exclusive access against profile syncs.
+
+        Args:
+            work: Async callable to execute under the maintenance lock.
+            timeout_: Maximum seconds the work may run before being cancelled.
+                `None` means no limit.  When exceeded the work coroutine is
+                cancelled, the lock is released, and `TimeoutError` is raised.
+        """
         self._maintenance_waiting += 1
         try:
             await self._wait_for(
@@ -49,17 +62,28 @@ class GlobalSyncCoordinator:
 
         self._maintenance_waiting -= 1
         self._maintenance_active = True
+        self._maintenance_started_at = asyncio.get_event_loop().time()
 
         try:
-            await work()
+            if timeout_ is not None:
+                await asyncio.wait_for(work(), timeout=timeout_)
+            else:
+                await work()
         finally:
             self._maintenance_active = False
+            self._maintenance_started_at = None
             self._notify()
 
-    def get_metrics(self) -> dict[str, int | bool]:
+    def get_metrics(self) -> dict[str, Any]:
         """Expose coordinator counters for diagnostics."""
+        duration: float | None = None
+        if self._maintenance_active and self._maintenance_started_at is not None:
+            duration = round(
+                asyncio.get_event_loop().time() - self._maintenance_started_at, 1
+            )
         return {
             "active_profile_syncs": self._active_profile_syncs,
             "maintenance_active": self._maintenance_active,
             "maintenance_waiting": self._maintenance_waiting,
+            "maintenance_duration_seconds": duration,
         }
