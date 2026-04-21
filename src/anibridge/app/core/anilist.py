@@ -105,7 +105,7 @@ class AnilistClient:
         _, tags = self._get_genres_and_tags()
         return tags
 
-    @ttl_cache(ttl=3600)
+    @ttl_cache(ttl=3600, maxsize=128)
     async def search_media_ids(
         self,
         *,
