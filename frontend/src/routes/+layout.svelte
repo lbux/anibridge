@@ -4,7 +4,6 @@
     import {
         Activity,
         ArchiveRestore,
-        Github,
         LayoutDashboard,
         List,
         Menu,
@@ -17,6 +16,7 @@
     import { resolve } from "$app/paths";
     import { page } from "$app/state";
     import logo from "$lib/assets/favicon.svg";
+    import GitHubIcon from "$lib/components/icons/github-icon.svelte";
 
     import "../app.css";
 
@@ -218,7 +218,7 @@
                             target="_blank"
                             rel="noopener"
                             class="inline-flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-200">
-                            <Github class="inline h-4 w-4" /><span>GitHub</span>
+                            <GitHubIcon class="inline h-4 w-4" /><span>GitHub</span>
                         </a>
                         <div>
                             <a

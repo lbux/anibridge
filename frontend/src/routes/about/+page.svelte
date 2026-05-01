@@ -9,13 +9,13 @@
         Clock3,
         Cpu,
         FileText,
-        Github,
         LoaderCircle,
         MessageCircle,
         RefreshCcw,
         ServerCog,
     } from "@lucide/svelte";
 
+    import GitHubIcon from "$lib/components/icons/github-icon.svelte";
     import type { AboutResponse, ProfileStatus } from "$lib/types/api";
     import { apiJson } from "$lib/utils/api";
     import { toast } from "$lib/utils/notify";
@@ -432,7 +432,7 @@
                 class="group flex h-full items-stretch gap-3 rounded-md border border-slate-800/70 bg-slate-900/50 p-4 transition-colors hover:bg-slate-900/70">
                 <div
                     class="flex h-full w-16 items-center justify-center rounded-md bg-slate-800/50 text-slate-300 transition-colors group-hover:bg-slate-800/70">
-                    <Github class="h-6 w-6" />
+                    <GitHubIcon class="h-6 w-6" />
                 </div>
                 <div class="flex flex-1 flex-col justify-center text-left">
                     <div class="text-sm font-semibold text-slate-100">
