@@ -1,5 +1,7 @@
 """AniBridge Initialization Module."""
 
+from anibridge.utils.cache import set_default_cache_dir
+
 from anibridge.app.config.settings import get_config
 from anibridge.app.utils.logging import get_logger
 from anibridge.app.utils.terminal import supports_utf8
@@ -51,3 +53,5 @@ else:
 |  Documentation: https://anibridge.eliasbenb.dev                               |
 |                                                                               |
 +-------------------------------------------------------------------------------+""".strip()
+
+set_default_cache_dir(config.data_path / ".cache")
