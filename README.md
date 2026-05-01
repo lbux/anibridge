@@ -14,7 +14,9 @@ AniBridge is a media synchronization tool designed to keep your anime watch acti
 [![Emby](https://img.shields.io/badge/Emby-52b54b?style=for-the-badge&logo=emby&logoColor=white)](https://anibridge.eliasbenb.dev/providers/library/emby)
 [![AniList](https://img.shields.io/badge/AniList-02A9FF?style=for-the-badge&logo=anilist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/anilist)
 [![MyAnimeList](https://img.shields.io/badge/MyAnimeList-2E51A2?style=for-the-badge&logo=myanimelist&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/mal)
-[![Trakt](https://img.shields.io/badge/Trakt-1DB954?style=for-the-badge&logo=trakt&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/trakt)
+
+<!-- [![Simkl](https://img.shields.io/badge/Simkl-000000?style=for-the-badge&logo=simkl&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/simkl)
+[![Trakt](https://img.shields.io/badge/Trakt-1DB954?style=for-the-badge&logo=trakt&logoColor=white)](https://anibridge.eliasbenb.dev/providers/list/trakt) -->
 
 ## Key Features
 
