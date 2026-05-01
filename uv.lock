@@ -114,6 +114,7 @@ dependencies = [
     { name = "anibridge-list-base" },
     { name = "anibridge-mal-provider" },
     { name = "anibridge-plex-provider" },
+    { name = "anibridge-simkl-provider" },
     { name = "anibridge-trakt-provider" },
     { name = "anibridge-utils" },
     { name = "bcrypt" },
@@ -154,6 +155,7 @@ requires-dist = [
     { name = "anibridge-list-base", git = "https://github.com/anibridge/anibridge-list-base.git?tag=main" },
     { name = "anibridge-mal-provider", git = "https://github.com/anibridge/anibridge-mal-provider.git?tag=main" },
     { name = "anibridge-plex-provider", git = "https://github.com/anibridge/anibridge-plex-provider.git?tag=main" },
+    { name = "anibridge-simkl-provider", git = "https://github.com/anibridge/anibridge-simkl-provider.git?tag=main" },
     { name = "anibridge-trakt-provider", git = "https://github.com/anibridge/anibridge-trakt-provider.git?tag=main" },
     { name = "anibridge-utils", git = "https://github.com/anibridge/anibridge-utils.git?tag=main" },
     { name = "bcrypt", specifier = ">=5.0.0" },
@@ -257,6 +259,18 @@ dependencies = [
     { name = "plexapi" },
     { name = "pydantic" },
     { name = "requests" },
+]
+
+[[package]]
+name = "anibridge-simkl-provider"
+version = "0.1.0"
+source = { git = "https://github.com/anibridge/anibridge-simkl-provider.git?tag=main#7421497a72f772aeee127bebf92e4b92ede084c3" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "anibridge-list-base" },
+    { name = "anibridge-utils" },
+    { name = "msgspec" },
+    { name = "pydantic" },
 ]
 
 [[package]]

@@ -47,6 +47,7 @@
         "packages/anibridge-list-base",
         "packages/anibridge-mal-provider",
         "packages/anibridge-plex-provider",
+        "packages/anibridge-simkl-provider",
         "packages/anibridge-utils"
     ],
     "prettier.enable": true,
