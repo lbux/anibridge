@@ -783,7 +783,7 @@ class BaseSyncClient[
         if final_status is None:
             return "status_unset"
         if (
-            field in (SyncField.USER_RATING, SyncField.REPEATS, SyncField.FINISHED_AT)
+            field in (SyncField.REPEATS, SyncField.FINISHED_AT)
             and final_status < ListStatus.COMPLETED
         ):
             return "requires_completed"

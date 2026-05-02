@@ -160,6 +160,7 @@ class SyncRuleTemplateId(BaseStrEnum):
     DISABLE_USER_RATING_AND_REVIEW = "disable_user_rating_and_review"
     PREVENT_REGRESSIONS = "prevent_regressions"
     PROMOTE_REWATCH = "promote_rewatch"
+    USER_RATING_REQUIRES_COMPLETED = "user_rating_requires_completed"
 
 
 SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
@@ -275,6 +276,23 @@ SYNC_RULE_TEMPLATES: Final[dict[SyncRuleTemplateId, SyncRuleTemplate]] = {
             )
         ],
     ),
+    SyncRuleTemplateId.USER_RATING_REQUIRES_COMPLETED: SyncRuleTemplate(
+        description=(
+            "Keep the current user rating until the resolved status is completed."
+        ),
+        user_rating=[
+            SyncRuleDefinition.model_validate(
+                {
+                    "name": "Require completed status for rating sync",
+                    "if": (
+                        "computed.status is None or "
+                        "computed.status < ListStatus.COMPLETED"
+                    ),
+                    "set": "current.user_rating",
+                }
+            )
+        ],
+    ),
 }
 
 
@@ -283,6 +301,7 @@ class SyncRulesConfig(BaseModel):
 
     templates: list[SyncRuleTemplateId] = Field(
         default_factory=lambda: [
+            SyncRuleTemplateId.USER_RATING_REQUIRES_COMPLETED,
             SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW,
             SyncRuleTemplateId.PREVENT_REGRESSIONS,
         ],

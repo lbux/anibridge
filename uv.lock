@@ -188,7 +188,7 @@ dev = [
 [[package]]
 name = "anibridge-anilist-provider"
 version = "0.2.1"
-source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=main#4707a6607c737c63a38f33175ad3f31486643333" }
+source = { git = "https://github.com/anibridge/anibridge-anilist-provider.git?tag=main#fabfcdb2dcf2facce1262c8c8240e052f3f970b4" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anibridge-list-base" },

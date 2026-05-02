@@ -264,6 +264,20 @@ def test_sync_rules_disable_review_and_rating_template_overrides_defaults() -> N
     assert rules.templates == [SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW]
 
 
+def test_sync_rules_default_templates_disable_review_and_gate_ratings() -> None:
+    """Defaults should disable reviews and ratings without user overrides."""
+    rules = SyncRulesConfig()
+
+    field_rules = rules.field_rules()
+
+    assert rules.templates[:2] == [
+        SyncRuleTemplateId.USER_RATING_REQUIRES_COMPLETED,
+        SyncRuleTemplateId.DISABLE_USER_RATING_AND_REVIEW,
+    ]
+    assert field_rules["review"] is False
+    assert field_rules["user_rating"] is False
+
+
 def test_sync_rules_prevent_regressions_template_adds_guard_rules() -> None:
     """The regression template should add keep-current rules for decreasing fields."""
     rules = SyncRulesConfig.model_validate(

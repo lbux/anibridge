@@ -386,7 +386,9 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             return False
         if item.on_watchlist or season.on_watchlist:
             return False
-        if item.user_rating is not None or season.user_rating is not None:
+        if not self._sync_rule_engine.is_disabled("user_rating") and (
+            item.user_rating is not None or season.user_rating is not None
+        ):
             return False
         return not any(
             episode.view_count

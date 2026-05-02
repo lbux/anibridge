@@ -1003,6 +1003,7 @@ async def test_sync_media_info_reports_rule_and_status_blocks(
         total_units=1,
     )
     entry.progress = 0
+    entry.user_rating = 20
     set_sync_rules(
         stub_client,
         {
@@ -1026,14 +1027,109 @@ async def test_sync_media_info_reports_rule_and_status_blocks(
     )
 
     assert result is SyncOutcome.SYNCED
+    assert provider.updated_entries[0][1].user_rating == 20
     with sync_db as ctx:
         record = ctx.session.query(SyncHistory).one()
         assert record.info is not None
         assert "progress(no_match)" not in (record.info.get("field_blocks") or "")
         assert "review(disabled)" in (record.info.get("field_blocks") or "")
-        assert "user_rating(requires_completed)" in (
+        assert "user_rating(disabled)" in (record.info.get("field_blocks") or "")
+        assert "user_rating(requires_completed)" not in (
             record.info.get("field_blocks") or ""
         )
+
+
+@pytest.mark.asyncio
+async def test_user_rating_rules_can_bypass_completed_status_gate(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Explicit user_rating rules should allow rating sync before completion."""
+    movie = make_movie(view_count=2, user_rating=80)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    entry.user_rating = 20
+    set_sync_rules(
+        stub_client,
+        {
+            "user_rating": [
+                {
+                    "name": "Force rating sync",
+                    "if": "computed.user_rating is not None",
+                    "set": "computed.user_rating",
+                }
+            ],
+        },
+    )
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert result is SyncOutcome.SYNCED
+    assert provider.updated_entries[0][1].user_rating == 50
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert "user_rating(Force rating sync)" in (
+            record.info.get("applied_rules") or ""
+        )
+
+
+@pytest.mark.asyncio
+async def test_status_gate_still_blocks_non_rating_rules(
+    stub_client: StubSyncClient, sync_db
+) -> None:
+    """Rules for other completed-gated fields should not bypass status gates."""
+    movie = make_movie(view_count=2, user_rating=80)
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="movie-entry",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    entry.status = ListStatus.CURRENT
+    entry.repeats = 0
+    stub_client._repeats_override = 2
+    set_sync_rules(
+        stub_client,
+        {
+            "repeats": [
+                {
+                    "name": "Force repeats sync",
+                    "if": "computed.repeats is not None",
+                    "set": "computed.repeats",
+                }
+            ],
+        },
+    )
+
+    result = await stub_client.sync_media(
+        item=movie,
+        child_item=movie,
+        grandchild_items=(movie,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+    )
+
+    assert result is SyncOutcome.SYNCED
+    assert provider.updated_entries[0][1].repeats == 0
+    with sync_db as ctx:
+        record = ctx.session.query(SyncHistory).one()
+        assert record.info is not None
+        assert "repeats(requires_completed)" in (record.info.get("field_blocks") or "")
 
 
 @pytest.mark.asyncio

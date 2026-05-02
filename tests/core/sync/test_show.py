@@ -227,6 +227,18 @@ def build_multi_season_show() -> tuple[
     return show, seasons, episodes
 
 
+class _ExplodingShowRating(FakeLibraryShow):
+    @property
+    def user_rating(self) -> int | None:
+        raise AssertionError("show user_rating should not be evaluated")
+
+
+class _ExplodingSeasonRating(FakeLibrarySeason):
+    @property
+    def user_rating(self) -> int | None:
+        raise AssertionError("season user_rating should not be evaluated")
+
+
 @pytest.mark.asyncio
 async def test_process_media_syncs_show_and_writes_history(
     show_client: ShowSyncClient, sync_db: AnibridgeDb
@@ -839,6 +851,68 @@ async def test_map_media_skips_inactive_mapping_ranges_before_lookup(
     assert results == []
     assert lookup_called is False
     assert search_called is False
+
+
+@pytest.mark.asyncio
+async def test_map_media_does_not_read_ratings_when_user_rating_disabled(
+    show_client: ShowSyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disabled user_rating sync should avoid rating-backed activity checks."""
+    show = _ExplodingShowRating(key="show-1", title="Show")
+    season = _ExplodingSeasonRating(
+        key="season-1",
+        title="S1",
+        index=1,
+        show=show,
+        mapping_descriptors=[("tmdb", "10", "s1")],
+    )
+    episodes = [
+        FakeLibraryEpisode(
+            key="ep-1",
+            title="Episode 1",
+            index=1,
+            season_index=1,
+            show=show,
+            season=season,
+            view_count=0,
+        )
+    ]
+    season._episodes = episodes
+    show.attach_children(episodes=episodes, seasons=[season])
+    lookup_called = False
+
+    async def _resolve_batch(**_kwargs):
+        return [
+            [
+                ResolvedListTarget(
+                    "905",
+                    (),
+                    (
+                        make_descriptor_mapping(
+                            descriptor=("tmdb", "10", "s1"),
+                            source_ranges=(MappingSpec(start=1, end=1, ratio=None),),
+                        ),
+                    ),
+                )
+            ]
+        ]
+
+    async def _get_entry(_key: str):
+        nonlocal lookup_called
+        lookup_called = True
+        return None
+
+    monkeypatch.setattr(show_module, "resolve_list_targets_batch", _resolve_batch)
+    monkeypatch.setattr(show_client._cache, "get_entry", _get_entry)
+
+    results = [
+        result
+        async for result in show_client.map_media(cast(LibraryShowProtocol, show))
+    ]
+
+    assert results == []
+    assert lookup_called is False
 
 
 @pytest.mark.asyncio
