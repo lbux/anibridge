@@ -397,6 +397,7 @@ class BaseSyncClient[
                 grandchild_items=grandchild_items,
                 list_media_key=resolved_list_key,
                 required_media_fields=self._rule_context_fields[SyncField.STATUS.value],
+                mappings=mappings,
             ),
         )
 
@@ -497,6 +498,7 @@ class BaseSyncClient[
             disabled_fields=self._disabled_fields,
             considered_attrs=considered_attrs,
             field_state=field_state,
+            mappings=mappings,
         )
 
         after_snapshot = EntrySnapshot.from_entry(planned_entry)
@@ -666,6 +668,7 @@ class BaseSyncClient[
         disabled_fields: Set[str],
         considered_attrs: MutableSet[str],
         field_state: _FieldApplicationState,
+        mappings: Sequence[AnibridgeDescriptorMapping] | None = None,
     ) -> None:
         """Apply non-status sync fields when gates and rules allow it."""
         for sync_field in SyncField:
@@ -688,6 +691,7 @@ class BaseSyncClient[
                 grandchild_items=grandchild_items,
                 list_media_key=list_media_key,
                 required_media_fields=self._rule_context_fields[sync_field.value],
+                mappings=mappings,
             )
 
             rule_decision = self._sync_rule_engine.evaluate_field(
@@ -745,6 +749,7 @@ class BaseSyncClient[
         grandchild_items,
         list_media_key,
         required_media_fields: frozenset[str],
+        mappings: Sequence[AnibridgeDescriptorMapping] | None = None,
     ) -> dict[str, Any]:
         """Build the shimmed `ctx` object exposed to sync rule expressions."""
         return {
@@ -754,6 +759,38 @@ class BaseSyncClient[
             "grandchildren": [
                 BaseSyncClient._shim_rule_media(g, required_media_fields)
                 for g in grandchild_items
+            ],
+            "mappings": [
+                BaseSyncClient._shim_rule_mapping(m) for m in (mappings or ())
+            ],
+        }
+
+    @staticmethod
+    def _shim_rule_mapping(mapping: AnibridgeDescriptorMapping) -> dict[str, Any]:
+        """Build a stable rule-facing view of a descriptor mapping."""
+        return {
+            "source": mapping.source,
+            "target": mapping.target,
+            "mappings": [
+                {
+                    "source_range": {
+                        "start": m.source_range.start,
+                        "end": m.source_range.end,
+                        "length": m.source_range.length,
+                    },
+                    "target_ranges": [
+                        {
+                            "start": r.start,
+                            "end": r.end,
+                            "length": r.length,
+                        }
+                        for r in m.target_ranges
+                    ],
+                    "target_ratio": m.target_ratio,
+                    "source_weight": m.source_weight,
+                    "target_weight": m.target_weight,
+                }
+                for m in mapping.mappings
             ],
         }
 

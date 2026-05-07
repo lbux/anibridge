@@ -1765,3 +1765,166 @@ async def test_process_media_skips_untrackable_items(
     await stub_client.process_media(movie)
 
     assert stub_client.sync_stats.skipped == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_media_exposes_mappings_in_ctx(
+    stub_client: StubSyncClient,
+    sync_db,
+) -> None:
+    """ctx.mappings should be populated from the mappings argument to sync_media."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="300-mappings-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    mapping = AnibridgeDescriptorMapping(
+        source=("anilist", "101", None), target=("_fake-list", "300-mappings-ctx", None)
+    )
+    mapping.add_mapping("1-12", "1-12")
+
+    set_sync_rules(
+        stub_client,
+        {
+            "progress": [
+                {
+                    "name": "mapping-start-check",
+                    "if": (
+                        "ctx.mappings and "
+                        "ctx.mappings[0].mappings[0].source_range.start == 1"
+                    ),
+                    "set": "42",
+                }
+            ]
+        },
+    )
+
+    media = make_movie(key="300-mappings-ctx")
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+        mappings=[mapping],
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    provider_entry = provider.updated_entries[-1][1]
+    assert provider_entry.progress == 42
+
+
+@pytest.mark.asyncio
+async def test_sync_media_ctx_mappings_empty_when_none_provided(
+    stub_client: StubSyncClient,
+    sync_db,
+) -> None:
+    """ctx.mappings should be an empty list when no mappings are passed."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="300-no-mappings-ctx",
+        title="Movie",
+        media_type=ListMediaType.MOVIE,
+        total_units=1,
+    )
+    provider.entries[entry.media().key] = entry
+
+    set_sync_rules(
+        stub_client,
+        {
+            "progress": [
+                {
+                    "name": "no-mapping-fallback",
+                    "if": "not ctx.mappings",
+                    "set": "99",
+                }
+            ]
+        },
+    )
+
+    media = make_movie(key="300-no-mappings-ctx")
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(media,),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+        mappings=None,
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    provider_entry = provider.updated_entries[-1][1]
+    assert provider_entry.progress == 99
+
+
+@pytest.mark.asyncio
+async def test_sync_media_index_based_progress_via_list_comp_rule(
+    stub_client: StubSyncClient,
+    sync_db,
+) -> None:
+    """An index-based progress rule using list comprehensions over ctx.grandchildren
+    should compute the correct offset relative to the mapping source start."""
+    provider = cast(FakeListProvider, stub_client.list_provider)
+    entry = FakeListEntry(
+        provider=provider,
+        key="300-index-progress",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=12,
+    )
+    provider.entries[entry.media().key] = entry
+
+    mapping = AnibridgeDescriptorMapping(
+        source=("anilist", "202", None),
+        target=("_fake-list", "300-index-progress", None),
+    )
+    mapping.add_mapping("13-24", "1-12")
+
+    set_sync_rules(
+        stub_client,
+        {
+            "vars": {
+                "watched_indices": (
+                    "[g.index for g in ctx.grandchildren "
+                    "if g.view_count and g.index is not None]"
+                ),
+                "mapping_start": (
+                    "ctx.mappings[0].mappings[0].source_range.start "
+                    "if ctx.mappings and ctx.mappings[0].mappings else 1"
+                ),
+            },
+            "progress": [
+                {
+                    "name": "index-based-progress",
+                    "if": "bool(vars.watched_indices)",
+                    "set": "max(vars.watched_indices) - vars.mapping_start + 1",
+                }
+            ],
+        },
+    )
+
+    watched_ep = _IndexedRuleMedia(key="ep-15", season_index=1, index=15)
+    watched_ep._view_count = 1
+    unwatched_ep = _IndexedRuleMedia(key="ep-16", season_index=1, index=16)
+    unwatched_ep._view_count = 0
+
+    media = make_movie(key="show-parent")
+    outcome = await stub_client.sync_media(
+        item=media,
+        child_item=media,
+        grandchild_items=(watched_ep, unwatched_ep),
+        entry=cast(ListEntryProtocol, entry),
+        list_media_key=entry.media().key,
+        mappings=[mapping],
+    )
+
+    assert outcome is SyncOutcome.SYNCED
+    provider_entry = provider.updated_entries[-1][1]
+    # max watched index = 15, mapping_start = 13, so progress = 15 - 13 + 1 = 3
+    assert provider_entry.progress == 3
