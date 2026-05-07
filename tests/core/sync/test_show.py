@@ -1799,6 +1799,92 @@ async def test_calculate_progress_applies_target_positive_ratio_compression(
 
 
 @pytest.mark.asyncio
+async def test_calculate_progress_prefers_specific_overlapping_source_range(
+    show_client: ShowSyncClient,
+) -> None:
+    """A narrower local override should win over a broader zero-ratio stub."""
+    show, season, episodes = build_show(view_counts=[1])
+    episodes[0].index = 18
+    episodes[0]._mapping_descriptors = (("tvdb_show", "74796", "s5"),)
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=109,
+    )
+    mappings = (
+        make_descriptor_mapping(
+            descriptor=("tvdb_show", "74796", "s5"),
+            source_ranges=(
+                MappingSpec(start=1, end=18, ratio=0),
+                MappingSpec(start=18, end=18, ratio=None),
+            ),
+            target_ranges=(
+                (),
+                (MappingSpec(start=64, end=109, ratio=-46),),
+            ),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 46
+
+
+@pytest.mark.asyncio
+async def test_calculate_progress_matches_mapping_source_descriptor(
+    show_client: ShowSyncClient,
+) -> None:
+    """Grouped seasons sharing episode indexes should use their own mappings."""
+    show, season, episodes = build_show(view_counts=[1, 1])
+    episodes[0].index = 18
+    episodes[0]._mapping_descriptors = (("tvdb_show", "74796", "s3"),)
+    episodes[1].index = 18
+    episodes[1]._mapping_descriptors = (("tvdb_show", "74796", "s5"),)
+    entry = FakeListEntry(
+        provider=FakeListProvider(),
+        key="entry",
+        title="Show",
+        media_type=ListMediaType.TV,
+        total_units=109,
+    )
+    mappings = (
+        make_descriptor_mapping(
+            descriptor=("tvdb_show", "74796", "s3"),
+            source_ranges=(MappingSpec(start=1, end=28, ratio=None),),
+        ),
+        make_descriptor_mapping(
+            descriptor=("tvdb_show", "74796", "s5"),
+            source_ranges=(
+                MappingSpec(start=1, end=18, ratio=0),
+                MappingSpec(start=18, end=18, ratio=None),
+            ),
+            target_ranges=(
+                (),
+                (MappingSpec(start=64, end=109, ratio=-46),),
+            ),
+        ),
+    )
+
+    progress = await show_client._calculate_progress(
+        item=cast(LibraryShowProtocol, show),
+        child_item=cast(LibrarySeasonProtocol, season),
+        grandchild_items=cast(Sequence[LibraryEpisodeProtocol], tuple(episodes)),
+        entry=cast(ListEntryProtocol, entry),
+        mappings=mappings,
+    )
+
+    assert progress == 47
+
+
+@pytest.mark.asyncio
 async def test_calculate_progress_caps_after_ratio_expansion(
     show_client: ShowSyncClient,
 ) -> None:

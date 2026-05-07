@@ -1,7 +1,7 @@
 """Sync client for episodic shows using provider abstractions."""
 
 from collections import defaultdict
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime
 
 import msgspec
@@ -10,8 +10,10 @@ from anibridge.list import ListEntry, ListMediaType, ListStatus
 from anibridge.utils.cache import lru_cache
 from anibridge.utils.mappings import (
     AnibridgeDescriptorMapping,
+    AnibridgeMapping,
     descriptor_key,
 )
+from anibridge.utils.types import MappingDescriptor
 
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
@@ -567,37 +569,59 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         if not mappings:
             return watched_count
 
+        entries_by_source: dict[
+            MappingDescriptor,
+            list[AnibridgeMapping],
+        ] = defaultdict(list)
+        for descriptor_mapping in mappings:
+            entries_by_source[descriptor_mapping.source].extend(
+                descriptor_mapping.mappings
+            )
+
         mapping_entries = [
             mapping_entry
-            for descriptor_mapping in mappings
-            for mapping_entry in descriptor_mapping.mappings
+            for entries in entries_by_source.values()
+            for mapping_entry in entries
         ]
         if not mapping_entries:
             return watched_count
 
-        weighted_entries = [
-            (mapping_entry.source_range, mapping_entry.source_weight)
-            for mapping_entry in mapping_entries
-        ]
-
-        if all(weight == 1.0 for _source_range, weight in weighted_entries):
+        if all(mapping_entry.source_weight == 1.0 for mapping_entry in mapping_entries):
             # Basic case where there's no ratio weight
             return watched_count
 
-        watched_units = 0.0
-        weight_by_index: dict[int, float] = {}  # Cache
-        for episode in watched_episodes:
-            if episode.index not in weight_by_index:
-                weight = 1.0
-                for source_range, source_weight in weighted_entries:
-                    if source_range.contains(episode.index):
-                        weight = source_weight
-                        break
-                weight_by_index[episode.index] = weight
-            else:
-                weight = weight_by_index[episode.index]
-            watched_units += weight
-        return int(watched_units + 1e-9)  # Floating point precision
+        watched_units = sum(
+            self._mapping_weight_for_episode(
+                episode,
+                entries_by_source,
+                mapping_entries,
+            )
+            for episode in watched_episodes
+        )
+        return int(watched_units + 1e-9)
+
+    @staticmethod
+    def _mapping_weight_for_episode(
+        episode: LibraryEpisode,
+        entries_by_source: Mapping[MappingDescriptor, Sequence[AnibridgeMapping]],
+        fallback_entries: Sequence[AnibridgeMapping],
+    ) -> float:
+        """Return the most specific mapping weight for an episode."""
+        source_entries = [
+            entry
+            for descriptor in dict.fromkeys(episode.mapping_descriptors())
+            for entry in entries_by_source.get(descriptor, ())
+        ]
+        mapping = min(
+            (
+                entry
+                for entry in (source_entries or fallback_entries)
+                if entry.source_range.contains(episode.index)
+            ),
+            key=lambda entry: entry.source_range.length or float("inf"),
+            default=None,
+        )
+        return 1.0 if mapping is None else mapping.source_weight
 
     def _debug_log_title(
         self,
