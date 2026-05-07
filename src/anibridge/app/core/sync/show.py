@@ -1,7 +1,7 @@
 """Sync client for episodic shows using provider abstractions."""
 
 from collections import defaultdict
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 import msgspec
@@ -39,120 +39,63 @@ class _SeasonGroup(msgspec.Struct):
     ]
 
 
+class _ResolvedSeasonTargets(msgspec.Struct):
+    season_index: int
+    season: LibrarySeason
+    episodes: tuple[LibraryEpisode, ...]
+    targets: tuple[ResolvedListTarget, ...]
+
+
+type _SeasonPayload = tuple[
+    int,
+    LibrarySeason,
+    tuple[LibraryEpisode, ...],
+    tuple[MappingDescriptor, ...],
+]
+
+
 class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode]):
     """Synchronize show items between a library provider and a list provider."""
 
     async def clear_cache(self) -> None:
         """Clear all sync client caches."""
         await super().clear_cache()
+        self.search_media.cache_clear()
         self._calculate_progress.cache_clear()
+        self._wanted_season_payloads.cache_clear()
+        self._resolve_season_targets.cache_clear()
         self.__get_wanted_episodes.cache_clear()
         self.__get_wanted_seasons.cache_clear()
         self._filter_history_by_episodes.cache_clear()
 
-    async def map_media(
+    async def resolve_mapping_targets(
         self, item: LibraryShow
-    ) -> AsyncIterator[
-        tuple[
-            LibrarySeason,
-            Sequence[LibraryEpisode],
-            SyncTarget,
-        ]
-    ]:
-        """Yield mapping candidates for a show.
-
-        Args:
-            item (LibraryShow): Show whose seasons should be resolved.
-
-        Yields:
-            tuple[LibrarySeason, Sequence[LibraryEpisode], SyncTarget]:
-                Season-level mapping candidates.
-        """
-        seasons = self.__get_wanted_seasons(item)
-        if not seasons:
-            return
-
-        wanted_indexes = set(seasons)
-        episodes_by_season: dict[int, list[LibraryEpisode]] = defaultdict(list)
-        for ep in self.__get_wanted_episodes(item):
-            if ep.season_index in wanted_indexes:
-                episodes_by_season[ep.season_index].append(ep)
-
-        season_payloads = [
-            (
-                season_index,
-                season,
-                season_episodes,
-                (*season.mapping_descriptors(), *item.mapping_descriptors()),
-            )
-            for season_index in sorted(wanted_indexes)
-            if (season_episodes := episodes_by_season.get(season_index))
-            and (season := seasons[season_index])
-        ]
-
-        resolved_batches = await resolve_list_targets_batch(
-            animap_client=self.animap_client,
-            list_provider=self.list_provider,
-            descriptor_sets=[payload[3] for payload in season_payloads],
-        )
-
+    ) -> Sequence[tuple[LibrarySeason, Sequence[LibraryEpisode], SyncTarget]]:
+        """Resolve deterministic mapping targets for a show."""
         groups: dict[str, _SeasonGroup] = {}
 
-        for (season_index, season, season_episodes, _), resolved_targets in zip(
-            season_payloads,
-            resolved_batches,
-            strict=False,
-        ):
+        for resolved in await self._resolve_season_targets(item):
             viable_targets = self._resolve_active_targets(
                 item=item,
-                season=season,
-                season_episodes=season_episodes,
-                resolved_targets=resolved_targets,
+                season=resolved.season,
+                season_episodes=resolved.episodes,
+                resolved_targets=resolved.targets,
             )
             self._untrack_skipped_episodes(
-                season_episodes=season_episodes,
+                season_episodes=resolved.episodes,
                 viable_targets=viable_targets,
-                resolved_targets=resolved_targets,
+                resolved_targets=resolved.targets,
             )
 
-            targets: list[
-                tuple[ResolvedListTarget, ListEntry, list[LibraryEpisode]]
-            ] = []
             for target, filtered in viable_targets:
                 entry = await self._cache.get_entry(target.list_media_key)
                 if entry is None:
                     continue
-                targets.append((target, entry, filtered))
-
-            should_search_fallback = not targets and (
-                not resolved_targets or viable_targets
-            )
-            if should_search_fallback:
-                entry = await self.search_media(item, season)
-                if entry:
-                    key = str(entry.media().key)
-                    self._cache.cache_entry(entry)
-                    targets = [
-                        (
-                            ResolvedListTarget(
-                                list_media_key=key,
-                                mapping_descriptors=(),
-                                mappings=(),
-                            ),
-                            entry,
-                            season_episodes,
-                        )
-                    ]
-
-            if not targets:
-                continue
-
-            for target, entry, filtered in targets:
                 media_key = entry.media().key
                 if (group := groups.get(media_key)) is None:
                     groups[media_key] = _SeasonGroup(
-                        child_item=season,
-                        first_index=season_index,
+                        child_item=resolved.season,
+                        first_index=resolved.season_index,
                         episodes=filtered,
                         entry=entry,
                         media_key=media_key,
@@ -163,8 +106,11 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     )
                     continue
 
-                if season_index < group.first_index:
-                    group.child_item, group.first_index = season, season_index
+                if resolved.season_index < group.first_index:
+                    group.child_item, group.first_index = (
+                        resolved.season,
+                        resolved.season_index,
+                    )
                 group.episodes.extend(filtered)
                 group.entry = entry
                 for mapping_rule in target.mappings:
@@ -173,17 +119,92 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                         mapping_rule,
                     )
 
-        for group in sorted(groups.values(), key=lambda g: g.first_index):
-            eps = sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
-            yield (
+        return tuple(
+            (
                 group.child_item,
-                tuple(eps),
+                tuple(
+                    sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
+                ),
                 SyncTarget(
                     list_media_key=group.media_key,
                     entry=group.entry,
                     mappings=tuple(group.mappings.values()),
                 ),
             )
+            for group in sorted(groups.values(), key=lambda g: g.first_index)
+        )
+
+    async def resolve_search_targets(
+        self, item: LibraryShow
+    ) -> Sequence[tuple[LibrarySeason, Sequence[LibraryEpisode], SyncTarget]]:
+        """Resolve explicit search fallback targets for a show."""
+        groups: dict[str, _SeasonGroup] = {}
+        for (
+            season_index,
+            season,
+            episodes,
+            _descriptors,
+        ) in self._wanted_season_payloads(item):
+            entry = await self.search_media(item, season)
+            if entry is None:
+                continue
+
+            self._cache.cache_entry(entry)
+            media_key = entry.media().key
+            if (group := groups.get(media_key)) is None:
+                groups[media_key] = _SeasonGroup(
+                    child_item=season,
+                    first_index=season_index,
+                    episodes=list(episodes),
+                    entry=entry,
+                    media_key=media_key,
+                    mappings={},
+                )
+                continue
+
+            if season_index < group.first_index:
+                group.child_item, group.first_index = season, season_index
+            group.episodes.extend(episodes)
+
+        return tuple(
+            (
+                group.child_item,
+                tuple(
+                    sorted(group.episodes, key=lambda ep: (ep.season_index, ep.index))
+                ),
+                SyncTarget(
+                    list_media_key=group.media_key,
+                    entry=group.entry,
+                ),
+            )
+            for group in sorted(groups.values(), key=lambda g: g.first_index)
+        )
+
+    @lru_cache(maxsize=64)
+    async def search_media(
+        self, item: LibraryShow, child_item: LibrarySeason
+    ) -> ListEntry | None:
+        """Return the best search fallback target for a season."""
+        if child_item.index == 0:
+            return None
+
+        episode_count = len(tuple(child_item.episodes()))
+        results = await self.list_provider.search(item.title)
+        tv_results: list[ListEntry] = []
+        filtered: list[ListEntry] = []
+        for entry in results:
+            media = entry.media()
+            if media.media_type != ListMediaType.TV:
+                continue
+            tv_results.append(entry)
+            if media.total_units is None or media.total_units == episode_count:
+                filtered.append(entry)
+
+        return find_best_search_result(
+            item.title,
+            filtered or tv_results,
+            self.search_fallback_threshold,
+        )
 
     @staticmethod
     def _mapping_signature(
@@ -197,39 +218,6 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 (mapping_entry.source_key, mapping_entry.target_value)
                 for mapping_entry in mapping.mappings
             ),
-        )
-
-    async def search_media(
-        self, item: LibraryShow, child_item: LibrarySeason
-    ) -> ListEntry | None:
-        """Locate a fallback list entry for a season.
-
-        Args:
-            item (LibraryShow): Parent show being synchronized.
-            child_item (LibrarySeason): Season used to narrow fallback candidates.
-
-        Returns:
-            ListEntry | None: Matching list entry, if one meets the threshold.
-        """
-        if self.search_fallback_threshold < 0 or child_item.index == 0:
-            return None
-
-        results = await self.list_provider.search(item.title)
-        episode_count = len(child_item.episodes())
-        tv_results: list[ListEntry] = []
-        filtered: list[ListEntry] = []
-        for entry in results:
-            media = entry.media()
-            if media.media_type != ListMediaType.TV:
-                continue
-            tv_results.append(entry)
-            if media.total_units is None or media.total_units == episode_count:
-                filtered.append(entry)
-        candidates = filtered or tv_results
-        return find_best_search_result(
-            item.title,
-            candidates,
-            self.search_fallback_threshold,
         )
 
     def _filter_episodes_by_ranges(
@@ -266,51 +254,66 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
         return ItemIdentifier.from_items(episodes)
 
     async def _collect_prefetch_keys(self, item: LibraryShow) -> Sequence[str]:
+        collected = {
+            str(target.list_media_key)
+            for resolved in await self._resolve_season_targets(item)
+            for target in resolved.targets
+        }
+        return tuple(sorted(collected))
+
+    @lru_cache(maxsize=32)
+    def _wanted_season_payloads(self, item: LibraryShow) -> tuple[_SeasonPayload, ...]:
+        """Return eligible seasons with episodes and descriptor sets."""
         seasons = self.__get_wanted_seasons(item)
         if not seasons:
-            return []
-        wanted_indexes = sorted(seasons)
+            return ()
+
         episodes_by_season: dict[int, list[LibraryEpisode]] = defaultdict(list)
         for episode in self.__get_wanted_episodes(item):
             if episode.season_index in seasons:
                 episodes_by_season[episode.season_index].append(episode)
 
-        season_payloads = [
+        return tuple(
             (
                 season_index,
                 seasons[season_index],
-                episodes_by_season[season_index],
+                tuple(episodes_by_season[season_index]),
                 (
                     *seasons[season_index].mapping_descriptors(),
                     *item.mapping_descriptors(),
                 ),
             )
-            for season_index in wanted_indexes
+            for season_index in sorted(seasons)
             if episodes_by_season.get(season_index)
-        ]
+        )
+
+    @lru_cache(maxsize=32)
+    async def _resolve_season_targets(
+        self, item: LibraryShow
+    ) -> tuple[_ResolvedSeasonTargets, ...]:
+        """Resolve mapping targets for each eligible season once per cache cycle."""
+        season_payloads = self._wanted_season_payloads(item)
         if not season_payloads:
-            return []
+            return ()
 
         resolved_batches = await resolve_list_targets_batch(
             animap_client=self.animap_client,
             list_provider=self.list_provider,
             descriptor_sets=[payload[3] for payload in season_payloads],
         )
-        collected = {
-            str(target.list_media_key)
-            for (_, season, season_episodes, _), targets in zip(
+        return tuple(
+            _ResolvedSeasonTargets(
+                season_index=season_index,
+                season=season,
+                episodes=season_episodes,
+                targets=resolved_targets,
+            )
+            for (season_index, season, season_episodes, _), resolved_targets in zip(
                 season_payloads,
                 resolved_batches,
                 strict=False,
             )
-            for target, _ in self._resolve_active_targets(
-                item=item,
-                season=season,
-                season_episodes=season_episodes,
-                resolved_targets=targets,
-            )
-        }
-        return tuple(sorted(collected))
+        )
 
     def _resolve_active_targets(
         self,

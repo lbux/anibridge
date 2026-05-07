@@ -191,8 +191,10 @@ async def test_calculate_review_prefers_movie_review(
 
 
 @pytest.mark.asyncio
-async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> None:
-    """Animap matches yield list entries before fuzzy search."""
+async def test_resolve_mapping_targets_prefers_animap_entry(
+    movie_client: MovieSyncClient,
+) -> None:
+    """Animap matches should resolve through the mapping phase."""
     provider = cast(FakeListProvider, movie_client.list_provider)
     entry = FakeListEntry(
         provider=provider,
@@ -205,7 +207,7 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
 
     movie = make_movie(view_count=1, ids={"anilist": "101"})
     library_movie = cast(LibraryMovieProtocol, movie)
-    results = [result async for result in movie_client.map_media(library_movie)]
+    results = await movie_client.resolve_mapping_targets(library_movie)
 
     assert len(results) == 1
     _, _, target = results[0]
@@ -214,7 +216,7 @@ async def test_map_media_prefers_animap_entry(movie_client: MovieSyncClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_map_media_uses_search_when_no_mapping(
+async def test_resolve_targets_uses_search_when_no_mapping(
     movie_client: MovieSyncClient,
 ) -> None:
     """Search fallback returns the best movie candidate when mapping fails."""
@@ -237,7 +239,7 @@ async def test_map_media_uses_search_when_no_mapping(
 
     movie = make_movie()
     library_movie = cast(LibraryMovieProtocol, movie)
-    results = [result async for result in movie_client.map_media(library_movie)]
+    results = await movie_client.resolve_targets(library_movie)
 
     assert len(results) == 1
     _, _, target = results[0]
@@ -245,14 +247,23 @@ async def test_map_media_uses_search_when_no_mapping(
 
 
 @pytest.mark.asyncio
-async def test_search_media_returns_none_when_disabled(
+async def test_resolve_targets_skips_search_when_disabled(
     movie_client: MovieSyncClient,
 ) -> None:
-    """Disabling fallback search short-circuits search_media."""
+    """Disabling fallback search should skip the search phase entirely."""
+    provider = cast(FakeListProvider, movie_client.list_provider)
+    provider.search_results = [
+        FakeListEntry(
+            provider=provider,
+            key="301",
+            title="Movie",
+            media_type=ListMediaType.MOVIE,
+        )
+    ]
     movie_client.search_fallback_threshold = -1
     movie = make_movie()
     library_movie = cast(LibraryMovieProtocol, movie)
-    assert await movie_client.search_media(library_movie, library_movie) is None
+    assert await movie_client.resolve_targets(library_movie) == ()
 
 
 @pytest.mark.asyncio
@@ -322,7 +333,7 @@ async def test_started_and_finished_dates_return_none_without_history(
 
 
 @pytest.mark.asyncio
-async def test_map_media_returns_multiple_targets(
+async def test_resolve_mapping_targets_returns_multiple_targets(
     movie_client: MovieSyncClient,
 ) -> None:
     """Mapping graphs can resolve multiple list targets for a movie."""
@@ -345,7 +356,7 @@ async def test_map_media_returns_multiple_targets(
 
     movie = make_movie(view_count=1, ids={"anilist": "901"})
     library_movie = cast(LibraryMovieProtocol, movie)
-    results = [result async for result in movie_client.map_media(library_movie)]
+    results = await movie_client.resolve_mapping_targets(library_movie)
 
     assert len(results) == 2
     targets = {result[2].list_media_key for result in results}

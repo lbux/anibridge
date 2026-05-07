@@ -1,4 +1,4 @@
-"""Helpers for resolving list targets from library mappings."""
+"""Helpers for resolving deterministic list targets from library mappings."""
 
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -9,10 +9,8 @@ from anibridge.list import ListEntry, ListProvider
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from anibridge.utils.types import MappingDescriptor
 
-from anibridge.app import log
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.sync.stats import EntrySnapshot
-from anibridge.app.utils.terminal import ARROW
 
 __all__ = [
     "ResolvedListTarget",
@@ -29,16 +27,7 @@ def diff_snapshots(
     after: EntrySnapshot | None,
     fields: Iterable[str],
 ) -> dict[str, tuple[Any, Any]]:
-    """Compute differences between two snapshots.
-
-    Args:
-        before (EntrySnapshot | None): Snapshot captured before mutation.
-        after (EntrySnapshot | None): Snapshot captured after mutation.
-        fields (Iterable[str]): Field names to compare.
-
-    Returns:
-        dict[str, tuple[Any, Any]]: Changed fields mapped to before/after values.
-    """
+    """Compute differences between two snapshots."""
     diff: dict[str, tuple[Any, Any]] = {}
     before_map = msgspec.structs.asdict(before) if before else {}
     after_map = msgspec.structs.asdict(after) if after else {}
@@ -48,46 +37,12 @@ def diff_snapshots(
     return diff
 
 
-class SyncTarget(msgspec.Struct, frozen=True):
-    """Resolved list target for a library media item."""
-
-    list_media_key: str
-    entry: ListEntry
-    mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
-
-
-class ResolvedListTarget(msgspec.Struct, frozen=True):
-    """Resolved list key with mapping descriptors and ranges."""
-
-    list_media_key: str
-    mapping_descriptors: tuple[MappingDescriptor, ...]
-    mappings: tuple[AnibridgeDescriptorMapping, ...]
-
-
-class _GroupedTargets(msgspec.Struct):
-    descriptors: set[MappingDescriptor]
-    mappings: dict[
-        tuple[MappingDescriptor, MappingDescriptor],
-        AnibridgeDescriptorMapping,
-    ]
-
-
 def find_best_search_result(
     title: str,
     results: Sequence[ListEntry],
     threshold: int,
 ) -> ListEntry | None:
-    """Return the highest-scoring fuzzy match for a title.
-
-    Args:
-        title (str): Library title to match against list entries.
-        results (Sequence[ListEntry]): Candidate list entries returned by search.
-        threshold (int): Minimum score required to accept a match.
-
-    Returns:
-        ListEntry | None: The best matching entry, or None if no result meets
-            the threshold.
-    """
+    """Return the highest-scoring fuzzy match for a title."""
     from rapidfuzz import fuzz
 
     best_entry: ListEntry | None = None
@@ -109,84 +64,42 @@ def find_best_search_result(
     return best_entry
 
 
-def _build_resolved_target(key: str, payload: _GroupedTargets) -> ResolvedListTarget:
-    """Build a resolved target from grouped descriptors and ranges."""
-    descriptors = tuple(sorted(payload.descriptors, key=descriptor_key))
-    mappings = tuple(
-        descriptor_mapping
-        for _key, descriptor_mapping in sorted(
-            payload.mappings.items(),
-            key=lambda item: (
-                descriptor_key(item[0][0]),
-                descriptor_key(item[0][1]),
-            ),
-        )
-        if descriptor_mapping.mappings
-    )
-    return ResolvedListTarget(
-        list_media_key=key,
-        mapping_descriptors=descriptors,
-        mappings=mappings,
-    )
+class SyncTarget(msgspec.Struct, frozen=True):
+    """Resolved list target for a library media item."""
+
+    list_media_key: str
+    entry: ListEntry
+    mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
 
 
-def _order_target_for_descriptor_set(
-    descriptor_set: tuple[MappingDescriptor, ...],
-    target: ResolvedListTarget,
-) -> ResolvedListTarget | None:
-    """Order target metadata to match the original descriptor set."""
-    ordered_descriptors = tuple(
-        descriptor
-        for descriptor in descriptor_set
-        if descriptor in target.mapping_descriptors
-    )
-    ordered_mappings = tuple(
-        mapping
-        for descriptor in descriptor_set
-        for mapping in target.mappings
-        if mapping.source == descriptor
-    )
-    if not ordered_descriptors and not ordered_mappings:
-        return None
-    return ResolvedListTarget(
-        list_media_key=target.list_media_key,
-        mapping_descriptors=ordered_descriptors or target.mapping_descriptors,
-        mappings=ordered_mappings,
+class ResolvedListTarget(msgspec.Struct, frozen=True):
+    """Resolved list key with explicit descriptor mappings."""
+
+    list_media_key: str
+    mappings: tuple[AnibridgeDescriptorMapping, ...] = ()
+
+
+def _mapping_signature(
+    mapping: AnibridgeDescriptorMapping,
+) -> tuple[str, str, tuple[tuple[str, str], ...]]:
+    """Return a stable key for deduplicating descriptor mappings."""
+    return (
+        descriptor_key(mapping.source),
+        descriptor_key(mapping.target),
+        tuple(
+            (mapping_entry.source_key, mapping_entry.target_value)
+            for mapping_entry in mapping.mappings
+        ),
     )
 
 
-async def resolve_list_targets_batch(
-    *,
-    animap_client: AnimapClient,
-    list_provider: ListProvider,
-    descriptor_sets: Sequence[Sequence[MappingDescriptor]],
-) -> list[tuple[ResolvedListTarget, ...]]:
-    """Resolve mapping descriptors into list targets in a single batch.
-
-    Args:
-        animap_client (AnimapClient): Animap client used to resolve mapping edges.
-        list_provider (ListProvider): List provider used to resolve target descriptors.
-        descriptor_sets (Sequence[Sequence[MappingDescriptor]]): Mapping
-            descriptors grouped by source item.
-
-    Returns:
-        list[tuple[ResolvedListTarget, ...]]: Resolved targets for each
-            descriptor group.
-    """
-    normalized: list[tuple[MappingDescriptor, ...]] = []
-    all_descriptors: set[MappingDescriptor] = set()
-    for descriptor_set in descriptor_sets:
-        ordered = tuple(dict.fromkeys(descriptor_set))
-        normalized.append(ordered)
-        all_descriptors.update(ordered)
-
-    if not all_descriptors:
-        return [tuple() for _ in normalized]
-
-    grouped_edges = animap_client.resolve_edges_grouped(
-        tuple(all_descriptors),
-        target_providers=list_provider.MAPPING_PROVIDERS,
-    )
+def _build_mappings_by_target(
+    grouped_edges: dict[
+        MappingDescriptor,
+        dict[MappingDescriptor, list[tuple[str, str | None]]],
+    ],
+) -> dict[MappingDescriptor, dict[MappingDescriptor, AnibridgeDescriptorMapping]]:
+    """Convert grouped animap edges into explicit descriptor mappings."""
     mappings_by_target: dict[
         MappingDescriptor,
         dict[MappingDescriptor, AnibridgeDescriptorMapping],
@@ -205,38 +118,47 @@ async def resolve_list_targets_batch(
                     source_range=source_range,
                     target_ranges=destination_range,
                 )
-
-            # Filter out mappings with a zero ratio (stubs).
-            before_prune = len(descriptor_mapping.mappings)
             descriptor_mapping.mappings[:] = [
                 mapping_entry
                 for mapping_entry in descriptor_mapping.mappings
                 if mapping_entry.target_ratio != 0
             ]
-            pruned = before_prune - len(descriptor_mapping.mappings)
-            if pruned:
-                log.debug(
-                    "Dropped %d zero-ratio stub mapping(s) from %s %s %s",
-                    pruned,
-                    descriptor_key(source_descriptor),
-                    ARROW,
-                    descriptor_key(target_descriptor),
-                )
-
             if descriptor_mapping.mappings:
                 source_map[source_descriptor] = descriptor_mapping
         if source_map:
             mappings_by_target[target_descriptor] = source_map
+    return mappings_by_target
 
-    direct_targets = (
+
+async def resolve_list_targets_batch(
+    *,
+    animap_client: AnimapClient,
+    list_provider: ListProvider,
+    descriptor_sets: Sequence[Sequence[MappingDescriptor]],
+) -> list[tuple[ResolvedListTarget, ...]]:
+    """Resolve mapping descriptors into deterministic list targets."""
+    normalized: list[tuple[MappingDescriptor, ...]] = []
+    all_descriptors: set[MappingDescriptor] = set()
+    for descriptor_set in descriptor_sets:
+        ordered = tuple(dict.fromkeys(descriptor_set))
+        normalized.append(ordered)
+        all_descriptors.update(ordered)
+
+    if not all_descriptors:
+        return [tuple() for _ in normalized]
+
+    grouped_edges = animap_client.resolve_edges_grouped(
+        tuple(all_descriptors),
+        target_providers=list_provider.MAPPING_PROVIDERS,
+    )
+    mappings_by_target = _build_mappings_by_target(grouped_edges)
+
+    direct_targets = {
         descriptor
         for descriptor in all_descriptors
         if descriptor[0] in list_provider.MAPPING_PROVIDERS
-    )
-    target_descriptors = {
-        *mappings_by_target.keys(),
-        *direct_targets,
     }
+    target_descriptors = {*mappings_by_target.keys(), *direct_targets}
     if not target_descriptors:
         return [tuple() for _ in normalized]
 
@@ -244,45 +166,54 @@ async def resolve_list_targets_batch(
         tuple(target_descriptors)
     )
 
-    grouped: dict[str, _GroupedTargets] = {}
-    for target in resolved_targets:
-        group = grouped.setdefault(
-            target.media_key,
-            _GroupedTargets(descriptors=set(), mappings={}),
-        )
-        group.descriptors.add(target.descriptor)
-        if target.descriptor not in mappings_by_target:
-            continue
-        for source_descriptor, descriptor_mapping in mappings_by_target[
-            target.descriptor
-        ].items():
-            key = (source_descriptor, target.descriptor)
-            merged = group.mappings.setdefault(
-                key,
-                AnibridgeDescriptorMapping(
-                    source=source_descriptor,
-                    target=target.descriptor,
-                ),
-            )
-            merged.mappings.extend(descriptor_mapping.mappings)
-
-    ordered_targets = tuple(
-        _build_resolved_target(key, grouped[key]) for key in sorted(grouped)
-    )
-
     results: list[tuple[ResolvedListTarget, ...]] = []
     for descriptor_set in normalized:
-        filtered = tuple(
-            ordered_target
-            for target in ordered_targets
-            if (
-                ordered_target := _order_target_for_descriptor_set(
-                    descriptor_set, target
+        wanted = set(descriptor_set)
+        descriptor_order = {
+            descriptor: index for index, descriptor in enumerate(descriptor_set)
+        }
+        grouped_mapping_key = tuple[str, str, tuple[tuple[str, str], ...]]
+        grouped: dict[
+            str,
+            dict[grouped_mapping_key, AnibridgeDescriptorMapping],
+        ] = {}
+
+        for target in resolved_targets:
+            selected_mappings = [
+                mapping
+                for source_descriptor, mapping in mappings_by_target.get(
+                    target.descriptor, {}
+                ).items()
+                if source_descriptor in wanted
+            ]
+            if target.descriptor not in wanted and not selected_mappings:
+                continue
+
+            group = grouped.setdefault(target.media_key, {})
+            for mapping in selected_mappings:
+                group.setdefault(_mapping_signature(mapping), mapping)
+
+        results.append(
+            tuple(
+                ResolvedListTarget(
+                    list_media_key=media_key,
+                    mappings=tuple(
+                        sorted(
+                            grouped[media_key].values(),
+                            key=lambda mapping: (
+                                descriptor_order.get(
+                                    mapping.source,
+                                    len(descriptor_order),
+                                ),
+                                descriptor_key(mapping.target),
+                            ),
+                        )
+                    ),
                 )
+                for media_key in sorted(grouped)
             )
-            is not None
         )
-        results.append(filtered)
+
     return results
 
 
@@ -292,17 +223,7 @@ async def resolve_list_targets(
     list_provider: ListProvider,
     media_items: Sequence[LibraryEntry],
 ) -> tuple[ResolvedListTarget, ...]:
-    """Resolve mapping descriptors for one logical media item.
-
-    Args:
-        animap_client (AnimapClient): Animap client used to resolve mapping edges.
-        list_provider (ListProvider): List provider used to resolve target descriptors.
-        media_items (Sequence[LibraryEntry]): Library items whose descriptors
-            should be combined.
-
-    Returns:
-        tuple[ResolvedListTarget, ...]: Resolved targets for the supplied media items.
-    """
+    """Resolve mapping descriptors for one logical media item."""
     descriptors: list[MappingDescriptor] = []
     for media in media_items:
         descriptors.extend(media.mapping_descriptors())

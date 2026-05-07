@@ -1,7 +1,7 @@
 """Provider-agnostic base class for library/list synchronization."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableSet, Sequence, Set
 from copy import copy
 from datetime import UTC, datetime
 from typing import Any
@@ -93,8 +93,7 @@ class BaseSyncClient[
             destructive_sync (bool): Whether sync may remove or decrease list state.
             empty_sync (bool): Whether empty activity should still produce
                 planning entries.
-            search_fallback_threshold (int): Minimum fuzzy score for search
-                fallback matches.
+            search_fallback_threshold (int): Minimum fuzzy score for search fallback.
             batch_requests (bool): Whether to queue updates for batch submission.
             dry_run (bool): Whether to log changes without applying them.
             profile_name (str): Active profile name.
@@ -114,6 +113,16 @@ class BaseSyncClient[
         self.batch_requests = batch_requests
         self.dry_run = dry_run
         self.profile_name = profile_name
+        self._sync_field_names = tuple(field.value for field in SyncField)
+        self._disabled_fields = frozenset(
+            field.value
+            for field in SyncField
+            if self._sync_rule_engine.is_disabled(field.value)
+        )
+        self._rule_context_fields = {
+            field.value: self._sync_rule_engine.context_media_fields(field.value)
+            for field in SyncField
+        }
         self.sync_stats = SyncStats()
         self._pending_updates: list[BatchUpdate[ParentMediaT, ChildMediaT]] = []
         self._cache = SyncCacheManager(
@@ -200,9 +209,9 @@ class BaseSyncClient[
         self.sync_stats.register_pending_items(trackable)
         self.sync_stats.track_item(item_identifier, SyncOutcome.PENDING)
 
-        found_match = False
-        async for child_item, grandchild_items, target in self.map_media(item):
-            found_match = True
+        targets = await self.resolve_targets(item)
+        found_match = bool(targets)
+        for child_item, grandchild_items, target in targets:
             grandchildren = (
                 grandchild_items
                 if isinstance(grandchild_items, tuple)
@@ -294,25 +303,29 @@ class BaseSyncClient[
         ...
 
     @abstractmethod
-    def map_media(
+    async def resolve_mapping_targets(
         self, item: ParentMediaT
-    ) -> AsyncIterator[tuple[ChildMediaT, Sequence[GrandchildMediaT], SyncTarget]]:
-        """Yield potential list entries matching the supplied library item."""
+    ) -> Sequence[tuple[ChildMediaT, Sequence[GrandchildMediaT], SyncTarget]]:
+        """Resolve deterministic mapping-based targets for the supplied item."""
         ...
 
     @abstractmethod
-    async def search_media(
-        self, item: ParentMediaT, child_item: ChildMediaT
-    ) -> ListEntry | None:
-        """Search the list provider for fallback matches.
+    async def resolve_search_targets(
+        self, item: ParentMediaT
+    ) -> Sequence[tuple[ChildMediaT, Sequence[GrandchildMediaT], SyncTarget]]:
+        """Resolve search-based targets for the supplied item."""
+        ...
 
-        Args:
-            item (ParentMediaT): Parent library item being synchronized.
-            child_item (ChildMediaT): Child item used to scope the search.
-
-        Returns:
-            ListEntry | None: Matching list entry, if one can be found.
-        """
+    async def resolve_targets(
+        self, item: ParentMediaT
+    ) -> Sequence[tuple[ChildMediaT, Sequence[GrandchildMediaT], SyncTarget]]:
+        """Resolve targets using mappings first, then explicit search fallback."""
+        targets = await self.resolve_mapping_targets(item)
+        if targets:
+            return targets
+        if self.search_fallback_threshold < 0:
+            return ()
+        return await self.resolve_search_targets(item)
 
     async def sync_media(
         self,
@@ -357,9 +370,6 @@ class BaseSyncClient[
             self.list_provider.NAMESPACE, resolved_list_key
         )
         skip_fields = set(pinned_fields)
-        disabled_fields = {
-            f.value for f in SyncField if self._sync_rule_engine.is_disabled(f.value)
-        }
         field_state = _FieldApplicationState(pinned_blocked_fields=skip_fields.copy())
 
         calc_kwargs = {
@@ -370,9 +380,12 @@ class BaseSyncClient[
             "mappings": mappings,
         }
         computed_values = await self._calculate_computed_values(
-            calc_kwargs=calc_kwargs, disabled_fields=disabled_fields
+            calc_kwargs=calc_kwargs, disabled_fields=self._disabled_fields
         )
-        current_values = {f.value: getattr(planned_entry, f.value) for f in SyncField}
+        current_values = {
+            field_name: getattr(planned_entry, field_name)
+            for field_name in self._sync_field_names
+        }
 
         status_rule = self._sync_rule_engine.evaluate_field(
             field_name=SyncField.STATUS.value,
@@ -383,9 +396,7 @@ class BaseSyncClient[
                 child_item=child_item,
                 grandchild_items=grandchild_items,
                 list_media_key=resolved_list_key,
-                required_media_fields=self._sync_rule_engine.context_media_fields(
-                    SyncField.STATUS.value
-                ),
+                required_media_fields=self._rule_context_fields[SyncField.STATUS.value],
             ),
         )
 
@@ -483,7 +494,7 @@ class BaseSyncClient[
             current_values=current_values,
             computed_values=computed_values,
             skip_fields=skip_fields,
-            disabled_fields=disabled_fields,
+            disabled_fields=self._disabled_fields,
             considered_attrs=considered_attrs,
             field_state=field_state,
         )
@@ -494,7 +505,7 @@ class BaseSyncClient[
             "field_blocks": ", ".join(
                 self._format_field_blocks(
                     field_state=field_state,
-                    disabled_fields=disabled_fields,
+                    disabled_fields=self._disabled_fields,
                 )
             ),
             "applied_rules": ", ".join(
@@ -594,7 +605,7 @@ class BaseSyncClient[
             self._cache.apply_planned_update(
                 source_entry=plan.source_entry,
                 planned_entry=plan.entry,
-                fields=[f.value for f in SyncField],
+                fields=self._sync_field_names,
             )
             log.success(
                 "[%s] Synced %s %s %s",
@@ -651,9 +662,9 @@ class BaseSyncClient[
         final_status: ListStatus | None,
         current_values: Mapping[str, Any],
         computed_values: Mapping[str, Any],
-        skip_fields: set[str],
-        disabled_fields: set[str],
-        considered_attrs: set[str],
+        skip_fields: Set[str],
+        disabled_fields: Set[str],
+        considered_attrs: MutableSet[str],
         field_state: _FieldApplicationState,
     ) -> None:
         """Apply non-status sync fields when gates and rules allow it."""
@@ -669,7 +680,6 @@ class BaseSyncClient[
                 field_state.status_gate_blocked[sync_field.value] = reason
                 continue
             if self._sync_rule_engine.is_disabled(sync_field.value):
-                disabled_fields.add(sync_field.value)
                 continue
 
             rule_context = self._build_rule_context(
@@ -677,9 +687,7 @@ class BaseSyncClient[
                 child_item=child_item,
                 grandchild_items=grandchild_items,
                 list_media_key=list_media_key,
-                required_media_fields=self._sync_rule_engine.context_media_fields(
-                    sync_field.value
-                ),
+                required_media_fields=self._rule_context_fields[sync_field.value],
             )
 
             rule_decision = self._sync_rule_engine.evaluate_field(
@@ -709,7 +717,7 @@ class BaseSyncClient[
             considered_attrs.add(sync_field.value)
 
     async def _calculate_computed_values(
-        self, *, calc_kwargs: Mapping[str, Any], disabled_fields: set[str]
+        self, *, calc_kwargs: Mapping[str, Any], disabled_fields: Set[str]
     ) -> dict[str, Comparable | None]:
         """Calculate raw field values before any declarative rules are applied."""
         computed: dict[str, Comparable | None] = {
@@ -721,8 +729,7 @@ class BaseSyncClient[
         for sync_field in SyncField:
             if sync_field == SyncField.STATUS:
                 continue
-            if self._sync_rule_engine.is_disabled(sync_field.value):
-                disabled_fields.add(sync_field.value)
+            if sync_field.value in disabled_fields:
                 continue
             computed[sync_field.value] = await self._field_calculators[sync_field](
                 **calc_kwargs
@@ -854,7 +861,7 @@ class BaseSyncClient[
                     self._cache.apply_planned_update(
                         source_entry=update.source_entry,
                         planned_entry=update.entry,
-                        fields=[f.value for f in SyncField],
+                        fields=self._sync_field_names,
                     )
                 await self._history.create_sync_history(
                     item=update.item,
@@ -903,7 +910,7 @@ class BaseSyncClient[
         self._history.flush_failure_history_cleanup()
 
     def _should_apply_field(
-        self, field: SyncField, new_value, current_value, skip_fields: set[str]
+        self, field: SyncField, new_value, current_value, skip_fields: Set[str]
     ) -> tuple[bool, str | None]:
         """Return whether field should be applied and a diagnostic reason."""
         if field.value in skip_fields:
@@ -929,7 +936,7 @@ class BaseSyncClient[
         self,
         *,
         field_state: _FieldApplicationState,
-        disabled_fields: set[str],
+        disabled_fields: Set[str],
     ) -> list[str]:
         """Render a compact summary of why fields were not applied."""
         blocked: list[str] = []

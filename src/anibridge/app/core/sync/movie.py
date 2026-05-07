@@ -1,6 +1,6 @@
 """Sync client for library movies using provider abstractions."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 
 from anibridge.library import LibraryMovie
@@ -11,6 +11,7 @@ from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
 from anibridge.app.core.sync.targeting import (
+    ResolvedListTarget,
     SyncTarget,
     find_best_search_result,
     resolve_list_targets,
@@ -25,87 +26,57 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
     async def clear_cache(self) -> None:
         """Clear all sync client caches."""
         await super().clear_cache()
+        self.search_media.cache_clear()
         self._get_history.cache_clear()
+        self._resolve_movie_targets.cache_clear()
 
-    async def map_media(
+    async def resolve_mapping_targets(
         self, item: LibraryMovie
-    ) -> AsyncIterator[
-        tuple[
-            LibraryMovie,
-            Sequence[LibraryMovie],
-            SyncTarget,
-        ]
-    ]:
-        """Map a library movie to one or more list targets.
-
-        Args:
-            item (LibraryMovie): Library movie to resolve.
-
-        Yields:
-            tuple[LibraryMovie, Sequence[LibraryMovie], SyncTarget]: Mapping
-                candidates for sync.
-        """
-        targets = await resolve_list_targets(
-            animap_client=self.animap_client,
-            list_provider=self.list_provider,
-            media_items=(item,),
-        )
-        if targets:
-            yielded = False
-            for target in targets:
-                entry = await self._cache.get_entry(target.list_media_key)
-                if entry is None:
-                    continue
-                yielded = True
-                list_media_key = entry.media().key
-                yield (
+    ) -> Sequence[tuple[LibraryMovie, Sequence[LibraryMovie], SyncTarget]]:
+        """Resolve deterministic mapping targets for a movie."""
+        candidates: list[tuple[LibraryMovie, Sequence[LibraryMovie], SyncTarget]] = []
+        for target in await self._resolve_movie_targets(item):
+            entry = await self._cache.get_entry(target.list_media_key)
+            if entry is None:
+                continue
+            candidates.append(
+                (
                     item,
                     (item,),
                     SyncTarget(
-                        list_media_key=list_media_key,
+                        list_media_key=entry.media().key,
                         entry=entry,
                         mappings=target.mappings,
                     ),
                 )
-            if yielded:
-                return
+            )
+        return tuple(candidates)
 
+    async def resolve_search_targets(
+        self, item: LibraryMovie
+    ) -> Sequence[tuple[LibraryMovie, Sequence[LibraryMovie], SyncTarget]]:
+        """Resolve explicit search fallback targets for a movie."""
         entry = await self.search_media(item, item)
-        if entry is not None:
-            self._cache.cache_entry(entry)
-            yield (
+        if entry is None:
+            return ()
+        self._cache.cache_entry(entry)
+        return (
+            (
                 item,
                 (item,),
                 SyncTarget(
                     list_media_key=entry.media().key,
                     entry=entry,
                 ),
-            )
-
-    async def _collect_prefetch_keys(self, item: LibraryMovie) -> Sequence[str]:
-        """Collect mapping descriptors and search keys for a library movie."""
-        targets = await resolve_list_targets(
-            animap_client=self.animap_client,
-            list_provider=self.list_provider,
-            media_items=(item,),
+            ),
         )
-        return tuple(sorted({target.list_media_key for target in targets}))
 
+    @lru_cache(maxsize=64)
     async def search_media(
         self, item: LibraryMovie, child_item: LibraryMovie
     ) -> ListEntry | None:
-        """Fallback search for matching movie entries.
-
-        Args:
-            item (LibraryMovie): Parent movie item to search for.
-            child_item (LibraryMovie): Child movie item, identical for movie sync.
-
-        Returns:
-            ListEntry | None: Matching movie entry, if one meets the threshold.
-        """
-        if self.search_fallback_threshold < 0:
-            return None
-
+        """Return the best search fallback target for a movie."""
+        del child_item
         results = await self.list_provider.search(item.title)
         movie_results = [
             entry
@@ -122,6 +93,22 @@ class MovieSyncClient(BaseSyncClient[LibraryMovie, LibraryMovie, LibraryMovie]):
         self, item: LibraryMovie
     ) -> Sequence[ItemIdentifier]:
         return [ItemIdentifier.from_item(item)]
+
+    async def _collect_prefetch_keys(self, item: LibraryMovie) -> Sequence[str]:
+        """Collect deterministic mapping targets for a library movie."""
+        targets = await self._resolve_movie_targets(item)
+        return tuple(sorted({target.list_media_key for target in targets}))
+
+    @lru_cache(maxsize=32)
+    async def _resolve_movie_targets(
+        self, item: LibraryMovie
+    ) -> tuple[ResolvedListTarget, ...]:
+        """Resolve mapping targets for a movie once per cache cycle."""
+        return await resolve_list_targets(
+            animap_client=self.animap_client,
+            list_provider=self.list_provider,
+            media_items=(item,),
+        )
 
     @lru_cache(maxsize=32)
     async def _get_history(self, item: LibraryMovie):

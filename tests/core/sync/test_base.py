@@ -1,7 +1,7 @@
 """Tests covering helper utilities on `anibridge.app.core.sync.base`."""
 
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -37,7 +37,14 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
     def __init__(self, *args, **kwargs) -> None:
         """Initialize the stub and capture queued mapping results."""
         super().__init__(*args, **kwargs)
-        self._map_results: list[
+        self._mapping_targets: list[
+            tuple[
+                Any,
+                Sequence[Any],
+                SyncTarget,
+            ]
+        ] = []
+        self._search_targets: list[
             tuple[
                 Any,
                 Sequence[Any],
@@ -59,22 +66,19 @@ class StubSyncClient(BaseSyncClient[Any, Any, Any]):
     async def _collect_prefetch_keys(self, item: Any) -> Sequence[str]:
         return []
 
-    async def map_media(
+    async def resolve_mapping_targets(
         self, item: Any
-    ) -> AsyncIterator[
-        tuple[
-            Any,
-            Sequence[Any],
-            SyncTarget,
-        ]
-    ]:
-        """Yield any queued mapping results for testing purposes."""
-        for result in self._map_results:
-            yield result
+    ) -> Sequence[tuple[Any, Sequence[Any], SyncTarget]]:
+        """Return queued mapping targets for testing purposes."""
+        del item
+        return tuple(self._mapping_targets)
 
-    async def search_media(self, item: Any, child_item: Any):
-        """No-op search hook."""
-        return None
+    async def resolve_search_targets(
+        self, item: Any
+    ) -> Sequence[tuple[Any, Sequence[Any], SyncTarget]]:
+        """Return queued search targets for testing purposes."""
+        del item
+        return tuple(self._search_targets)
 
     async def _calculate_status(self, **kwargs):
         return self._status_override
@@ -142,6 +146,15 @@ def set_sync_rules(stub_client: StubSyncClient, payload: dict[str, Any]) -> None
         variables=rules.resolved_vars(),
         field_rules=rules.field_rules(),
     )
+    stub_client._disabled_fields = frozenset(
+        field.value
+        for field in SyncField
+        if stub_client._sync_rule_engine.is_disabled(field.value)
+    )
+    stub_client._rule_context_fields = {
+        field.value: stub_client._sync_rule_engine.context_media_fields(field.value)
+        for field in SyncField
+    }
 
 
 class CaptureHandler(logging.Handler):

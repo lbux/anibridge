@@ -1,6 +1,6 @@
 """Animap client for v3 provider-range mappings."""
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from hashlib import md5
 from itertools import batched
 from pathlib import Path
@@ -77,7 +77,7 @@ class AnimapClient:
         self,
         descriptors: Sequence[MappingDescriptor],
         *,
-        target_providers: set[str] | frozenset[str] | None = None,
+        target_providers: Set[str] | None = None,
     ) -> tuple[AnimapEdge, ...]:
         """Resolve mapping edges for the provided source descriptors."""
         if not descriptors:
@@ -147,7 +147,7 @@ class AnimapClient:
         self,
         descriptors: Sequence[MappingDescriptor],
         *,
-        target_providers: set[str] | frozenset[str] | None = None,
+        target_providers: Set[str] | None = None,
     ) -> dict[MappingDescriptor, dict[MappingDescriptor, list[tuple[str, str | None]]]]:
         """Resolve mapping edges into a grouped target->source mapping."""
         grouped: dict[
