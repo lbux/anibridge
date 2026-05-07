@@ -126,3 +126,251 @@ def test_sync_rule_engine_supports_liststatus_class_in_status_rules() -> None:
 
     assert result.value == ListStatus.COMPLETED
     assert result.reason == "prevent regression"
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        pytest.param(
+            "[g.index for g in ctx.grandchildren if g.view_count]",
+            id="list-comp-attribute",
+        ),
+        pytest.param(
+            "max(g.index for g in ctx.grandchildren if g.view_count)",
+            id="generator-expr-in-max",
+        ),
+        pytest.param(
+            "[g.index for g in ctx.grandchildren if g.index is not None]",
+            id="list-comp-is-not-none",
+        ),
+        pytest.param(
+            "[g.index for g in ctx.grandchildren]",
+            id="list-comp-no-filter",
+        ),
+        pytest.param(
+            "sum(1 for g in ctx.grandchildren if g.view_count)",
+            id="generator-expr-in-sum",
+        ),
+    ],
+)
+def test_validate_expression_ast_accepts_list_comprehensions(
+    expression: str,
+) -> None:
+    """List comprehensions and generator expressions should be allowed in rules."""
+    _validate_expression_ast(expression)  # should not raise
+
+
+def test_validate_expression_ast_rejects_unknown_name_outside_comprehension() -> None:
+    """Names not bound by comprehensions or the allowed set should still be rejected."""
+    with pytest.raises(ValueError, match="references unknown name"):
+        _validate_expression_ast("unknown_var + 1")
+
+
+def test_validate_expression_ast_comprehension_var_may_not_leak_as_free_name() -> None:
+    """A comprehension variable used outside its scope should be rejected if not
+    otherwise allowed."""
+    # `g` is valid only inside the comprehension body; accessing it as a free
+    # name in a separate expression tree should still be rejected.
+    with pytest.raises(ValueError, match="references unknown name"):
+        _validate_expression_ast("g.index")
+
+
+def test_ctx_field_refs_detects_fields_via_comprehension_variable() -> None:
+    """Fields accessed via a comprehension var over ctx.grandchildren are detected."""
+    refs = _ctx_field_refs_for_expression(
+        "[g.index for g in ctx.grandchildren if g.view_count and g.index is not None]"
+    )
+
+    assert "index" in refs
+    assert "view_count" in refs
+
+
+def test_ctx_field_refs_detects_fields_via_generator_in_max() -> None:
+    """Fields used in a generator expression over ctx.grandchildren are detected."""
+    refs = _ctx_field_refs_for_expression(
+        "max(g.index for g in ctx.grandchildren if g.view_count)"
+    )
+
+    assert "index" in refs
+    assert "view_count" in refs
+
+
+def test_ctx_field_refs_ignores_comprehension_over_non_ctx_iterables() -> None:
+    """Comprehensions over non-ctx iterables should not contribute field refs."""
+    refs = _ctx_field_refs_for_expression(
+        "[x.something for x in computed.items if x.other]"
+    )
+
+    assert "something" not in refs
+    assert "other" not in refs
+
+
+def test_ctx_field_refs_comprehension_over_ctx_item_is_not_tracked() -> None:
+    """Only grandchildren / item / child namespaces feed field refs, not bare ctx."""
+    refs = _ctx_field_refs_for_expression("[m.source for m in ctx.mappings]")
+
+    # ctx.mappings is not a media namespace, so no refs should be collected
+    assert "source" not in refs
+
+
+def test_sync_rule_engine_evaluates_list_comp_progress_rule() -> None:
+    """A progress rule using a list comprehension over ctx.grandchildren works."""
+    engine = SyncRuleEngine(
+        variables={
+            "watched_indices": (
+                "[g.index for g in ctx.grandchildren "
+                "if g.view_count and g.index is not None]"
+            ),
+            "mapping_start": (
+                "ctx.mappings[0].mappings[0].source_range.start "
+                "if ctx.mappings and ctx.mappings[0].mappings else 1"
+            ),
+        },
+        field_rules={
+            "progress": [
+                {
+                    "name": "index-based-progress",
+                    "if": "bool(vars.watched_indices)",
+                    "set": "max(vars.watched_indices) - vars.mapping_start + 1",
+                }
+            ]
+        },
+    )
+
+    grandchildren = [
+        {"index": 1, "view_count": 1},
+        {"index": 2, "view_count": 1},
+        {"index": 3, "view_count": 0},
+    ]
+    rule_context = {
+        "grandchildren": grandchildren,
+        "item": {},
+        "child": {},
+        "list_media_key": "test-key",
+        "mappings": [
+            {
+                "source": ("anilist", "101", None),
+                "target": ("mal", "201", None),
+                "mappings": [
+                    {
+                        "source_range": {"start": 1, "end": 12, "length": 12},
+                        "target_ranges": [{"start": 1, "end": 12, "length": 12}],
+                        "target_ratio": None,
+                        "source_weight": 1.0,
+                        "target_weight": 1.0,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = engine.evaluate_field(
+        field_name="progress",
+        current_values={"progress": 0},
+        computed_values={"progress": 5},
+        rule_context=rule_context,
+    )
+
+    assert result.value == 2  # max(1, 2) - 1 + 1
+    assert result.reason == "index-based-progress"
+
+
+def test_sync_rule_engine_list_comp_progress_falls_back_when_no_watched() -> None:
+    """Progress rule should fall through to default when no episodes are watched."""
+    engine = SyncRuleEngine(
+        variables={
+            "watched_indices": (
+                "[g.index for g in ctx.grandchildren "
+                "if g.view_count and g.index is not None]"
+            ),
+        },
+        field_rules={
+            "progress": [
+                {
+                    "name": "index-based-progress",
+                    "if": "bool(vars.watched_indices)",
+                    "set": "max(vars.watched_indices)",
+                }
+            ]
+        },
+    )
+
+    grandchildren = [{"index": 1, "view_count": 0}, {"index": 2, "view_count": 0}]
+    rule_context = {
+        "grandchildren": grandchildren,
+        "item": {},
+        "child": {},
+        "list_media_key": "test-key",
+        "mappings": [],
+    }
+
+    result = engine.evaluate_field(
+        field_name="progress",
+        current_values={"progress": 3},
+        computed_values={"progress": 7},
+        rule_context=rule_context,
+    )
+
+    # Condition is false → falls through to default (computed value)
+    assert result.value == 7
+    assert result.reason == "default"
+
+
+def test_sync_rule_engine_list_comp_mapping_start_offset() -> None:
+    """mapping_start var should shift progress relative to the source range start."""
+    engine = SyncRuleEngine(
+        variables={
+            "watched_indices": ("[g.index for g in ctx.grandchildren if g.view_count]"),
+            "mapping_start": (
+                "ctx.mappings[0].mappings[0].source_range.start "
+                "if ctx.mappings and ctx.mappings[0].mappings else 1"
+            ),
+        },
+        field_rules={
+            "progress": [
+                {
+                    "name": "index-based-progress",
+                    "if": "bool(vars.watched_indices)",
+                    "set": "max(vars.watched_indices) - vars.mapping_start + 1",
+                }
+            ]
+        },
+    )
+
+    grandchildren = [
+        {"index": 13, "view_count": 1},
+        {"index": 14, "view_count": 1},
+        {"index": 15, "view_count": 0},
+    ]
+    rule_context = {
+        "grandchildren": grandchildren,
+        "item": {},
+        "child": {},
+        "list_media_key": "test-key",
+        "mappings": [
+            {
+                "source": ("anilist", "201", None),
+                "target": ("mal", "301", None),
+                "mappings": [
+                    {
+                        "source_range": {"start": 13, "end": 24, "length": 12},
+                        "target_ranges": [{"start": 1, "end": 12, "length": 12}],
+                        "target_ratio": None,
+                        "source_weight": 1.0,
+                        "target_weight": 1.0,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = engine.evaluate_field(
+        field_name="progress",
+        current_values={"progress": 0},
+        computed_values={"progress": 10},
+        rule_context=rule_context,
+    )
+
+    # max(13, 14) - 13 + 1 = 2
+    assert result.value == 2
+    assert result.reason == "index-based-progress"

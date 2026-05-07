@@ -87,12 +87,14 @@ _ALLOWED_NODES = (
     ast.BoolOp,
     ast.Call,
     ast.Compare,
+    ast.comprehension,
     ast.Constant,
     ast.Dict,
     ast.Div,
     ast.Eq,
     ast.Expression,
     ast.FloorDiv,
+    ast.GeneratorExp,
     ast.Gt,
     ast.GtE,
     ast.IfExp,
@@ -101,6 +103,7 @@ _ALLOWED_NODES = (
     ast.IsNot,
     ast.keyword,
     ast.List,
+    ast.ListComp,
     ast.Load,
     ast.Lt,
     ast.LtE,
@@ -112,6 +115,7 @@ _ALLOWED_NODES = (
     ast.NotIn,
     ast.Or,
     ast.Slice,
+    ast.Store,
     ast.Sub,
     ast.Subscript,
     ast.Tuple,
@@ -183,13 +187,25 @@ def _validate_expression_ast(expression: str) -> ast.Expression:
     except SyntaxError as exc:
         raise ValueError(f"invalid sync rule expression: {expression!r}") from exc
 
+    # Collect names bound by comprehensions so they are valid in Load contexts
+    # inside the comprehension body (e.g. `g` in `[g.index for g in ...]`).
+    comprehension_bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.comprehension) and isinstance(node.target, ast.Name):
+            comprehension_bound.add(node.target.id)
+    allowed_names = _ALLOWED_NAMES | comprehension_bound
+
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_NODES):
             raise ValueError(
                 "sync rule expression contains unsupported syntax: "
                 f"{type(node).__name__}"
             )
-        if isinstance(node, ast.Name) and node.id not in _ALLOWED_NAMES:
+        if (
+            isinstance(node, ast.Name)
+            and not isinstance(node.ctx, ast.Store)
+            and node.id not in allowed_names
+        ):
             raise ValueError(
                 f"sync rule expression references unknown name: {node.id!r}"
             )
@@ -273,15 +289,34 @@ def _ctx_field_refs_for_expression(expression: str) -> set[str]:
         parts.reverse()
         return parts
 
+    # Collect comprehension variables that iterate over ctx media namespaces so
+    # that attribute accesses like `g.index` (where `g` iterates over
+    # `ctx.grandchildren`) are treated as `ctx.grandchildren.index` refs.
+    comprehension_vars: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.ListComp, ast.GeneratorExp)):
+            continue
+        for gen in node.generators:
+            chain = _attribute_chain(gen.iter)
+            if not chain or len(chain) < 2 or chain[0] != "ctx":
+                continue
+            if chain[1] not in {"item", "child", "grandchildren"}:
+                continue
+            if isinstance(gen.target, ast.Name):
+                comprehension_vars.add(gen.target.id)
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
         chain = _attribute_chain(node)
-        if not chain or len(chain) < 3 or chain[0] != "ctx":
+        if not chain or len(chain) < 2:
             continue
-        if chain[1] not in {"item", "child", "grandchildren"}:
-            continue
-        refs.add(chain[2])
+        if chain[0] == "ctx" and len(chain) >= 3:
+            if chain[1] not in {"item", "child", "grandchildren"}:
+                continue
+            refs.add(chain[2])
+        elif chain[0] in comprehension_vars:
+            refs.add(chain[1])
 
     return refs
 

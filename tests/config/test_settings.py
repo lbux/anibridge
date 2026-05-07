@@ -349,21 +349,6 @@ def test_sync_rules_reject_invalid_variable_names() -> None:
         SyncRulesConfig(vars={"current": "True"})
 
 
-def test_sync_rules_reject_unsupported_expression_syntax() -> None:
-    """Expressions should reject unsupported Python constructs."""
-    with pytest.raises(ValueError):
-        SyncRulesConfig.model_validate(
-            {
-                "review": [
-                    {
-                        "if": "[value for value in [1, 2, 3]]",
-                        "set": None,
-                    }
-                ]
-            }
-        )
-
-
 @pytest.mark.parametrize(
     ("yaml_set_value", "expected_rule_set"),
     [("null", None), ("None", "None")],
