@@ -197,6 +197,28 @@ def test_create_app_skips_spa_when_frontend_assets_missing(
         assert client.get("/missing").status_code == 404
 
 
+def test_create_app_exposes_openapi_json_and_docs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_file = tmp_path / "index.html"
+    index_file.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.INFO)
+
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        schema_response = client.get("/docs/openapi.json")
+        docs_response = client.get("/docs")
+
+    assert schema_response.status_code == 200
+    assert schema_response.json()["info"]["title"] == "AniBridge"
+    assert schema_response.json()["info"]["version"] == app_module.__version__
+    assert docs_response.status_code == 200
+    assert docs_response.headers["content-type"].startswith("text/html")
+
+
 def test_create_app_uses_builtin_logging_middleware_in_debug(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -237,3 +259,25 @@ def test_create_app_uses_builtin_logging_middleware_in_debug(
         for message in handler.messages
     )
 
+
+def test_create_app_enables_gzip_compression(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    html = "<html>" + ("x" * 1024) + "</html>"
+    index_file = tmp_path / "index.html"
+    index_file.write_text(html, encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.INFO)
+
+    app = app_module.create_app()
+
+    assert app.compression_config is not None
+    assert app.compression_config.backend == "gzip"
+
+    with TestClient(app) as client:
+        response = client.get("/missing", headers={"Accept-Encoding": "gzip"})
+
+    assert response.status_code == 200
+    assert response.text == html
+    assert response.headers.get("content-encoding") == "gzip"

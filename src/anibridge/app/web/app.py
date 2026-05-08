@@ -7,17 +7,20 @@ from logging import DEBUG, Logger
 from typing import cast
 
 from litestar.app import Litestar
+from litestar.config.compression import CompressionConfig
 from litestar.connection.request import Request as LitestarRequest
 from litestar.file_system import BaseLocalFileSystem
 from litestar.handlers.http_handlers.decorators import get
 from litestar.middleware.base import ASGIMiddleware, DefineMiddleware
 from litestar.middleware.logging import LoggingMiddlewareConfig
+from litestar.openapi.config import OpenAPIConfig
+from litestar.openapi.plugins import ScalarRenderPlugin
 from litestar.response.base import Response as LitestarResponse
 from litestar.response.file import ASGIFileResponse
 from litestar.static_files.base import StaticFiles
 from litestar.types.internal_types import ControllerRouterHandler
 
-from anibridge.app import config, log
+from anibridge.app import __version__, config, log
 from anibridge.app.core.sched import SchedulerClient
 from anibridge.app.exceptions import AnibridgeError
 from anibridge.app.utils.paths import PROJECT_ROOT
@@ -34,20 +37,6 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["create_app"]
 
 FRONTEND_BUILD_DIR = PROJECT_ROOT / "frontend" / "build"
-
-
-class HttpLoggingMiddleware(LoggingMiddleware):
-    """Litestar logging middleware variant that emits debug-level records."""
-
-    def log_message(self, values: dict[str, object]) -> None:
-        """Log request and response messages at debug level instead of info."""
-        message = str(values.pop("message"))
-        if self.is_struct_logger:
-            self.logger.debug(message, **values)
-            return
-
-        value_strings = [f"{key}={value}" for key, value in values.items()]
-        self.logger.debug(f"{message}: {', '.join(value_strings)}")
 
 
 @asynccontextmanager
@@ -151,6 +140,7 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
         Litestar: The created Litestar application.
     """
     middleware: list[ASGIMiddleware | DefineMiddleware] = []
+    compression_config = CompressionConfig(backend="gzip")
 
     # Use Litestar's request/response logging when debug logging is enabled.
     if cast(Logger, log).level <= DEBUG:
@@ -198,7 +188,16 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
     app = Litestar(
         route_handlers=route_handlers,
         middleware=middleware,
+        compression_config=compression_config,
         lifespan=[lifespan],
+        openapi_config=OpenAPIConfig(
+            title="AniBridge",
+            description="AniBridge web API.",
+            version=__version__,
+            use_handler_docstrings=True,
+            path="/docs",
+            render_plugins=[ScalarRenderPlugin()],
+        ),
         exception_handlers={AnibridgeError: litestar_domain_exception_handler},
     )
 
