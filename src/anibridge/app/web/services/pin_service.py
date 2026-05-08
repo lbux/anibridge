@@ -4,12 +4,13 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import ClassVar
 
+import msgspec
 from anibridge.utils.cache import cache
-from pydantic import BaseModel, Field
 
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField
 from anibridge.app.models.db.pin import Pin
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.web.state import get_bridge
 
@@ -36,14 +37,14 @@ _SYNC_FIELD_VALUES: tuple[str, ...] = tuple(field.value for field in SyncField)
 _SYNC_FIELD_SET: frozenset[str] = frozenset(_SYNC_FIELD_VALUES)
 
 
-class PinFieldOption(BaseModel):
+class PinFieldOption(PydanticMsgspecMixin, msgspec.Struct):
     """Metadata for a selectable pin field."""
 
     value: str
     label: str
 
 
-class PinEntry(BaseModel):
+class PinEntry(PydanticMsgspecMixin, msgspec.Struct):
     """Serialized representation of a pin row."""
 
     profile_name: str
@@ -55,10 +56,10 @@ class PinEntry(BaseModel):
     media: ProviderMediaMetadata | None = None
 
 
-class UpdatePinPayload(BaseModel):
+class UpdatePinPayload(msgspec.Struct):
     """Payload accepted when updating pin configuration."""
 
-    fields: list[str] = Field(default_factory=list)
+    fields: list[str] = msgspec.field(default_factory=list)
 
     def normalized(self) -> list[str]:
         """Return sanitized field names as SyncField values."""
@@ -202,7 +203,15 @@ class PinService:
                 profile, [pin.list_media_key for pin in pins]
             )
             return [
-                pin.model_copy(update={"media": metadata.get(pin.list_media_key)})
+                PinEntry(
+                    profile_name=pin.profile_name,
+                    list_namespace=pin.list_namespace,
+                    list_media_key=pin.list_media_key,
+                    fields=list(pin.fields),
+                    created_at=pin.created_at,
+                    updated_at=pin.updated_at,
+                    media=metadata.get(pin.list_media_key),
+                )
                 for pin in pins
             ]
         return pins
@@ -222,8 +231,14 @@ class PinService:
             return None
         if with_media:
             metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
-            return entry.model_copy(
-                update={"media": metadata.get(entry.list_media_key)}
+            return PinEntry(
+                profile_name=entry.profile_name,
+                list_namespace=entry.list_namespace,
+                list_media_key=entry.list_media_key,
+                fields=list(entry.fields),
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                media=metadata.get(entry.list_media_key),
             )
         return entry
 
@@ -245,8 +260,14 @@ class PinService:
         entry = self._upsert_pin(profile, media_key, fields)
         if with_media:
             metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
-            return entry.model_copy(
-                update={"media": metadata.get(entry.list_media_key)}
+            return PinEntry(
+                profile_name=entry.profile_name,
+                list_namespace=entry.list_namespace,
+                list_media_key=entry.list_media_key,
+                fields=list(entry.fields),
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                media=metadata.get(entry.list_media_key),
             )
         return entry
 

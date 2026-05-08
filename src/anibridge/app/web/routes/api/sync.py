@@ -1,17 +1,18 @@
 """API endpoints to trigger sync operations."""
 
+import msgspec
 from fastapi.param_functions import Body, Path, Query
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["router"]
 
 
-class OkResponse(BaseModel):
+class OkResponse(PydanticMsgspecMixin, msgspec.Struct):
     ok: bool = True
 
 

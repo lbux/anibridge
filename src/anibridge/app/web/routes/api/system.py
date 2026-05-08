@@ -6,13 +6,14 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
+import msgspec
 import psutil
 from fastapi import Depends
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
 from anibridge.app import __git_hash__, __version__
 from anibridge.app.exceptions import AnibridgeError, SchedulerUnavailableError
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.utils.human import human_duration
 from anibridge.app.web.routes.api.config import require_config_api_access
 from anibridge.app.web.routes.api.status import (
@@ -24,17 +25,17 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["router"]
 
 
-class SettingsProfileModel(BaseModel):
+class SettingsProfileModel(PydanticMsgspecMixin, msgspec.Struct):
     name: str
     settings: dict[str, Any]
 
 
-class SettingsResponse(BaseModel):
+class SettingsResponse(PydanticMsgspecMixin, msgspec.Struct):
     global_config: dict[str, Any]
     profiles: list[SettingsProfileModel]
 
 
-class AboutInfoModel(BaseModel):
+class AboutInfoModel(PydanticMsgspecMixin, msgspec.Struct):
     version: str
     git_hash: str
     python: str
@@ -46,39 +47,39 @@ class AboutInfoModel(BaseModel):
     sqlite: str | None = None
 
 
-class ProcessInfoModel(BaseModel):
+class ProcessInfoModel(PydanticMsgspecMixin, msgspec.Struct):
     pid: int
     cpu_count: int | None = None
     memory_mb: float | None = None
 
 
-class SchedulerSummaryModel(BaseModel):
+class SchedulerSummaryModel(PydanticMsgspecMixin, msgspec.Struct):
     running: bool
     configured_profiles: int
     total_profiles: int
     running_profiles: int
     syncing_profiles: int
     sync_mode_counts: dict[str, int]
+    profiles: dict[str, ProfileStatusModel]
     most_recent_sync: str | None = None
     most_recent_sync_profile: str | None = None
     next_database_sync_at: str | None = None
     coordinator: dict | None = None
-    profiles: dict[str, ProfileStatusModel]
 
 
-class AboutResponse(BaseModel):
+class AboutResponse(PydanticMsgspecMixin, msgspec.Struct):
     info: AboutInfoModel
     process: ProcessInfoModel
     scheduler: SchedulerSummaryModel
     status: dict[str, ProfileStatusModel]
 
 
-class MetaResponse(BaseModel):
+class MetaResponse(PydanticMsgspecMixin, msgspec.Struct):
     version: str
     git_hash: str
 
 
-class RestartResponse(BaseModel):
+class RestartResponse(PydanticMsgspecMixin, msgspec.Struct):
     ok: bool
     message: str
 
@@ -99,21 +100,17 @@ def api_settings() -> SettingsResponse:
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
-        return SettingsResponse.model_construct(global_config={}, profiles=[])
+        return SettingsResponse(global_config={}, profiles=[])
 
     global_config = scheduler.global_config.model_dump(
         mode="json", exclude={"profiles"}
     )
     profiles = [
-        SettingsProfileModel.model_construct(
-            name=name, settings=pdata.model_dump(mode="json")
-        )
+        SettingsProfileModel(name=name, settings=pdata.model_dump(mode="json"))
         for name, pdata in scheduler.global_config.profiles.items()
     ]
 
-    return SettingsResponse.model_construct(
-        global_config=global_config, profiles=profiles
-    )
+    return SettingsResponse(global_config=global_config, profiles=profiles)
 
 
 @router.get(
@@ -162,7 +159,7 @@ async def api_about() -> AboutResponse:
         uptime_seconds = int(delta.total_seconds())
         human_uptime = human_duration(uptime_seconds)
 
-    info = AboutInfoModel.model_construct(
+    info = AboutInfoModel(
         version=__version__,
         git_hash=__git_hash__,
         python=platform.python_version(),
@@ -216,28 +213,26 @@ async def api_about() -> AboutResponse:
         else 0
     )
 
-    scheduler_summary = SchedulerSummaryModel.model_construct(
+    scheduler_summary = SchedulerSummaryModel(
         running=scheduler_running,
         configured_profiles=configured_profiles,
         total_profiles=len(converted),
         running_profiles=running_profiles,
         syncing_profiles=syncing_profiles,
         sync_mode_counts=sync_mode_counts,
+        profiles=converted,
         most_recent_sync=most_recent_sync_iso,
         most_recent_sync_profile=most_recent_sync_profile,
         next_database_sync_at=next_db_sync_iso,
         coordinator=scheduler_runtime_metrics.get("coordinator"),
-        profiles=converted,
     )
 
     pid = os.getpid()
     cpu_count = psutil.cpu_count(logical=True)
     memory_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
-    process_info = ProcessInfoModel.model_construct(
-        pid=pid, cpu_count=cpu_count, memory_mb=memory_mb
-    )
+    process_info = ProcessInfoModel(pid=pid, cpu_count=cpu_count, memory_mb=memory_mb)
 
-    return AboutResponse.model_construct(
+    return AboutResponse(
         info=info,
         process=process_info,
         scheduler=scheduler_summary,
@@ -252,7 +247,7 @@ def meta() -> MetaResponse:
     Returns:
         dict[str, str]: The application metadata.
     """
-    return MetaResponse.model_construct(version=__version__, git_hash=__git_hash__)
+    return MetaResponse(version=__version__, git_hash=__git_hash__)
 
 
 @router.post(
@@ -281,7 +276,7 @@ def api_restart() -> RestartResponse:
     app_state.request_restart()
     scheduler.request_shutdown()
 
-    return RestartResponse.model_construct(
+    return RestartResponse(
         ok=True,
         message="Restart requested. AniBridge will restart shortly.",
     )

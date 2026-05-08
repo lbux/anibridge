@@ -1,8 +1,9 @@
 """API status endpoints."""
 
+import msgspec
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.state import get_app_state
 
 __all__ = [
@@ -14,7 +15,7 @@ __all__ = [
 ]
 
 
-class ProfileConfigModel(BaseModel):
+class ProfileConfigModel(PydanticMsgspecMixin, msgspec.Struct):
     """Serialized profile configuration exposed to the web UI."""
 
     library_namespace: str
@@ -23,12 +24,12 @@ class ProfileConfigModel(BaseModel):
     list_user: str | None = None
     poll_interval: int | str | None = None
     scan_interval: int | str | None = None
-    scan_modes: list[str] = []
+    scan_modes: list[str] = msgspec.field(default_factory=list)
     full_scan: bool | None = None
     destructive_sync: bool | None = None
 
 
-class ProfileRuntimeStatusModel(BaseModel):
+class ProfileRuntimeStatusModel(PydanticMsgspecMixin, msgspec.Struct):
     """Runtime status of a profile exposed to the web UI."""
 
     running: bool
@@ -37,14 +38,14 @@ class ProfileRuntimeStatusModel(BaseModel):
     initialization_error: str | None = None
 
 
-class ProfileStatusModel(BaseModel):
+class ProfileStatusModel(PydanticMsgspecMixin, msgspec.Struct):
     """Combined profile configuration and runtime status exposed to the web UI."""
 
     config: ProfileConfigModel
     status: ProfileRuntimeStatusModel
 
 
-class StatusResponse(BaseModel):
+class StatusResponse(PydanticMsgspecMixin, msgspec.Struct):
     profiles: dict[str, ProfileStatusModel]
     scheduler: dict | None = None
 
@@ -61,19 +62,19 @@ async def status() -> StatusResponse:
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
-        return StatusResponse.model_construct(profiles={}, scheduler=None)
+        return StatusResponse(profiles={}, scheduler=None)
     raw = await scheduler.get_status()
     runtime_metrics = await scheduler.get_runtime_metrics()
     converted = {name: construct_profile_status(data) for name, data in raw.items()}
-    return StatusResponse.model_construct(profiles=converted, scheduler=runtime_metrics)
+    return StatusResponse(profiles=converted, scheduler=runtime_metrics)
 
 
 def construct_profile_status(data: dict) -> ProfileStatusModel:
     """Build trusted scheduler profile payloads without re-validating them."""
     cfg = data.get("config", {})
     st = data.get("status", {})
-    return ProfileStatusModel.model_construct(
-        config=ProfileConfigModel.model_construct(
+    return ProfileStatusModel(
+        config=ProfileConfigModel(
             library_namespace=cfg.get("library_namespace"),
             list_namespace=cfg.get("list_namespace"),
             library_user=cfg.get("library_user"),
@@ -84,7 +85,7 @@ def construct_profile_status(data: dict) -> ProfileStatusModel:
             full_scan=cfg.get("full_scan"),
             destructive_sync=cfg.get("destructive_sync"),
         ),
-        status=ProfileRuntimeStatusModel.model_construct(
+        status=ProfileRuntimeStatusModel(
             running=bool(st.get("running")),
             last_synced=st.get("last_synced"),
             current_sync=st.get("current_sync"),

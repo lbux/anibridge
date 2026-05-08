@@ -1,22 +1,24 @@
 """Backup API endpoints."""
 
-from typing import Any
+from typing import Annotated, Any
 
+import msgspec
+from fastapi import Body
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.services.backup_service import BackupMeta, get_backup_service
 
 router = APIRouter()
 
 
-class ListBackupsResponse(BaseModel):
+class ListBackupsResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for listing backups."""
 
     backups: list[BackupMeta]
 
 
-class RestoreRequest(BaseModel):
+class RestoreRequest(PydanticMsgspecMixin, msgspec.Struct):
     """Request body for triggering a restore."""
 
     filename: str
@@ -41,7 +43,7 @@ def list_backups(profile: str) -> ListBackupsResponse:
 
 
 @router.post("/{profile}/restore")
-async def restore_backup(profile: str, req: RestoreRequest) -> None:
+async def restore_backup(profile: str, req: Annotated[RestoreRequest, Body()]) -> None:
     """Restore a backup file (no dry-run mode).
 
     Raises:

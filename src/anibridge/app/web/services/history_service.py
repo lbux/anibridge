@@ -8,7 +8,6 @@ import msgspec
 from anibridge.library.base import LibraryMedia
 from anibridge.list.base import ListMedia
 from anibridge.utils.cache import cache
-from pydantic import BaseModel
 from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import func
 
@@ -22,6 +21,7 @@ from anibridge.app.exceptions import (
 )
 from anibridge.app.models.db.pin import Pin
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state, get_bridge
@@ -29,11 +29,13 @@ from anibridge.app.web.state import get_app_state, get_bridge
 __all__ = ["HistoryService", "get_history_service"]
 
 
-class HistoryItem(BaseModel):
+class HistoryItem(PydanticMsgspecMixin, msgspec.Struct):
     """Serializable history entry with optional provider metadata."""
 
     id: int
     profile_name: str
+    outcome: str
+    timestamp: str
     library_namespace: str | None = None
     library_section_key: str | None = None
     library_media_key: str | None = None
@@ -43,19 +45,17 @@ class HistoryItem(BaseModel):
     animap_id: str | None = None
     animap_scope: str | None = None
     media_kind: str | None = None
-    outcome: str
     before_state: dict | None = None
     after_state: dict | None = None
     info: dict[str, str] | None = None
     error_message: str | None = None
     ephemeral: bool = False
-    timestamp: str
     library_media: ProviderMediaMetadata | None = None
     list_media: ProviderMediaMetadata | None = None
     pinned_fields: list[str] | None = None
 
 
-class HistoryPage(BaseModel):
+class HistoryPage(PydanticMsgspecMixin, msgspec.Struct):
     """Cursor-based history slice wrapper."""
 
     items: list[HistoryItem]
@@ -147,18 +147,22 @@ class HistoryService:
                 )
 
             list_metadata: ProviderMediaMetadata | None = None
-            if list_media:
-                list_metadata = ProviderMediaMetadata.model_construct(
+            if list_media and row.list_media_key is not None:
+                list_metadata = ProviderMediaMetadata(
                     namespace=row.list_namespace,
                     key=row.list_media_key,
                     title=list_media.title,
                     poster_url=list_media.poster_image,
                     external_url=list_media.external_url,
-                    labels=list_media.labels,
+                    labels=(
+                        list(list_media.labels)
+                        if list_media.labels is not None
+                        else None
+                    ),
                 )
             library_metadata: ProviderMediaMetadata | None = None
             if library_media:
-                library_metadata = ProviderMediaMetadata.model_construct(
+                library_metadata = ProviderMediaMetadata(
                     namespace=row.library_namespace,
                     key=row.library_media_key,
                     title=library_media.title,
@@ -171,7 +175,7 @@ class HistoryService:
                 )
 
             dto_items.append(
-                HistoryItem.model_construct(
+                HistoryItem(
                     id=row.id,
                     profile_name=row.profile_name,
                     library_namespace=row.library_namespace,
@@ -412,7 +416,7 @@ class HistoryService:
 
         next_before_id = rows[-1].id if rows and has_more else None
 
-        page_obj = HistoryPage.model_construct(
+        page_obj = HistoryPage(
             items=dto_items,
             limit=limit,
             has_more=has_more,

@@ -1,15 +1,17 @@
 """Generic provider metadata schemas used across the web API."""
 
-from pydantic import BaseModel, Field
+import msgspec
+
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 
 __all__ = ["ProviderMediaMetadata"]
 
 
-class ProviderMediaMetadata(BaseModel):
+class ProviderMediaMetadata(PydanticMsgspecMixin, msgspec.Struct):
     """Provider-agnostic description of a media item."""
 
-    namespace: str = Field(min_length=1)
-    key: str = Field(min_length=1)
+    namespace: str
+    key: str
     title: str | None = None
     poster_url: str | None = None
     external_url: str | None = None

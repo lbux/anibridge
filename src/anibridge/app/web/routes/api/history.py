@@ -1,9 +1,10 @@
 """History API endpoints."""
 
+import msgspec
 from fastapi.param_functions import Query
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.services.history_service import (
     HistoryItem,
     HistoryPage,
@@ -15,19 +16,19 @@ router = APIRouter()
 GetHistoryResponse = HistoryPage
 
 
-class OkResponse(BaseModel):
+class OkResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for successful operations."""
 
     ok: bool = True
 
 
-class UndoResponse(BaseModel):
+class UndoResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for undo operation."""
 
     item: HistoryItem
 
 
-class RetryResponse(BaseModel):
+class RetryResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for retry operation."""
 
     ok: bool = True

@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import msgspec
 import msgspec.json
 from anibridge.utils.cache import cache
-from pydantic import BaseModel
 
 from anibridge.app import log
 from anibridge.app.exceptions import (
@@ -17,20 +17,21 @@ from anibridge.app.exceptions import (
     SchedulerNotInitializedError,
     SchedulerUnavailableError,
 )
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BackupService", "get_backup_service"]
 
 
-class BackupMeta(BaseModel):
+class BackupMeta(PydanticMsgspecMixin, msgspec.Struct):
     """Metadata about a backup file used for listing in the UI."""
 
     filename: str
     created_at: datetime
     size_bytes: int
+    age_seconds: float
     entries: int | None = None
     user: str | None = None
-    age_seconds: float
 
 
 class BackupService:

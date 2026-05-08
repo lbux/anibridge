@@ -2,10 +2,11 @@
 
 from enum import StrEnum
 
+import msgspec
 from fastapi import Response
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.state import get_app_state
 
 router = APIRouter()
@@ -19,7 +20,7 @@ class ReadyzStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
-class ReadyzProfilesResponse(BaseModel):
+class ReadyzProfilesResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Aggregate profile counts exposed by the readiness probe."""
 
     configured: int
@@ -27,7 +28,7 @@ class ReadyzProfilesResponse(BaseModel):
     failed: int
 
 
-class ReadyzResponse(BaseModel):
+class ReadyzResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Minimal readiness payload for unauthenticated probes."""
 
     status: ReadyzStatus

@@ -1,13 +1,13 @@
 """API endpoints for mappings (v3 graph)."""
 
 import asyncio
-from typing import Any
+from typing import Annotated
 
-from fastapi import Request
+import msgspec
+from fastapi import Body, Request
 from fastapi.exceptions import HTTPException
 from fastapi.param_functions import Query
 from fastapi.routing import APIRouter
-from pydantic import BaseModel, Field
 
 from anibridge.app.exceptions import (
     AniListFilterError,
@@ -16,6 +16,7 @@ from anibridge.app.exceptions import (
     BooruQuerySyntaxError,
     MappingIdMismatchError,
 )
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.anilist import Media
 from anibridge.app.web.services.mapping_overrides_service import (
     get_mapping_overrides_service,
@@ -26,27 +27,27 @@ from anibridge.app.web.services.mappings_service import get_mappings_service
 __all__ = ["router"]
 
 
-class MappingEdgeModel(BaseModel):
+class MappingEdgeModel(PydanticMsgspecMixin, msgspec.Struct):
     target_provider: str
     target_entry_id: str
-    target_scope: str | None = None
     source_range: str
+    target_scope: str | None = None
     destination_range: str | None = None
-    sources: list[str] = Field(default_factory=list)
+    sources: list[str] = msgspec.field(default_factory=list)
 
 
-class MappingItemModel(BaseModel):
+class MappingItemModel(PydanticMsgspecMixin, msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
-    scope: str | None = None
     edges: list[MappingEdgeModel]
+    scope: str | None = None
     custom: bool = False
-    sources: list[str] = Field(default_factory=list)
+    sources: list[str] = msgspec.field(default_factory=list)
     anilist: Media | None = None
 
 
-class ListMappingsResponse(BaseModel):
+class ListMappingsResponse(PydanticMsgspecMixin, msgspec.Struct):
     items: list[MappingItemModel]
     total: int
     page: int
@@ -55,81 +56,80 @@ class ListMappingsResponse(BaseModel):
     with_anilist: bool = False
 
 
-class DeleteMappingResponse(BaseModel):
+class DeleteMappingResponse(PydanticMsgspecMixin, msgspec.Struct):
     ok: bool
 
 
-class RangeInputModel(BaseModel):
+class RangeInputModel(PydanticMsgspecMixin, msgspec.Struct):
     source_range: str
     destination_range: str | None = None
 
 
-class TargetInputModel(BaseModel):
+class TargetInputModel(PydanticMsgspecMixin, msgspec.Struct):
     provider: str
     entry_id: str
     scope: str | None = None
-    ranges: list[RangeInputModel] = Field(default_factory=list)
+    ranges: list[RangeInputModel] = msgspec.field(default_factory=list)
     deleted: bool = False
 
 
-class MappingOverridePayload(BaseModel):
+class MappingOverridePayload(PydanticMsgspecMixin, msgspec.Struct):
     """Payload for creating or updating a mapping override."""
 
     descriptor: str
-    targets: list[TargetInputModel] = Field(default_factory=list)
-
-    def to_service_kwargs(self) -> dict[str, Any]:
-        """Return kwargs expected by MappingOverridesService."""
-        return {
-            "descriptor": self.descriptor,
-            "targets": [entry.model_dump() for entry in self.targets],
-        }
+    targets: list[TargetInputModel] = msgspec.field(default_factory=list)
 
 
-class MappingRangeViewModel(BaseModel):
+class MappingRangeViewModel(PydanticMsgspecMixin, msgspec.Struct):
     source_range: str
+    origin: str
     upstream: str | None = None
     custom: str | None = None
     effective: str | None = None
-    origin: str
     inherited: bool = False
 
 
-class MappingTargetViewModel(BaseModel):
+class MappingTargetViewModel(PydanticMsgspecMixin, msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
-    scope: str | None = None
     origin: str
+    scope: str | None = None
     deleted: bool = False
-    ranges: list[MappingRangeViewModel] = Field(default_factory=list)
+    ranges: list[MappingRangeViewModel] = msgspec.field(default_factory=list)
 
 
-class MappingLayersModel(BaseModel):
-    upstream: dict[str, dict[str, str | None] | None] = Field(default_factory=dict)
-    custom: dict[str, dict[str, str | None] | None] = Field(default_factory=dict)
-    effective: dict[str, dict[str, str | None] | None] = Field(default_factory=dict)
+class MappingLayersModel(PydanticMsgspecMixin, msgspec.Struct):
+    upstream: dict[str, dict[str, str | None] | None] = msgspec.field(
+        default_factory=dict
+    )
+    custom: dict[str, dict[str, str | None] | None] = msgspec.field(
+        default_factory=dict
+    )
+    effective: dict[str, dict[str, str | None] | None] = msgspec.field(
+        default_factory=dict
+    )
 
 
-class MappingDetailModel(BaseModel):
+class MappingDetailModel(PydanticMsgspecMixin, msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
     scope: str | None = None
-    layers: MappingLayersModel = Field(default_factory=MappingLayersModel)
-    targets: list[MappingTargetViewModel] = Field(default_factory=list)
+    layers: MappingLayersModel = msgspec.field(default_factory=MappingLayersModel)
+    targets: list[MappingTargetViewModel] = msgspec.field(default_factory=list)
 
 
-class FieldCapabilityModel(BaseModel):
+class FieldCapabilityModel(PydanticMsgspecMixin, msgspec.Struct):
     key: str
-    aliases: list[str] = Field(default_factory=list)
     type: str
     operators: list[str]
+    aliases: list[str] = msgspec.field(default_factory=list)
     values: list[str] | None = None
     desc: str | None = None
 
 
-class QueryCapabilitiesResponse(BaseModel):
+class QueryCapabilitiesResponse(PydanticMsgspecMixin, msgspec.Struct):
     fields: list[FieldCapabilityModel]
 
 
@@ -170,7 +170,7 @@ async def list_mappings(
     except asyncio.CancelledError as exc:
         raise HTTPException(status_code=499, detail="Client Closed Request") from exc
 
-    items = [MappingItemModel(**it) for it in raw_items]
+    items = msgspec.convert(raw_items, type=list[MappingItemModel])
     pages = (total + per_page - 1) // per_page if per_page else 1
     return ListMappingsResponse(
         items=items,
@@ -203,25 +203,32 @@ def query_capabilities() -> QueryCapabilitiesResponse:
 async def get_mapping(descriptor: str) -> MappingDetailModel:
     svc = get_mapping_overrides_service()
     data = await svc.get_mapping_detail(descriptor)
-    return MappingDetailModel(**data)
+    return msgspec.convert(data, type=MappingDetailModel)
 
 
 @router.post("", response_model=MappingDetailModel)
-async def create_mapping(mapping: MappingOverridePayload) -> MappingDetailModel:
+async def create_mapping(
+    mapping: Annotated[MappingOverridePayload, Body()],
+) -> MappingDetailModel:
     svc = get_mapping_overrides_service()
-    payload = mapping.to_service_kwargs()
-    data = await svc.save_override(**payload)
-    return MappingDetailModel(**data)
+    data = await svc.save_override(
+        descriptor=mapping.descriptor,
+        targets=msgspec.to_builtins(mapping.targets),
+    )
+    return msgspec.convert(data, type=MappingDetailModel)
 
 
 @router.put("/{descriptor}", response_model=MappingDetailModel)
 async def update_mapping(
-    descriptor: str, mapping: MappingOverridePayload
+    descriptor: str,
+    mapping: Annotated[MappingOverridePayload, Body()],
 ) -> MappingDetailModel:
     if mapping.descriptor != descriptor:
         raise MappingIdMismatchError("descriptor in path and body must match")
 
     svc = get_mapping_overrides_service()
-    payload = mapping.to_service_kwargs()
-    data = await svc.save_override(**payload)
-    return MappingDetailModel(**data)
+    data = await svc.save_override(
+        descriptor=mapping.descriptor,
+        targets=msgspec.to_builtins(mapping.targets),
+    )
+    return msgspec.convert(data, type=MappingDetailModel)

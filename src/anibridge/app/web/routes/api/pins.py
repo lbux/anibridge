@@ -1,11 +1,14 @@
 """API routes for managing field pins across list providers."""
 
+from typing import Annotated
+
+import msgspec
+from fastapi import Body
 from fastapi.exceptions import HTTPException
 from fastapi.param_functions import Path, Query
 from fastapi.routing import APIRouter
-from pydantic import BaseModel, Field
 
-from anibridge.app.config.settings import SyncField
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.web.services.pin_service import (
     PinEntry,
@@ -17,48 +20,42 @@ from anibridge.app.web.services.pin_service import (
 router = APIRouter()
 
 
-class PinListResponse(BaseModel):
+class PinListResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for listing pins."""
 
     pins: list[PinEntry]
 
 
-class PinOptionsResponse(BaseModel):
+class PinOptionsResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for available pin field options."""
 
     options: list[PinFieldOption]
 
 
-class PinSearchItem(BaseModel):
+class PinSearchItem(PydanticMsgspecMixin, msgspec.Struct):
     """Search result item combining provider metadata with existing pin state."""
 
     media: ProviderMediaMetadata
     pin: PinEntry | None = None
 
 
-class PinSearchResponse(BaseModel):
+class PinSearchResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for provider search results within the pin manager."""
 
     results: list[PinSearchItem]
 
 
-class UpdatePinRequest(BaseModel):
+class UpdatePinRequest(PydanticMsgspecMixin, msgspec.Struct):
     """Request body for updating pin fields."""
 
-    fields: list[SyncField | str] = Field(default_factory=list)
+    fields: list[str] = msgspec.field(default_factory=list)
 
     def to_payload(self) -> UpdatePinPayload:
         """Convert request into payload for the service layer."""
-        payload = UpdatePinPayload(fields=[])
-        normalized: list[str] = []
-        for field in self.fields:
-            value = field.value if isinstance(field, SyncField) else str(field)
-            normalized.append(value)
-        payload.fields = normalized
-        return payload
+        return UpdatePinPayload(fields=list(self.fields))
 
 
-class OkResponse(BaseModel):
+class OkResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Response model for successful operations."""
 
     ok: bool = True
@@ -112,7 +109,7 @@ async def get_pin(
 
 @router.put("/{profile}/{media_key}", response_model=PinEntry)
 async def upsert_pin(
-    request: UpdatePinRequest,
+    request: Annotated[UpdatePinRequest, Body()],
     profile: str = Path(..., min_length=1),
     media_key: str = Path(..., min_length=1),
     with_media: bool = Query(False),

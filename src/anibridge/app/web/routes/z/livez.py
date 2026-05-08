@@ -2,13 +2,15 @@
 
 from typing import Literal
 
+import msgspec
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
+
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 
 router = APIRouter()
 
 
-class LivezResponse(BaseModel):
+class LivezResponse(PydanticMsgspecMixin, msgspec.Struct):
     """Minimal liveness payload for unauthenticated probes."""
 
     status: Literal["ok"] = "ok"

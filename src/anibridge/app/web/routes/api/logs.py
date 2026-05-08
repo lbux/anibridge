@@ -4,27 +4,28 @@ import logging
 import re
 from pathlib import Path
 
+import msgspec
 from fastapi.param_functions import Query
 from fastapi.routing import APIRouter
-from pydantic import BaseModel
 
 from anibridge.app import config
 from anibridge.app.exceptions import InvalidLogFileNameError, LogFileNotFoundError
+from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 
 __all__ = ["router"]
 
 
-class LogFileModel(BaseModel):
+class LogFileModel(PydanticMsgspecMixin, msgspec.Struct):
     name: str
     size: int
     mtime: int  # epoch ms
     current: bool
 
 
-class LogEntryModel(BaseModel):
-    timestamp: str | None = None
+class LogEntryModel(PydanticMsgspecMixin, msgspec.Struct):
     level: str
     message: str
+    timestamp: str | None = None
 
 
 router = APIRouter()
