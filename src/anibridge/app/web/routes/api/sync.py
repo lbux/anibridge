@@ -1,5 +1,7 @@
 """API endpoints to trigger sync operations."""
 
+from typing import Annotated
+
 import msgspec
 from litestar.handlers.http_handlers.decorators import post
 from litestar.router import Router
@@ -12,7 +14,13 @@ __all__ = ["router"]
 
 
 class OkResponse(msgspec.Struct):
-    ok: bool = True
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the sync request was accepted.",
+            examples=[True],
+        ),
+    ] = True
 
 
 @post(path="")

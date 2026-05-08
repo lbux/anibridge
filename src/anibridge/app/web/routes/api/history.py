@@ -1,5 +1,7 @@
 """History API endpoints."""
 
+from typing import Annotated
+
 import msgspec
 from litestar.handlers.http_handlers.decorators import delete, get, post
 from litestar.router import Router
@@ -18,19 +20,44 @@ GetHistoryResponse = HistoryPage
 class OkResponse(msgspec.Struct):
     """Response model for successful operations."""
 
-    ok: bool = True
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the operation completed successfully.",
+            examples=[True],
+        ),
+    ] = True
 
 
 class UndoResponse(msgspec.Struct):
     """Response model for undo operation."""
 
-    item: HistoryItem
+    item: Annotated[
+        HistoryItem,
+        msgspec.Meta(
+            description="History item that was undone and re-recorded.",
+            examples=[
+                {
+                    "id": 42,
+                    "profile_name": "default",
+                    "outcome": "undone",
+                    "timestamp": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+        ),
+    ]
 
 
 class RetryResponse(msgspec.Struct):
     """Response model for retry operation."""
 
-    ok: bool = True
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the retry request was accepted.",
+            examples=[True],
+        ),
+    ] = True
 
 
 @get(path="/{profile:str}")

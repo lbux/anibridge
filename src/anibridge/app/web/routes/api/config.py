@@ -17,23 +17,111 @@ __all__ = ["router"]
 
 
 class ConfigDocumentResponse(msgspec.Struct):
-    config_path: str
-    file_exists: bool
-    content: str
-    schema: dict[str, object]
-    mtime: int | None = None
+    config_path: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Absolute path to the active AniBridge configuration file.",
+            examples=["/data/config.yaml"],
+        ),
+    ]
+    file_exists: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the configuration file exists on disk.",
+            examples=[True],
+        ),
+    ]
+    content: Annotated[
+        str,
+        msgspec.Meta(
+            description="Raw YAML contents of the configuration file.",
+            examples=["profiles:\n  default: {}\n"],
+        ),
+    ]
+    schema: Annotated[
+        dict[str, object],
+        msgspec.Meta(
+            description="JSON Schema document describing the configuration file.",
+            examples=[{"title": "AnibridgeConfig", "type": "object"}],
+        ),
+    ]
+    mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "Last modification time of the configuration file "
+                    "in epoch milliseconds."
+                ),
+                examples=[1715179200000],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class ConfigDocumentUpdateRequest(msgspec.Struct):
-    content: str = ""
-    expected_mtime: int | None = None
+    content: Annotated[
+        str,
+        msgspec.Meta(
+            description="Full YAML document to persist as the new configuration.",
+            examples=["profiles:\n  default: {}\n"],
+        ),
+    ] = ""
+    expected_mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "Last known file modification time used for "
+                    "optimistic concurrency checks."
+                ),
+                examples=[1715179200000],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class ConfigUpdateResponse(msgspec.Struct):
-    ok: bool
-    profiles: list[str]
-    requires_restart: bool = True
-    mtime: int | None = None
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the configuration update was accepted.",
+            examples=[True],
+        ),
+    ]
+    profiles: Annotated[
+        list[str],
+        msgspec.Meta(
+            description="Sorted profile names present in the saved configuration.",
+            examples=[["default", "movies"]],
+        ),
+    ]
+    requires_restart: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the change requires a process restart to fully apply.",
+            examples=[True],
+        ),
+    ] = True
+    mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "New modification time of the saved configuration file "
+                    "in epoch milliseconds."
+                ),
+                examples=[1715179260000],
+            ),
+        ]
+        | None
+    ) = None
 
 
 def require_config_api_access() -> None:

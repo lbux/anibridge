@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import msgspec
 from anibridge.utils.cache import cache
@@ -38,20 +38,83 @@ _SYNC_FIELD_SET: frozenset[str] = frozenset(_SYNC_FIELD_VALUES)
 class PinFieldOption(msgspec.Struct):
     """Metadata for a selectable pin field."""
 
-    value: str
-    label: str
+    value: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Sync field identifier that can be pinned.",
+            examples=["status"],
+        ),
+    ]
+    label: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Human-friendly label for the pin field option.",
+            examples=["Status"],
+        ),
+    ]
 
 
 class PinEntry(msgspec.Struct):
     """Serialized representation of a pin row."""
 
-    profile_name: str
-    list_namespace: str
-    list_media_key: str
-    fields: list[str]
-    created_at: datetime
-    updated_at: datetime
-    media: ProviderMediaMetadata | None = None
+    profile_name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Profile that owns the pinned entry.",
+            examples=["default"],
+        ),
+    ]
+    list_namespace: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="List provider namespace for the pinned entry.",
+            examples=["anilist"],
+        ),
+    ]
+    list_media_key: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Provider-specific media key for the pinned entry.",
+            examples=["5114"],
+        ),
+    ]
+    fields: Annotated[
+        list[str],
+        msgspec.Meta(
+            min_length=1,
+            description="Ordered set of normalized sync fields pinned for the entry.",
+            examples=[["status", "progress"]],
+        ),
+    ]
+    created_at: Annotated[
+        datetime,
+        msgspec.Meta(
+            description="UTC timestamp when the pin was first created.",
+            examples=["2026-01-01T00:00:00Z"],
+        ),
+    ]
+    updated_at: Annotated[
+        datetime,
+        msgspec.Meta(
+            description="UTC timestamp when the pin was last updated.",
+            examples=["2026-01-01T00:05:00Z"],
+        ),
+    ]
+    media: (
+        Annotated[
+            ProviderMediaMetadata,
+            msgspec.Meta(
+                description="Resolved provider metadata for the pinned media item.",
+                examples=[{"namespace": "anilist", "key": "5114"}],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class PinService:

@@ -213,8 +213,37 @@ def test_create_app_exposes_openapi_json_and_docs(
         docs_response = client.get("/docs")
 
     assert schema_response.status_code == 200
-    assert schema_response.json()["info"]["title"] == "AniBridge"
-    assert schema_response.json()["info"]["version"] == app_module.__version__
+    schema = schema_response.json()
+    assert schema["info"]["title"] == "AniBridge"
+    assert schema["info"]["version"] == app_module.__version__
+
+    components = schema["components"]["schemas"]
+    mapping_descriptor = components["MappingOverridePayload"]["properties"][
+        "descriptor"
+    ]
+    assert mapping_descriptor["minLength"] == 1
+    assert (
+        mapping_descriptor["description"]
+        == "Canonical descriptor whose override is being created or updated."
+    )
+    assert mapping_descriptor["examples"] == ["anilist:5114"]
+
+    restore_filename = components["RestoreRequest"]["properties"]["filename"]
+    assert restore_filename["minLength"] == 1
+    assert restore_filename["examples"] == [
+        "anibridge_default_anilist_20260508120000.json"
+    ]
+
+    expected_mtime = components["ConfigDocumentUpdateRequest"]["properties"][
+        "expected_mtime"
+    ]
+    assert expected_mtime["oneOf"] == [{"type": "integer"}, {"type": "null"}]
+
+    provider_namespace = components["ProviderMediaMetadata"]["properties"]["namespace"]
+    assert provider_namespace["minLength"] == 1
+    assert provider_namespace["description"] == "Provider namespace for the media item."
+    assert provider_namespace["examples"] == ["anilist"]
+
     assert docs_response.status_code == 200
     assert docs_response.headers["content-type"].startswith("text/html")
 

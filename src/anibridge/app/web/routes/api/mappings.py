@@ -26,109 +26,584 @@ __all__ = ["router"]
 
 
 class MappingEdgeModel(msgspec.Struct):
-    target_provider: str
-    target_entry_id: str
-    source_range: str
-    target_scope: str | None = None
-    destination_range: str | None = None
-    sources: list[str] = msgspec.field(default_factory=list)
+    target_provider: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider namespace for the edge.",
+            examples=["tmdb"],
+        ),
+    ]
+    target_entry_id: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider entry identifier for the edge.",
+            examples=["1396"],
+        ),
+    ]
+    source_range: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source episode or media range represented by the edge.",
+            examples=["1-12"],
+        ),
+    ]
+    target_scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Target scope qualifier for the mapped entry when present.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    destination_range: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Target episode or media range for the mapped edge.",
+                examples=["1-12"],
+            ),
+        ]
+        | None
+    ) = None
+    sources: Annotated[
+        list[str],
+        msgspec.Meta(
+            description="Source provenance labels for the mapping edge.",
+            examples=[["animap", "manual"]],
+        ),
+    ] = msgspec.field(default_factory=list)
 
 
 class MappingItemModel(msgspec.Struct):
-    descriptor: str
-    provider: str
-    entry_id: str
-    edges: list[MappingEdgeModel]
-    scope: str | None = None
-    custom: bool = False
-    sources: list[str] = msgspec.field(default_factory=list)
-    anilist: Media | None = None
+    descriptor: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Canonical mapping descriptor used as the primary key.",
+            examples=["anilist:5114"],
+        ),
+    ]
+    provider: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source provider namespace for the mapping item.",
+            examples=["anilist"],
+        ),
+    ]
+    entry_id: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source provider entry identifier for the mapping item.",
+            examples=["5114"],
+        ),
+    ]
+    edges: Annotated[
+        list[MappingEdgeModel],
+        msgspec.Meta(
+            description="Outgoing mapping edges attached to the descriptor.",
+            examples=[
+                [
+                    {
+                        "target_provider": "tmdb",
+                        "target_entry_id": "1396",
+                        "source_range": "1-12",
+                    }
+                ]
+            ],
+        ),
+    ]
+    scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Optional scope qualifier for the source descriptor.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    custom: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether this mapping item is backed by a local override.",
+            examples=[False],
+        ),
+    ] = False
+    sources: Annotated[
+        list[str],
+        msgspec.Meta(
+            description="Source provenance labels for the mapping item.",
+            examples=[["animap"]],
+        ),
+    ] = msgspec.field(default_factory=list)
+    anilist: (
+        Annotated[
+            Media,
+            msgspec.Meta(
+                description=(
+                    "Optional AniList media payload attached for UI enrichment."
+                ),
+                examples=[{"id": 5114}],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class ListMappingsResponse(msgspec.Struct):
-    items: list[MappingItemModel]
-    total: int
-    page: int
-    per_page: int
-    pages: int
-    with_anilist: bool = False
+    items: Annotated[
+        list[MappingItemModel],
+        msgspec.Meta(
+            description="Paginated mapping items matching the current query.",
+            examples=[
+                [
+                    {
+                        "descriptor": "anilist:5114",
+                        "provider": "anilist",
+                        "entry_id": "5114",
+                        "edges": [],
+                    }
+                ]
+            ],
+        ),
+    ]
+    total: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Total number of matching mappings.",
+            examples=[128],
+        ),
+    ]
+    page: Annotated[
+        int,
+        msgspec.Meta(
+            ge=1,
+            description="Current page number.",
+            examples=[1],
+        ),
+    ]
+    per_page: Annotated[
+        int,
+        msgspec.Meta(
+            ge=1,
+            description="Maximum number of items requested per page.",
+            examples=[25],
+        ),
+    ]
+    pages: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Total number of pages available for the current query.",
+            examples=[6],
+        ),
+    ]
+    with_anilist: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether AniList enrichment was included in the response.",
+            examples=[False],
+        ),
+    ] = False
 
 
 class DeleteMappingResponse(msgspec.Struct):
-    ok: bool
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the delete operation completed successfully.",
+            examples=[True],
+        ),
+    ]
 
 
 class RangeInputModel(msgspec.Struct):
-    source_range: str
-    destination_range: str | None = None
+    source_range: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source episode or media range for the override target.",
+            examples=["1-12"],
+        ),
+    ]
+    destination_range: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description=(
+                    "Destination range on the target provider when remapping episodes."
+                ),
+                examples=["1-12"],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class TargetInputModel(msgspec.Struct):
-    provider: str
-    entry_id: str
-    scope: str | None = None
-    ranges: list[RangeInputModel] = msgspec.field(default_factory=list)
-    deleted: bool = False
+    provider: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider namespace for the override.",
+            examples=["tmdb"],
+        ),
+    ]
+    entry_id: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider entry identifier for the override.",
+            examples=["1396"],
+        ),
+    ]
+    scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Optional target scope qualifier.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    ranges: Annotated[
+        list[RangeInputModel],
+        msgspec.Meta(
+            description="Optional explicit range mappings for this target.",
+            examples=[[{"source_range": "1-12", "destination_range": "1-12"}]],
+        ),
+    ] = msgspec.field(default_factory=list)
+    deleted: Annotated[
+        bool,
+        msgspec.Meta(
+            description=(
+                "Whether this target should be marked deleted "
+                "relative to upstream data."
+            ),
+            examples=[False],
+        ),
+    ] = False
 
 
 class MappingOverridePayload(msgspec.Struct):
     """Payload for creating or updating a mapping override."""
 
-    descriptor: str
-    targets: list[TargetInputModel] = msgspec.field(default_factory=list)
+    descriptor: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description=(
+                "Canonical descriptor whose override is being created or updated."
+            ),
+            examples=["anilist:5114"],
+        ),
+    ]
+    targets: Annotated[
+        list[TargetInputModel],
+        msgspec.Meta(
+            description="Replacement target set for the override.",
+            examples=[
+                [
+                    {
+                        "provider": "tmdb",
+                        "entry_id": "1396",
+                        "ranges": [
+                            {"source_range": "1-12", "destination_range": "1-12"}
+                        ],
+                    }
+                ]
+            ],
+        ),
+    ] = msgspec.field(default_factory=list)
 
 
 class MappingRangeViewModel(msgspec.Struct):
-    source_range: str
-    origin: str
-    upstream: str | None = None
-    custom: str | None = None
-    effective: str | None = None
-    inherited: bool = False
+    source_range: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source range represented in the layered mapping view.",
+            examples=["1-12"],
+        ),
+    ]
+    origin: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Origin layer that supplied the effective range value.",
+            examples=["custom"],
+        ),
+    ]
+    upstream: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Upstream range value before local overrides are applied.",
+                examples=["1-12"],
+            ),
+        ]
+        | None
+    ) = None
+    custom: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Locally configured custom range value when present.",
+                examples=["1-12"],
+            ),
+        ]
+        | None
+    ) = None
+    effective: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Final effective range after applying layered overrides.",
+                examples=["1-12"],
+            ),
+        ]
+        | None
+    ) = None
+    inherited: Annotated[
+        bool,
+        msgspec.Meta(
+            description=(
+                "Whether the effective range is inherited unchanged from upstream."
+            ),
+            examples=[False],
+        ),
+    ] = False
 
 
 class MappingTargetViewModel(msgspec.Struct):
-    descriptor: str
-    provider: str
-    entry_id: str
-    origin: str
-    scope: str | None = None
-    deleted: bool = False
-    ranges: list[MappingRangeViewModel] = msgspec.field(default_factory=list)
+    descriptor: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Descriptor of the source mapping item.",
+            examples=["anilist:5114"],
+        ),
+    ]
+    provider: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider namespace.",
+            examples=["tmdb"],
+        ),
+    ]
+    entry_id: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Target provider entry identifier.",
+            examples=["1396"],
+        ),
+    ]
+    origin: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Origin layer that supplied the target mapping.",
+            examples=["upstream"],
+        ),
+    ]
+    scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Optional target scope qualifier.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    deleted: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the target is effectively deleted after overrides.",
+            examples=[False],
+        ),
+    ] = False
+    ranges: Annotated[
+        list[MappingRangeViewModel],
+        msgspec.Meta(
+            description="Layered range view for the target mapping.",
+            examples=[
+                [{"source_range": "1-12", "origin": "upstream", "effective": "1-12"}]
+            ],
+        ),
+    ] = msgspec.field(default_factory=list)
 
 
 class MappingLayersModel(msgspec.Struct):
-    upstream: dict[str, dict[str, str | None] | None] = msgspec.field(
-        default_factory=dict
-    )
-    custom: dict[str, dict[str, str | None] | None] = msgspec.field(
-        default_factory=dict
-    )
-    effective: dict[str, dict[str, str | None] | None] = msgspec.field(
-        default_factory=dict
-    )
+    upstream: Annotated[
+        dict[str, dict[str, str | None] | None],
+        msgspec.Meta(
+            description="Raw upstream mapping layers keyed by target descriptor.",
+            examples=[{"tmdb:1396": {"1-12": "1-12"}}],
+        ),
+    ] = msgspec.field(default_factory=dict)
+    custom: Annotated[
+        dict[str, dict[str, str | None] | None],
+        msgspec.Meta(
+            description=(
+                "Locally configured override layers keyed by target descriptor."
+            ),
+            examples=[{"tmdb:1396": {"1-12": "1-12"}}],
+        ),
+    ] = msgspec.field(default_factory=dict)
+    effective: Annotated[
+        dict[str, dict[str, str | None] | None],
+        msgspec.Meta(
+            description=(
+                "Final effective mapping layers after merging upstream and custom data."
+            ),
+            examples=[{"tmdb:1396": {"1-12": "1-12"}}],
+        ),
+    ] = msgspec.field(default_factory=dict)
 
 
 class MappingDetailModel(msgspec.Struct):
-    descriptor: str
-    provider: str
-    entry_id: str
-    scope: str | None = None
-    layers: MappingLayersModel = msgspec.field(default_factory=MappingLayersModel)
-    targets: list[MappingTargetViewModel] = msgspec.field(default_factory=list)
+    descriptor: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Canonical descriptor for the mapping detail payload.",
+            examples=["anilist:5114"],
+        ),
+    ]
+    provider: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Source provider namespace for the mapping detail payload.",
+            examples=["anilist"],
+        ),
+    ]
+    entry_id: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description=(
+                "Source provider entry identifier for the mapping detail payload."
+            ),
+            examples=["5114"],
+        ),
+    ]
+    scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Optional scope qualifier for the mapping detail payload.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    layers: Annotated[
+        MappingLayersModel,
+        msgspec.Meta(
+            description=(
+                "Layered raw mapping representation for upstream, "
+                "custom, and effective data."
+            ),
+            examples=[{"upstream": {}, "custom": {}, "effective": {}}],
+        ),
+    ] = msgspec.field(default_factory=MappingLayersModel)
+    targets: Annotated[
+        list[MappingTargetViewModel],
+        msgspec.Meta(
+            description="Expanded target mappings associated with the descriptor.",
+            examples=[
+                [
+                    {
+                        "descriptor": "anilist:5114",
+                        "provider": "tmdb",
+                        "entry_id": "1396",
+                        "origin": "upstream",
+                    }
+                ]
+            ],
+        ),
+    ] = msgspec.field(default_factory=list)
 
 
 class FieldCapabilityModel(msgspec.Struct):
-    key: str
-    type: str
-    operators: list[str]
-    aliases: list[str] = msgspec.field(default_factory=list)
-    values: list[str] | None = None
-    desc: str | None = None
+    key: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description=(
+                "Query field identifier accepted by the mappings search parser."
+            ),
+            examples=["source.provider"],
+        ),
+    ]
+    type: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Primitive type category for the query field.",
+            examples=["string"],
+        ),
+    ]
+    operators: Annotated[
+        list[str],
+        msgspec.Meta(
+            min_length=1,
+            description="Supported operators for the query field.",
+            examples=[["eq", "contains"]],
+        ),
+    ]
+    aliases: Annotated[
+        list[str],
+        msgspec.Meta(
+            description="Alternate field names accepted by the query parser.",
+            examples=[["provider"]],
+        ),
+    ] = msgspec.field(default_factory=list)
+    values: (
+        Annotated[
+            list[str],
+            msgspec.Meta(
+                description="Suggested discrete values for the query field when known.",
+                examples=[["anilist", "tmdb"]],
+            ),
+        ]
+        | None
+    ) = None
+    desc: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Human-readable description of the query field.",
+                examples=["Filter by source provider namespace."],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class QueryCapabilitiesResponse(msgspec.Struct):
-    fields: list[FieldCapabilityModel]
+    fields: Annotated[
+        list[FieldCapabilityModel],
+        msgspec.Meta(
+            description="Field capability metadata for building mappings search UIs.",
+            examples=[
+                [{"key": "source.provider", "type": "string", "operators": ["eq"]}]
+            ],
+        ),
+    ]
 
 
 @get(path="")

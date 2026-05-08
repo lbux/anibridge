@@ -15,13 +15,26 @@ __all__ = ["router"]
 class ListBackupsResponse(msgspec.Struct):
     """Response model for listing backups."""
 
-    backups: list[BackupMeta]
+    backups: Annotated[
+        list[BackupMeta],
+        msgspec.Meta(
+            description="Available backup files for the requested profile.",
+            examples=[[{"filename": "anibridge_default_anilist_20260508120000.json"}]],
+        ),
+    ]
 
 
 class RestoreRequest(msgspec.Struct):
     """Request body for triggering a restore."""
 
-    filename: str
+    filename: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Backup file name to restore for the selected profile.",
+            examples=["anibridge_default_anilist_20260508120000.json"],
+        ),
+    ]
 
 
 @get(path="/{profile:str}", sync_to_thread=True)

@@ -1,6 +1,7 @@
 """Route for readiness check."""
 
 from enum import StrEnum
+from typing import Annotated
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import get
@@ -23,18 +24,63 @@ class ReadyzStatus(StrEnum):
 class ReadyzProfilesResponse(msgspec.Struct):
     """Aggregate profile counts exposed by the readiness probe."""
 
-    configured: int
-    initialized: int
-    failed: int
+    configured: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of configured profiles known to the scheduler.",
+            examples=[3],
+        ),
+    ]
+    initialized: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profiles that have been initialized successfully.",
+            examples=[3],
+        ),
+    ]
+    failed: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profiles that failed initialization.",
+            examples=[0],
+        ),
+    ]
 
 
 class ReadyzResponse(msgspec.Struct):
     """Minimal readiness payload for unauthenticated probes."""
 
-    status: ReadyzStatus
-    ready: bool
-    scheduler_running: bool
-    profiles: ReadyzProfilesResponse
+    status: Annotated[
+        ReadyzStatus,
+        msgspec.Meta(
+            description="Overall readiness state for the application.",
+            examples=["ok"],
+        ),
+    ]
+    ready: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the application is ready to serve sync traffic.",
+            examples=[True],
+        ),
+    ]
+    scheduler_running: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the scheduler process is currently running.",
+            examples=[True],
+        ),
+    ]
+    profiles: Annotated[
+        ReadyzProfilesResponse,
+        msgspec.Meta(
+            description="Profile initialization summary used to derive readiness.",
+            examples=[{"configured": 3, "initialized": 3, "failed": 0}],
+        ),
+    ]
 
 
 @get(path="/readyz", include_in_schema=False)

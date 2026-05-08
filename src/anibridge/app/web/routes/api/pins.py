@@ -22,38 +22,100 @@ __all__ = ["router"]
 class PinListResponse(msgspec.Struct):
     """Response model for listing pins."""
 
-    pins: list[PinEntry]
+    pins: Annotated[
+        list[PinEntry],
+        msgspec.Meta(
+            description="Pinned entries for the requested profile.",
+            examples=[
+                [
+                    {
+                        "profile_name": "default",
+                        "list_namespace": "anilist",
+                        "list_media_key": "5114",
+                        "fields": ["status"],
+                    }
+                ]
+            ],
+        ),
+    ]
 
 
 class PinOptionsResponse(msgspec.Struct):
     """Response model for available pin field options."""
 
-    options: list[PinFieldOption]
+    options: Annotated[
+        list[PinFieldOption],
+        msgspec.Meta(
+            description="Selectable sync fields that can be pinned.",
+            examples=[[{"value": "status", "label": "Status"}]],
+        ),
+    ]
 
 
 class PinSearchItem(msgspec.Struct):
     """Search result item combining provider metadata with existing pin state."""
 
-    media: ProviderMediaMetadata
-    pin: PinEntry | None = None
+    media: Annotated[
+        ProviderMediaMetadata,
+        msgspec.Meta(
+            description="Provider metadata for the matched media item.",
+            examples=[{"namespace": "anilist", "key": "5114"}],
+        ),
+    ]
+    pin: (
+        Annotated[
+            PinEntry,
+            msgspec.Meta(
+                description="Existing pin state for the matched item when present.",
+                examples=[
+                    {
+                        "profile_name": "default",
+                        "list_namespace": "anilist",
+                        "list_media_key": "5114",
+                        "fields": ["status"],
+                    }
+                ],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class PinSearchResponse(msgspec.Struct):
     """Response model for provider search results within the pin manager."""
 
-    results: list[PinSearchItem]
+    results: Annotated[
+        list[PinSearchItem],
+        msgspec.Meta(
+            description="Provider search results enriched with current pin state.",
+            examples=[[{"media": {"namespace": "anilist", "key": "5114"}}]],
+        ),
+    ]
 
 
 class UpdatePinRequest(msgspec.Struct):
     """Request body for updating pin fields."""
 
-    fields: list[str] = msgspec.field(default_factory=list)
+    fields: Annotated[
+        list[str],
+        msgspec.Meta(
+            min_length=1,
+            description="Requested sync fields to pin for the target media item.",
+            examples=[["status", "progress"]],
+        ),
+    ] = msgspec.field(default_factory=list)
 
 
 class OkResponse(msgspec.Struct):
     """Response model for successful operations."""
 
-    ok: bool = True
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the pin operation completed successfully.",
+            examples=[True],
+        ),
+    ] = True
 
 
 @get(path="/fields", sync_to_thread=True)

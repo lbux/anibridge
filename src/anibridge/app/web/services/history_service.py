@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any
+from typing import Annotated, Any
 
 import msgspec
 from anibridge.library.base import LibraryMedia
@@ -31,38 +31,275 @@ __all__ = ["HistoryService", "get_history_service"]
 class HistoryItem(msgspec.Struct):
     """Serializable history entry with optional provider metadata."""
 
-    id: int
-    profile_name: str
-    outcome: str
-    timestamp: str
-    library_namespace: str | None = None
-    library_section_key: str | None = None
-    library_media_key: str | None = None
-    list_namespace: str | None = None
-    list_media_key: str | None = None
-    animap_provider: str | None = None
-    animap_id: str | None = None
-    animap_scope: str | None = None
-    media_kind: str | None = None
-    before_state: dict | None = None
-    after_state: dict | None = None
-    info: dict[str, str] | None = None
-    error_message: str | None = None
-    ephemeral: bool = False
-    library_media: ProviderMediaMetadata | None = None
-    list_media: ProviderMediaMetadata | None = None
-    pinned_fields: list[str] | None = None
+    id: Annotated[
+        int,
+        msgspec.Meta(
+            ge=1,
+            description="Monotonic database identifier for the history item.",
+            examples=[42],
+        ),
+    ]
+    profile_name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Profile that produced the history item.",
+            examples=["default"],
+        ),
+    ]
+    outcome: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Normalized sync outcome for the item.",
+            examples=["synced"],
+        ),
+    ]
+    timestamp: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="ISO-8601 timestamp when the history item was recorded.",
+            examples=["2026-01-01T00:00:00+00:00"],
+        ),
+    ]
+    library_namespace: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Library provider namespace for the synced item.",
+                examples=["plex"],
+            ),
+        ]
+        | None
+    ) = None
+    library_section_key: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Provider-specific library section identifier.",
+                examples=["tv"],
+            ),
+        ]
+        | None
+    ) = None
+    library_media_key: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Provider-specific library media identifier.",
+                examples=["ratingKey:1234"],
+            ),
+        ]
+        | None
+    ) = None
+    list_namespace: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="List provider namespace for the synced entry.",
+                examples=["anilist"],
+            ),
+        ]
+        | None
+    ) = None
+    list_media_key: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Provider-specific list entry identifier.",
+                examples=["5114"],
+            ),
+        ]
+        | None
+    ) = None
+    animap_provider: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="AniMap provider namespace used during resolution.",
+                examples=["anilist"],
+            ),
+        ]
+        | None
+    ) = None
+    animap_id: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="AniMap entry identifier used during resolution.",
+                examples=["5114"],
+            ),
+        ]
+        | None
+    ) = None
+    animap_scope: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="AniMap scope applied to the mapping, when present.",
+                examples=["s1"],
+            ),
+        ]
+        | None
+    ) = None
+    media_kind: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Normalized media kind for the synchronized item.",
+                examples=["show"],
+            ),
+        ]
+        | None
+    ) = None
+    before_state: (
+        Annotated[
+            dict[str, Any],
+            msgspec.Meta(
+                description="Serialized list entry state before sync was applied.",
+                examples=[{"status": "PLANNING", "progress": 11}],
+            ),
+        ]
+        | None
+    ) = None
+    after_state: (
+        Annotated[
+            dict[str, Any],
+            msgspec.Meta(
+                description="Serialized list entry state after sync was applied.",
+                examples=[{"status": "CURRENT", "progress": 12}],
+            ),
+        ]
+        | None
+    ) = None
+    info: (
+        Annotated[
+            dict[str, str],
+            msgspec.Meta(
+                description="Additional string metadata recorded alongside the event.",
+                examples=[{"reason": "pinned field skipped"}],
+            ),
+        ]
+        | None
+    ) = None
+    error_message: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Error message captured for failed history items.",
+                examples=["Rate limit exceeded"],
+            ),
+        ]
+        | None
+    ) = None
+    ephemeral: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the history item exists only in memory.",
+            examples=[False],
+        ),
+    ] = False
+    library_media: (
+        Annotated[
+            ProviderMediaMetadata,
+            msgspec.Meta(
+                description="Resolved library-side media metadata when requested.",
+                examples=[{"namespace": "plex", "key": "ratingKey:1234"}],
+            ),
+        ]
+        | None
+    ) = None
+    list_media: (
+        Annotated[
+            ProviderMediaMetadata,
+            msgspec.Meta(
+                description="Resolved list-side media metadata when requested.",
+                examples=[{"namespace": "anilist", "key": "5114"}],
+            ),
+        ]
+        | None
+    ) = None
+    pinned_fields: (
+        Annotated[
+            list[str],
+            msgspec.Meta(
+                description="Pinned sync fields that prevented updates for the item.",
+                examples=[["status", "progress"]],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class HistoryPage(msgspec.Struct):
     """Cursor-based history slice wrapper."""
 
-    items: list[HistoryItem]
-    limit: int
-    has_more: bool
-    next_before_id: int | None = None
-    latest_id: int | None = None
-    stats: dict[str, int] | None = None
+    items: Annotated[
+        list[HistoryItem],
+        msgspec.Meta(
+            description="Ordered history items for the requested page.",
+            examples=[
+                [
+                    {
+                        "id": 42,
+                        "profile_name": "default",
+                        "outcome": "synced",
+                        "timestamp": "2026-01-01T00:00:00+00:00",
+                    }
+                ]
+            ],
+        ),
+    ]
+    limit: Annotated[
+        int,
+        msgspec.Meta(
+            ge=1,
+            description="Requested page size used to build the history slice.",
+            examples=[25],
+        ),
+    ]
+    has_more: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether another older page of history exists.",
+            examples=[True],
+        ),
+    ]
+    next_before_id: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=1,
+                description="Cursor to request the next older page of history.",
+                examples=[41],
+            ),
+        ]
+        | None
+    ) = None
+    latest_id: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=1,
+                description=(
+                    "Most recent history item ID currently known for the profile."
+                ),
+                examples=[42],
+            ),
+        ]
+        | None
+    ) = None
+    stats: (
+        Annotated[
+            dict[str, int],
+            msgspec.Meta(
+                description="Grouped outcome counters for the selected history window.",
+                examples=[{"synced": 12, "failed": 1}],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class HistoryService:

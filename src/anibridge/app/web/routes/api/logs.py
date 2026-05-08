@@ -3,6 +3,7 @@
 import logging
 import re
 from pathlib import Path
+from typing import Annotated
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import get
@@ -15,16 +16,66 @@ __all__ = ["router"]
 
 
 class LogFileModel(msgspec.Struct):
-    name: str
-    size: int
-    mtime: int  # epoch ms
-    current: bool
+    name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Log file base name.",
+            examples=["anibridge.INFO.log"],
+        ),
+    ]
+    size: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Log file size in bytes.",
+            examples=[8192],
+        ),
+    ]
+    mtime: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Log file modification time in epoch milliseconds.",
+            examples=[1715179200000],
+        ),
+    ]
+    current: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether this file is the currently active log target.",
+            examples=[True],
+        ),
+    ]
 
 
 class LogEntryModel(msgspec.Struct):
-    level: str
-    message: str
-    timestamp: str | None = None
+    level: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Parsed log level for the line.",
+            examples=["INFO"],
+        ),
+    ]
+    message: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Rendered log message.",
+            examples=["Scheduler initialized successfully"],
+        ),
+    ]
+    timestamp: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Parsed timestamp from the log line when available.",
+                examples=["2026-01-01 00:00:00"],
+            ),
+        ]
+        | None
+    ) = None
 
 
 LOG_DIR: Path = (config.data_path / "logs").resolve()
