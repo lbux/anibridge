@@ -1,5 +1,6 @@
 """Bridge Client Module."""
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -519,6 +520,7 @@ class BridgeClient:
             self.current_sync.stage = (
                 "prefetching" if self.profile_config.batch_requests else "processing"
             )
+            await asyncio.sleep(0)
 
         sync_client: MovieSyncClient | ShowSyncClient
         if section.media_kind == MediaKind.MOVIE:
@@ -558,6 +560,7 @@ class BridgeClient:
                 )
             if self.current_sync is not None:
                 self.current_sync.stage = "processing"
+                await asyncio.sleep(0)
 
         for item in items:
             try:
@@ -574,6 +577,7 @@ class BridgeClient:
                 if self.current_sync is not None:
                     self.current_sync.stage = "processing"
                     self.current_sync.section_items_processed += 1
+                    await asyncio.sleep(0)
 
             except Exception:
                 log.error(
@@ -590,6 +594,7 @@ class BridgeClient:
             if self.profile_config.batch_requests:
                 if self.current_sync is not None:
                     self.current_sync.stage = "finalizing"
+                    await asyncio.sleep(0)
                 await sync_client.batch_sync()
         finally:
             sync_client.flush_failure_history_cleanup()

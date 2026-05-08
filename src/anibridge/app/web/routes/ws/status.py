@@ -11,7 +11,7 @@ from anibridge.app.web.state import get_app_state
 
 __all__ = ["router"]
 
-_IDLE_POLL_INTERVAL = 1.0
+_MAX_IDLE_INTERVAL = 10.0
 _ACTIVE_SYNC_INTERVAL = 0.5
 
 
@@ -46,12 +46,10 @@ async def status_ws(socket: WebSocket) -> None:
             except Exception:
                 syncing = False
 
-            wait_timeout = _ACTIVE_SYNC_INTERVAL if syncing else _IDLE_POLL_INTERVAL
-
-            try:
-                await asyncio.wait_for(socket.receive_text(), timeout=wait_timeout)
-            except TimeoutError:
-                continue
+            if syncing:
+                await asyncio.sleep(_ACTIVE_SYNC_INTERVAL)
+            else:
+                await app_state.wait_status_change(max_wait=_MAX_IDLE_INTERVAL)
     except WebSocketDisconnect:
         pass
 
