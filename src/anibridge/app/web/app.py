@@ -157,7 +157,8 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
     # Add basic auth middleware if configured
     if config.web.has_auth:
         middleware.append(
-            BasicAuthMiddleware(
+            DefineMiddleware(
+                BasicAuthMiddleware,
                 username=config.web.basic_auth.username,
                 password=config.web.basic_auth.password.get_secret_value()
                 if config.web.basic_auth.password
