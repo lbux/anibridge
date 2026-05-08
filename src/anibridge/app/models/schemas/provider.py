@@ -2,12 +2,10 @@
 
 import msgspec
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
-
 __all__ = ["ProviderMediaMetadata"]
 
 
-class ProviderMediaMetadata(PydanticMsgspecMixin, msgspec.Struct):
+class ProviderMediaMetadata(msgspec.Struct):
     """Provider-agnostic description of a media item."""
 
     namespace: str

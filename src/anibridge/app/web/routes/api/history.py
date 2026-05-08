@@ -1,61 +1,48 @@
 """History API endpoints."""
 
 import msgspec
-from fastapi.param_functions import Query
-from fastapi.routing import APIRouter
+from litestar.handlers.http_handlers.decorators import delete, get, post
+from litestar.router import Router
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.services.history_service import (
     HistoryItem,
     HistoryPage,
     get_history_service,
 )
 
-router = APIRouter()
+__all__ = ["router"]
 
 GetHistoryResponse = HistoryPage
 
 
-class OkResponse(PydanticMsgspecMixin, msgspec.Struct):
+class OkResponse(msgspec.Struct):
     """Response model for successful operations."""
 
     ok: bool = True
 
 
-class UndoResponse(PydanticMsgspecMixin, msgspec.Struct):
+class UndoResponse(msgspec.Struct):
     """Response model for undo operation."""
 
     item: HistoryItem
 
 
-class RetryResponse(PydanticMsgspecMixin, msgspec.Struct):
+class RetryResponse(msgspec.Struct):
     """Response model for retry operation."""
 
     ok: bool = True
 
 
-@router.get("/{profile}", response_model=GetHistoryResponse)
+@get(path="/{profile:str}")
 async def get_history(
     profile: str,
-    limit: int = Query(25, ge=1, le=250),
-    before_id: int | None = Query(
-        None,
-        ge=1,
-        description="Return rows with id < before_id",
-    ),
-    after_id: int | None = Query(
-        None,
-        ge=1,
-        description="Return rows with id > after_id",
-    ),
-    include_stats: bool = Query(True, description="Include grouped outcome stats"),
-    outcome: str | None = Query(None, description="Filter by outcome"),
-    library_namespace: str | None = Query(
-        None, description="Filter by library provider namespace"
-    ),
-    list_namespace: str | None = Query(
-        None, description="Filter by list provider namespace"
-    ),
+    limit: int = 25,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    include_stats: bool = True,
+    outcome: str | None = None,
+    library_namespace: str | None = None,
+    list_namespace: str | None = None,
 ) -> GetHistoryResponse:
     """Get paginated timeline for profile.
 
@@ -88,7 +75,7 @@ async def get_history(
     )
 
 
-@router.delete("/{profile}/{item_id}", response_model=OkResponse)
+@delete(path="/{profile:str}/{item_id:int}", status_code=200)
 async def delete_history(profile: str, item_id: int) -> OkResponse:
     """Delete a history item.
 
@@ -106,7 +93,7 @@ async def delete_history(profile: str, item_id: int) -> OkResponse:
     return OkResponse()
 
 
-@router.post("/{profile}/{item_id}/undo", response_model=UndoResponse)
+@post(path="/{profile:str}/{item_id:int}/undo", status_code=200)
 async def undo_history(profile: str, item_id: int) -> UndoResponse:
     """Undo a history item if possible.
 
@@ -126,7 +113,7 @@ async def undo_history(profile: str, item_id: int) -> UndoResponse:
     return UndoResponse(item=item)
 
 
-@router.post("/{profile}/{item_id}/retry", response_model=RetryResponse)
+@post(path="/{profile:str}/{item_id:int}/retry", status_code=200)
 async def retry_history(profile: str, item_id: int) -> RetryResponse:
     """Retry a failed or missing history item.
 
@@ -145,3 +132,9 @@ async def retry_history(profile: str, item_id: int) -> RetryResponse:
     """
     await get_history_service().retry_item(profile, item_id)
     return RetryResponse()
+
+
+router = Router(
+    path="/history",
+    route_handlers=[get_history, delete_history, undo_history, retry_history],
+)

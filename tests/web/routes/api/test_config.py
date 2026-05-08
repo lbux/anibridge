@@ -1,9 +1,11 @@
 """Tests for configuration API access policy."""
 
-from typing import Any, cast
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from fastapi import HTTPException
+from litestar.exceptions.http_exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
 
 from anibridge.app.exceptions import SchedulerUnavailableError
@@ -45,7 +47,7 @@ def _validation_error() -> ValidationError:
         x: int
 
     try:
-        _Model(x=cast(Any, "bad"))
+        _Model.model_validate({"x": "bad"})
     except ValidationError as exc:
         return exc
     raise AssertionError("expected validation error")
@@ -58,17 +60,12 @@ def test_require_config_api_access_can_fall_back_to_get_config(
     monkeypatch.setattr(
         config_api_module,
         "get_config",
-        lambda: type(
-            "Cfg",
-            (),
-            {
-                "web": type(
-                    "Web",
-                    (),
-                    {"has_auth": True, "allow_config_without_auth": False},
-                )()
-            },
-        )(),
+        lambda: SimpleNamespace(
+            web=SimpleNamespace(
+                has_auth=True,
+                allow_config_without_auth=False,
+            )
+        ),
     )
 
     config_api_module.require_config_api_access()
@@ -77,6 +74,11 @@ def test_require_config_api_access_can_fall_back_to_get_config(
 def test_get_configuration_success_and_error_translation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    get_configuration = cast(
+        Callable[[], config_api_module.ConfigDocumentResponse],
+        config_api_module.get_configuration.fn,
+    )
+
     monkeypatch.setattr(
         config_api_module,
         "get_configuration_service",
@@ -94,9 +96,9 @@ def test_get_configuration_success_and_error_translation(
         )(),
     )
 
-    response = config_api_module.get_configuration()
+    response = get_configuration()
     assert response.file_exists is True
-    assert "title" in response.schema_
+    assert "title" in response.schema
 
     monkeypatch.setattr(
         config_api_module,
@@ -112,7 +114,7 @@ def test_get_configuration_success_and_error_translation(
         )(),
     )
     with pytest.raises(HTTPException, match="bad config"):
-        config_api_module.get_configuration()
+        get_configuration()
 
     monkeypatch.setattr(
         config_api_module,
@@ -128,7 +130,7 @@ def test_get_configuration_success_and_error_translation(
         )(),
     )
     with pytest.raises(HTTPException) as excinfo:
-        config_api_module.get_configuration()
+        get_configuration()
     assert excinfo.value.status_code == 422
 
 
@@ -153,7 +155,7 @@ async def test_update_configuration_success_and_error_translation(
     monkeypatch.setattr(
         config_api_module, "get_configuration_service", lambda: _Service()
     )
-    response = await config_api_module.update_configuration(request)
+    response = await config_api_module.update_configuration.fn(request)
     assert response.profiles == ["a", "b"]
     assert response.requires_restart is False
     assert response.mtime == 456
@@ -179,5 +181,5 @@ async def test_update_configuration_success_and_error_translation(
             config_api_module, "get_configuration_service", lambda: _ErrorService()
         )
         with pytest.raises(HTTPException) as excinfo:
-            await config_api_module.update_configuration(request)
+            await config_api_module.update_configuration.fn(request)
         assert excinfo.value.status_code == status_code

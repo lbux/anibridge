@@ -8,12 +8,11 @@ from typing import Any
 
 import msgspec
 import psutil
-from fastapi import Depends
-from fastapi.routing import APIRouter
+from litestar.handlers.http_handlers.decorators import get, post
+from litestar.router import Router
 
 from anibridge.app import __git_hash__, __version__
 from anibridge.app.exceptions import AnibridgeError, SchedulerUnavailableError
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.utils.human import human_duration
 from anibridge.app.web.routes.api.config import require_config_api_access
 from anibridge.app.web.routes.api.status import (
@@ -25,17 +24,17 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["router"]
 
 
-class SettingsProfileModel(PydanticMsgspecMixin, msgspec.Struct):
+class SettingsProfileModel(msgspec.Struct):
     name: str
     settings: dict[str, Any]
 
 
-class SettingsResponse(PydanticMsgspecMixin, msgspec.Struct):
+class SettingsResponse(msgspec.Struct):
     global_config: dict[str, Any]
     profiles: list[SettingsProfileModel]
 
 
-class AboutInfoModel(PydanticMsgspecMixin, msgspec.Struct):
+class AboutInfoModel(msgspec.Struct):
     version: str
     git_hash: str
     python: str
@@ -47,13 +46,13 @@ class AboutInfoModel(PydanticMsgspecMixin, msgspec.Struct):
     sqlite: str | None = None
 
 
-class ProcessInfoModel(PydanticMsgspecMixin, msgspec.Struct):
+class ProcessInfoModel(msgspec.Struct):
     pid: int
     cpu_count: int | None = None
     memory_mb: float | None = None
 
 
-class SchedulerSummaryModel(PydanticMsgspecMixin, msgspec.Struct):
+class SchedulerSummaryModel(msgspec.Struct):
     running: bool
     configured_profiles: int
     total_profiles: int
@@ -67,36 +66,29 @@ class SchedulerSummaryModel(PydanticMsgspecMixin, msgspec.Struct):
     coordinator: dict | None = None
 
 
-class AboutResponse(PydanticMsgspecMixin, msgspec.Struct):
+class AboutResponse(msgspec.Struct):
     info: AboutInfoModel
     process: ProcessInfoModel
     scheduler: SchedulerSummaryModel
     status: dict[str, ProfileStatusModel]
 
 
-class MetaResponse(PydanticMsgspecMixin, msgspec.Struct):
+class MetaResponse(msgspec.Struct):
     version: str
     git_hash: str
 
 
-class RestartResponse(PydanticMsgspecMixin, msgspec.Struct):
+class RestartResponse(msgspec.Struct):
     ok: bool
     message: str
 
 
-router = APIRouter()
-
-
-@router.get(
-    "/settings",
-    summary="Return serialized configuration",
-    response_model=SettingsResponse,
-)
+@get(path="/settings", sync_to_thread=True)
 def api_settings() -> SettingsResponse:
     """Return the current application configuration as JSON.
 
     Returns:
-        dict[str, Any]: The serialized configuration.
+        SettingsResponse: The serialized configuration.
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
@@ -113,16 +105,12 @@ def api_settings() -> SettingsResponse:
     return SettingsResponse(global_config=global_config, profiles=profiles)
 
 
-@router.get(
-    "/about",
-    summary="Return runtime & scheduler diagnostics",
-    response_model=AboutResponse,
-)
+@get(path="/about")
 async def api_about() -> AboutResponse:
     """Get runtime metadata.
 
     Returns:
-        dict[str, Any]: The runtime metadata.
+        AboutResponse: The runtime metadata.
 
     Raises:
         SchedulerUnavailableError: If scheduler status cannot be retrieved.
@@ -240,23 +228,17 @@ async def api_about() -> AboutResponse:
     )
 
 
-@router.get("/meta", tags=["meta"], response_model=MetaResponse)
+@get(path="/meta", sync_to_thread=True)
 def meta() -> MetaResponse:
     """Application metadata (version, git hash).
 
     Returns:
-        dict[str, str]: The application metadata.
+        MetaResponse: The application metadata.
     """
     return MetaResponse(version=__version__, git_hash=__git_hash__)
 
 
-@router.post(
-    "/restart",
-    summary="Request graceful server restart",
-    dependencies=[Depends(require_config_api_access)],
-    response_model=RestartResponse,
-    status_code=202,
-)
+@post(path="/restart", status_code=202, sync_to_thread=True)
 def api_restart() -> RestartResponse:
     """Request a graceful scheduler shutdown and process restart.
 
@@ -266,6 +248,7 @@ def api_restart() -> RestartResponse:
     Raises:
         SchedulerUnavailableError: If scheduler is unavailable.
     """
+    require_config_api_access()
     app_state = get_app_state()
     scheduler = app_state.scheduler
     if not scheduler:
@@ -280,3 +263,9 @@ def api_restart() -> RestartResponse:
         ok=True,
         message="Restart requested. AniBridge will restart shortly.",
     )
+
+
+router = Router(
+    path="/system",
+    route_handlers=[api_settings, api_about, meta, api_restart],
+)

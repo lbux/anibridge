@@ -49,7 +49,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "colorama>=0.4.6",
     "croniter>=6.2.2",
-    "fastapi>=0.133.1",
+    "litestar>=2.21.1",
     "msgspec>=0.21.1",
     "psutil>=7.2.2",
     "pydantic-settings>=2.13.1",
@@ -109,15 +109,9 @@ select = [
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
-    "fastapi.param_functions.Body",
-    "fastapi.param_functions.Cookie",
-    "fastapi.param_functions.Depends",
-    "fastapi.param_functions.File",
-    "fastapi.param_functions.Form",
-    "fastapi.param_functions.Header",
-    "fastapi.param_functions.Path",
-    "fastapi.param_functions.Query",
-    "fastapi.param_functions.Security",
+    "litestar.params.Body",
+    "litestar.params.Dependency",
+    "litestar.params.Parameter",
 ]
 
 [tool.ruff.lint.per-file-ignores]

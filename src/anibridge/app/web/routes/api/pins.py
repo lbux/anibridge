@@ -3,75 +3,70 @@
 from typing import Annotated
 
 import msgspec
-from fastapi import Body
-from fastapi.exceptions import HTTPException
-from fastapi.param_functions import Path, Query
-from fastapi.routing import APIRouter
+from litestar.exceptions.http_exceptions import HTTPException
+from litestar.handlers.http_handlers.decorators import delete, get, put
+from litestar.params import Body
+from litestar.router import Router
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
+from anibridge.app.config.settings import SyncField
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.web.services.pin_service import (
     PinEntry,
     PinFieldOption,
-    UpdatePinPayload,
     get_pin_service,
 )
 
-router = APIRouter()
+__all__ = ["router"]
 
 
-class PinListResponse(PydanticMsgspecMixin, msgspec.Struct):
+class PinListResponse(msgspec.Struct):
     """Response model for listing pins."""
 
     pins: list[PinEntry]
 
 
-class PinOptionsResponse(PydanticMsgspecMixin, msgspec.Struct):
+class PinOptionsResponse(msgspec.Struct):
     """Response model for available pin field options."""
 
     options: list[PinFieldOption]
 
 
-class PinSearchItem(PydanticMsgspecMixin, msgspec.Struct):
+class PinSearchItem(msgspec.Struct):
     """Search result item combining provider metadata with existing pin state."""
 
     media: ProviderMediaMetadata
     pin: PinEntry | None = None
 
 
-class PinSearchResponse(PydanticMsgspecMixin, msgspec.Struct):
+class PinSearchResponse(msgspec.Struct):
     """Response model for provider search results within the pin manager."""
 
     results: list[PinSearchItem]
 
 
-class UpdatePinRequest(PydanticMsgspecMixin, msgspec.Struct):
+class UpdatePinRequest(msgspec.Struct):
     """Request body for updating pin fields."""
 
     fields: list[str] = msgspec.field(default_factory=list)
 
-    def to_payload(self) -> UpdatePinPayload:
-        """Convert request into payload for the service layer."""
-        return UpdatePinPayload(fields=list(self.fields))
 
-
-class OkResponse(PydanticMsgspecMixin, msgspec.Struct):
+class OkResponse(msgspec.Struct):
     """Response model for successful operations."""
 
     ok: bool = True
 
 
-@router.get("/fields", response_model=PinOptionsResponse)
+@get(path="/fields", sync_to_thread=True)
 def get_pin_fields() -> PinOptionsResponse:
     """Return selectable pin field metadata."""
     service = get_pin_service()
     return PinOptionsResponse(options=service.list_options())
 
 
-@router.get("/{profile}", response_model=PinListResponse)
+@get(path="/{profile:str}")
 async def list_pins(
-    profile: str = Path(..., min_length=1),
-    with_media: bool = Query(False),
+    profile: str,
+    with_media: bool = False,
 ) -> PinListResponse:
     """Return all pins for a profile.
 
@@ -84,11 +79,11 @@ async def list_pins(
     return PinListResponse(pins=pins)
 
 
-@router.get("/{profile}/{media_key}", response_model=PinEntry)
+@get(path="/{profile:str}/{media_key:str}")
 async def get_pin(
-    profile: str = Path(..., min_length=1),
-    media_key: str = Path(..., min_length=1),
-    with_media: bool = Query(False),
+    profile: str,
+    media_key: str,
+    with_media: bool = False,
 ) -> PinEntry:
     """Retrieve pin configuration for a specific list entry.
 
@@ -107,35 +102,52 @@ async def get_pin(
     return entry
 
 
-@router.put("/{profile}/{media_key}", response_model=PinEntry)
+@put(path="/{profile:str}/{media_key:str}")
 async def upsert_pin(
-    request: Annotated[UpdatePinRequest, Body()],
-    profile: str = Path(..., min_length=1),
-    media_key: str = Path(..., min_length=1),
-    with_media: bool = Query(False),
+    data: Annotated[UpdatePinRequest, Body()],
+    profile: str,
+    media_key: str,
+    with_media: bool = False,
 ) -> PinEntry:
     """Create or update pin fields for a media item.
 
     Args:
-        request (UpdatePinRequest): Pin update request payload.
+        data (UpdatePinRequest): Pin update request payload.
         profile (str): Profile name.
         media_key (str): Media key.
         with_media (bool): When True, include provider metadata.
     """
-    payload = request.to_payload()
+    allowed_fields = {field.value for field in SyncField}
+    normalized_fields: list[str] = []
+    for raw_field in data.fields:
+        value = str(raw_field).strip().lower()
+        if not value:
+            continue
+        if value not in allowed_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported field '{raw_field}'",
+            )
+        if value not in normalized_fields:
+            normalized_fields.append(value)
+
+    normalized_fields = [
+        field.value for field in SyncField if field.value in normalized_fields
+    ]
+
     try:
         entry = await get_pin_service().upsert_pin(
-            profile, media_key, payload.normalized(), with_media=with_media
+            profile, media_key, normalized_fields, with_media=with_media
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return entry
 
 
-@router.delete("/{profile}/{media_key}", response_model=OkResponse)
+@delete(path="/{profile:str}/{media_key:str}", status_code=200, sync_to_thread=True)
 def delete_pin(
-    profile: str = Path(..., min_length=1),
-    media_key: str = Path(..., min_length=1),
+    profile: str,
+    media_key: str,
 ) -> OkResponse:
     """Delete pin configuration for an list entry.
 
@@ -148,3 +160,9 @@ def delete_pin(
     """
     get_pin_service().delete_pin(profile, media_key)
     return OkResponse()
+
+
+router = Router(
+    path="/pins",
+    route_handlers=[get_pin_fields, list_pins, get_pin, upsert_pin, delete_pin],
+)

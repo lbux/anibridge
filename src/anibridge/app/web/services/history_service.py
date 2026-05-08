@@ -21,7 +21,6 @@ from anibridge.app.exceptions import (
 )
 from anibridge.app.models.db.pin import Pin
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state, get_bridge
@@ -29,7 +28,7 @@ from anibridge.app.web.state import get_app_state, get_bridge
 __all__ = ["HistoryService", "get_history_service"]
 
 
-class HistoryItem(PydanticMsgspecMixin, msgspec.Struct):
+class HistoryItem(msgspec.Struct):
     """Serializable history entry with optional provider metadata."""
 
     id: int
@@ -55,7 +54,7 @@ class HistoryItem(PydanticMsgspecMixin, msgspec.Struct):
     pinned_fields: list[str] | None = None
 
 
-class HistoryPage(PydanticMsgspecMixin, msgspec.Struct):
+class HistoryPage(msgspec.Struct):
     """Cursor-based history slice wrapper."""
 
     items: list[HistoryItem]

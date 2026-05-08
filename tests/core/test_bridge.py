@@ -351,9 +351,7 @@ async def test_parse_webhook_delegates(
         list_provider=list_provider,
     )
 
-    assert (
-        await client.parse_webhook(cast("bridge_module.Request", SimpleNamespace()))
-    ) == (False, None)
+    assert (await client.parse_webhook(SimpleNamespace())) == (False, None)
 
 
 @pytest.mark.asyncio
@@ -779,9 +777,7 @@ async def test_parse_webhook_returns_false_when_provider_raises(
         list_provider=FakeListProvider(backup_payload=""),
     )
 
-    result = await client.parse_webhook(
-        cast("bridge_module.Request", SimpleNamespace())
-    )
+    result = await client.parse_webhook(SimpleNamespace())
 
     assert result == (False, None)
 

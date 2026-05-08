@@ -10,7 +10,6 @@ from anibridge.utils.cache import cache
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField
 from anibridge.app.models.db.pin import Pin
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
 from anibridge.app.web.state import get_bridge
 
@@ -18,7 +17,6 @@ __all__ = [
     "PinEntry",
     "PinFieldOption",
     "PinService",
-    "UpdatePinPayload",
     "get_pin_service",
 ]
 
@@ -37,14 +35,14 @@ _SYNC_FIELD_VALUES: tuple[str, ...] = tuple(field.value for field in SyncField)
 _SYNC_FIELD_SET: frozenset[str] = frozenset(_SYNC_FIELD_VALUES)
 
 
-class PinFieldOption(PydanticMsgspecMixin, msgspec.Struct):
+class PinFieldOption(msgspec.Struct):
     """Metadata for a selectable pin field."""
 
     value: str
     label: str
 
 
-class PinEntry(PydanticMsgspecMixin, msgspec.Struct):
+class PinEntry(msgspec.Struct):
     """Serialized representation of a pin row."""
 
     profile_name: str
@@ -54,33 +52,6 @@ class PinEntry(PydanticMsgspecMixin, msgspec.Struct):
     created_at: datetime
     updated_at: datetime
     media: ProviderMediaMetadata | None = None
-
-
-class UpdatePinPayload(msgspec.Struct):
-    """Payload accepted when updating pin configuration."""
-
-    fields: list[str] = msgspec.field(default_factory=list)
-
-    def normalized(self) -> list[str]:
-        """Return sanitized field names as SyncField values."""
-        values = []
-        for field in self.fields:
-            if isinstance(field, SyncField):
-                value = field.value
-            else:
-                value = str(field).strip().lower()
-            if not value:
-                continue
-            if value not in _SYNC_FIELD_SET:
-                raise ValueError(f"Unsupported field '{field}'")
-            values.append(value)
-        # Preserve order based on SyncField declaration while ensuring uniqueness
-        ordered: list[str] = []
-        seen = set(values)
-        for candidate in _SYNC_FIELD_VALUES:
-            if candidate in seen and candidate not in ordered:
-                ordered.append(candidate)
-        return ordered
 
 
 class PinService:
@@ -290,16 +261,17 @@ class PinService:
             ctx.session.commit()
 
     def _sanitize_fields(self, fields: Iterable[str]) -> list[str]:
-        sanitized: list[str] = []
+        requested: list[str] = []
         for field in fields:
             value = str(field).strip().lower()
             if not value:
                 continue
             if value not in self.allowed_field_set:
                 raise ValueError(f"Unsupported field '{field}'")
-            if value not in sanitized:
-                sanitized.append(value)
-        return sanitized
+            if value not in requested:
+                requested.append(value)
+
+        return [field for field in self.allowed_fields if field in requested]
 
     @staticmethod
     def _serialize(pin: Pin, media: ProviderMediaMetadata | None = None) -> PinEntry:

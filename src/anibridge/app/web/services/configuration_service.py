@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Mapping
 from operator import attrgetter
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import yaml
 from anibridge.utils.cache import cache
@@ -32,7 +32,14 @@ _RESTART_REQUIRED_FIELDS: tuple[str, ...] = (
 )
 
 
-def _normalize_value(value: Any) -> Any:
+class ConfigDocumentPayload(TypedDict):
+    config_path: str
+    file_exists: bool
+    content: str
+    mtime: int | None
+
+
+def _normalize_value(value: object) -> object:
     if isinstance(value, BaseModel):
         return {
             field_name: _normalize_value(getattr(value, field_name))
@@ -42,7 +49,7 @@ def _normalize_value(value: Any) -> Any:
         return value.get_secret_value()
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _normalize_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_normalize_value(item) for item in value]
@@ -69,7 +76,7 @@ class ConfigurationService:
         except FileNotFoundError:
             return None
 
-    def _parse_yaml(self, content: str) -> Mapping[str, Any]:
+    def _parse_yaml(self, content: str) -> Mapping[str, object]:
         """Parse YAML content into a mapping structure."""
         try:
             parsed = yaml.safe_load(content) or {}
@@ -79,16 +86,16 @@ class ConfigurationService:
         if not isinstance(parsed, Mapping):
             raise ValueError("Configuration file must contain a mapping at the root")
 
-        return parsed
+        return {str(key): value for key, value in parsed.items()}
 
-    def _build_config_instance(self, payload: Mapping[str, Any]) -> AnibridgeConfig:
+    def _build_config_instance(self, payload: Mapping[str, object]) -> AnibridgeConfig:
         """Build and validate an AnibridgeConfig instance from the provided payload."""
         try:
             return AnibridgeConfig.model_validate(dict(payload))
         except Exception as exc:
             raise ValueError(f"Unable to parse configuration: {exc}") from exc
 
-    def load_document_text(self) -> dict[str, Any]:
+    def load_document_text(self) -> ConfigDocumentPayload:
         """Return the raw YAML content alongside file metadata."""
         file_exists = self._config_path.exists()
         return {

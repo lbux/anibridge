@@ -8,8 +8,6 @@ from typing import Any, ClassVar, get_args, get_origin
 import msgspec
 from anibridge.utils.cache import cache
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
-
 
 class AniListBaseEnum(StrEnum):
     """Base enum for AniList models."""
@@ -112,7 +110,6 @@ class MediaListStatus(AniListBaseEnum):
 
 
 class AniListBaseModel(
-    PydanticMsgspecMixin,
     msgspec.Struct,
     rename="camel",
     kw_only=True,

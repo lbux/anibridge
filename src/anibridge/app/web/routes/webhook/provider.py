@@ -1,7 +1,8 @@
 """Provider Webhook endpoint."""
 
-from fastapi.routing import APIRouter
-from starlette.requests import Request
+from litestar.connection.request import Request
+from litestar.handlers.http_handlers.decorators import post
+from litestar.router import Router
 
 from anibridge.app import log
 from anibridge.app.exceptions import SchedulerNotInitializedError
@@ -10,10 +11,8 @@ from anibridge.app.web.state import get_app_state
 
 __all__ = ["router"]
 
-router = APIRouter()
 
-
-@router.post("/{provider_namespace}")
+@post(path="/{provider_namespace:str}", status_code=200)
 async def provider_webhook(
     provider_namespace: str,
     request: Request,
@@ -62,3 +61,6 @@ async def provider_webhook(
                 profile_name,
             )
             continue
+
+
+router = Router(path="", route_handlers=[provider_webhook])

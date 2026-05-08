@@ -1,8 +1,9 @@
 """Tests for system API endpoints."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import cast
 
 import pytest
 from pytest import raises
@@ -36,14 +37,14 @@ class _DummyGlobalConfig:
 
 
 class _AboutScheduler:
-    def __init__(self, *, current_sync: dict[str, Any] | None = None) -> None:
+    def __init__(self, *, current_sync: dict[str, object] | None = None) -> None:
         self.global_config = _DummyGlobalConfig()
         self.is_running = True
         self._current_sync = (
             current_sync if current_sync is not None else {"state": "running"}
         )
 
-    async def get_status(self) -> dict[str, Any]:
+    async def get_status(self) -> dict[str, dict[str, dict[str, object]]]:
         return {
             "primary": {
                 "config": {
@@ -60,7 +61,7 @@ class _AboutScheduler:
             }
         }
 
-    async def get_runtime_metrics(self) -> dict[str, Any]:
+    async def get_runtime_metrics(self) -> dict[str, dict[str, int]]:
         return {"coordinator": {"queued": 1}}
 
     def get_next_database_sync_at(self):
@@ -74,10 +75,14 @@ def system_client(api_client_for):
 
 def test_api_restart_requests_scheduler_shutdown(patch_app_state) -> None:
     """Restart endpoint should mark restart and request scheduler shutdown."""
+    api_restart = cast(
+        Callable[[], system_api_module.RestartResponse],
+        system_api_module.api_restart.fn,
+    )
     scheduler = _DummyScheduler()
     state = patch_app_state(system_api_module, scheduler=scheduler)
 
-    response = system_api_module.api_restart()
+    response = api_restart()
 
     assert response.ok is True
     assert "Restart requested" in response.message
@@ -87,10 +92,14 @@ def test_api_restart_requests_scheduler_shutdown(patch_app_state) -> None:
 
 def test_api_restart_requires_scheduler(patch_app_state) -> None:
     """Restart endpoint should fail when scheduler is unavailable."""
+    api_restart = cast(
+        Callable[[], system_api_module.RestartResponse],
+        system_api_module.api_restart.fn,
+    )
     patch_app_state(system_api_module, scheduler=None)
 
     with raises(SchedulerUnavailableError):
-        system_api_module.api_restart()
+        api_restart()
 
 
 @pytest.mark.parametrize(
@@ -134,12 +143,16 @@ def test_restart_api_access_policy(
 def test_api_settings_serializes_scheduler_state(
     patch_app_state,
     scheduler: _AboutScheduler | None,
-    expected_global_config: dict[str, Any],
+    expected_global_config: dict[str, object],
     expected_profile_count: int,
 ) -> None:
+    api_settings = cast(
+        Callable[[], system_api_module.SettingsResponse],
+        system_api_module.api_settings.fn,
+    )
     patch_app_state(system_api_module, scheduler=scheduler)
 
-    response = system_api_module.api_settings()
+    response = api_settings()
 
     assert response.global_config == expected_global_config
     assert len(response.profiles) == expected_profile_count
@@ -175,7 +188,7 @@ async def test_api_about_returns_runtime_summary(monkeypatch, patch_app_state) -
 
     monkeypatch.setattr(system_api_module, "datetime", FrozenDateTime)
 
-    response = await system_api_module.api_about()
+    response = await system_api_module.api_about.fn()
 
     assert response.info.python == "3.14.0"
     assert response.process.pid == 123
@@ -214,7 +227,7 @@ async def test_api_about_ignores_non_running_sync_payloads(
 
     monkeypatch.setattr(system_api_module, "datetime", FrozenDateTime)
 
-    response = await system_api_module.api_about()
+    response = await system_api_module.api_about.fn()
 
     assert response.scheduler.syncing_profiles == 0
 
@@ -222,17 +235,21 @@ async def test_api_about_ignores_non_running_sync_payloads(
 @pytest.mark.asyncio
 async def test_api_about_wraps_scheduler_errors(patch_app_state) -> None:
     class _BrokenScheduler(_AboutScheduler):
-        async def get_status(self) -> dict[str, Any]:
+        async def get_status(self) -> dict[str, dict[str, dict[str, object]]]:
             raise RuntimeError("boom")
 
     patch_app_state(system_api_module, scheduler=_BrokenScheduler())
 
     with pytest.raises(SchedulerUnavailableError, match="Unable to fetch scheduler"):
-        await system_api_module.api_about()
+        await system_api_module.api_about.fn()
 
 
 def test_meta_returns_version_and_git_hash() -> None:
-    response = system_api_module.meta()
+    meta = cast(
+        Callable[[], system_api_module.MetaResponse],
+        system_api_module.meta.fn,
+    )
+    response = meta()
 
     assert response.version
     assert response.git_hash

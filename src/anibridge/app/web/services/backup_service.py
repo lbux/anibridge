@@ -17,13 +17,12 @@ from anibridge.app.exceptions import (
     SchedulerNotInitializedError,
     SchedulerUnavailableError,
 )
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BackupService", "get_backup_service"]
 
 
-class BackupMeta(PydanticMsgspecMixin, msgspec.Struct):
+class BackupMeta(msgspec.Struct):
     """Metadata about a backup file used for listing in the UI."""
 
     filename: str

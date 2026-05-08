@@ -3,21 +3,19 @@
 from typing import Literal
 
 import msgspec
-from fastapi.routing import APIRouter
+from litestar.handlers.http_handlers.decorators import get
+from litestar.router import Router
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
-
-router = APIRouter()
+__all__ = ["router"]
 
 
-class LivezResponse(PydanticMsgspecMixin, msgspec.Struct):
+class LivezResponse(msgspec.Struct):
     """Minimal liveness payload for unauthenticated probes."""
 
     status: Literal["ok"] = "ok"
 
 
-@router.get("/livez", include_in_schema=False, response_model=LivezResponse)
-@router.get("/healthz", include_in_schema=False, response_model=LivezResponse)
+@get(path=["/livez", "/healthz"], include_in_schema=False)
 async def livez() -> LivezResponse:
     """Liveness check endpoint.
 
@@ -25,3 +23,6 @@ async def livez() -> LivezResponse:
         LivezResponse: Always returns status "ok" if the application is running.
     """
     return LivezResponse()
+
+
+router = Router(path="", route_handlers=[livez])

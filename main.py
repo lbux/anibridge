@@ -134,7 +134,7 @@ async def run() -> int:
         get_app_state().set_scheduler(app_scheduler)
 
         if config.web.enabled:
-            app.extra["scheduler"] = app_scheduler
+            app.state.scheduler = app_scheduler
 
         _setup_signal_handlers_for_scheduler(app_scheduler)
 

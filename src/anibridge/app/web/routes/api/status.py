@@ -1,9 +1,9 @@
 """API status endpoints."""
 
 import msgspec
-from fastapi.routing import APIRouter
+from litestar.handlers.http_handlers.decorators import get
+from litestar.router import Router
 
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.web.state import get_app_state
 
 __all__ = [
@@ -12,10 +12,11 @@ __all__ = [
     "ProfileStatusModel",
     "construct_profile_status",
     "router",
+    "status",
 ]
 
 
-class ProfileConfigModel(PydanticMsgspecMixin, msgspec.Struct):
+class ProfileConfigModel(msgspec.Struct):
     """Serialized profile configuration exposed to the web UI."""
 
     library_namespace: str
@@ -29,7 +30,7 @@ class ProfileConfigModel(PydanticMsgspecMixin, msgspec.Struct):
     destructive_sync: bool | None = None
 
 
-class ProfileRuntimeStatusModel(PydanticMsgspecMixin, msgspec.Struct):
+class ProfileRuntimeStatusModel(msgspec.Struct):
     """Runtime status of a profile exposed to the web UI."""
 
     running: bool
@@ -38,27 +39,24 @@ class ProfileRuntimeStatusModel(PydanticMsgspecMixin, msgspec.Struct):
     initialization_error: str | None = None
 
 
-class ProfileStatusModel(PydanticMsgspecMixin, msgspec.Struct):
+class ProfileStatusModel(msgspec.Struct):
     """Combined profile configuration and runtime status exposed to the web UI."""
 
     config: ProfileConfigModel
     status: ProfileRuntimeStatusModel
 
 
-class StatusResponse(PydanticMsgspecMixin, msgspec.Struct):
+class StatusResponse(msgspec.Struct):
     profiles: dict[str, ProfileStatusModel]
     scheduler: dict | None = None
 
 
-router = APIRouter()
-
-
-@router.get("", response_model=StatusResponse)
+@get(path="")
 async def status() -> StatusResponse:
     """Get the status of the application.
 
     Returns:
-        dict[str, Any]: The status of the application.
+        StatusResponse: The serialized application status.
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
@@ -92,3 +90,6 @@ def construct_profile_status(data: dict) -> ProfileStatusModel:
             initialization_error=st.get("initialization_error"),
         ),
     )
+
+
+router = Router(path="/status", route_handlers=[status])

@@ -1,7 +1,6 @@
 """Tests for sync API endpoints."""
 
 from collections.abc import Coroutine
-from typing import Any
 
 import pytest
 
@@ -44,10 +43,10 @@ def scheduler() -> _DummyScheduler:
 @pytest.fixture
 def scheduled_tasks(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[tuple[str, Coroutine[Any, Any, Any]]]:
-    tasks: list[tuple[str, Coroutine[Any, Any, Any]]] = []
+) -> list[tuple[str, Coroutine[object, object, None]]]:
+    tasks: list[tuple[str, Coroutine[object, object, None]]] = []
 
-    def _schedule_task(coro: Coroutine[Any, Any, Any], *, name: str) -> None:
+    def _schedule_task(coro: Coroutine[object, object, None], *, name: str) -> None:
         tasks.append((name, coro))
         coro.close()
 
@@ -74,13 +73,11 @@ async def test_sync_routes_schedule_background_tasks(
     patch_app_state(sync_api_module, scheduler=scheduler)
 
     if operation == "all":
-        response = await sync_api_module.sync_all(poll=True)
+        response = await sync_api_module.sync_all.fn(poll=True)
     elif operation == "database":
-        response = await sync_api_module.sync_database()
+        response = await sync_api_module.sync_database.fn()
     else:
-        response = await sync_api_module.sync_profile(
-            "broken", poll=True, library_keys=["1", "2"]
-        )
+        response = await sync_api_module.sync_profile.fn("broken", poll=True)
 
     assert response.ok is True
     assert [name for name, _ in scheduled_tasks] == [expected_task_name]
@@ -94,7 +91,7 @@ async def test_reinitialize_profile_calls_scheduler(
     """Reinitialize endpoint should target the requested profile."""
     patch_app_state(sync_api_module, scheduler=scheduler)
 
-    response = await sync_api_module.reinitialize_profile("broken")
+    response = await sync_api_module.reinitialize_profile.fn("broken")
 
     assert response.ok is True
     assert scheduler.reinitialized_profiles == ["broken"]
@@ -118,10 +115,10 @@ async def test_sync_routes_require_scheduler(
 
     with pytest.raises(SchedulerNotInitializedError):
         if operation == "all":
-            await sync_api_module.sync_all()
+            await sync_api_module.sync_all.fn()
         elif operation == "database":
-            await sync_api_module.sync_database()
+            await sync_api_module.sync_database.fn()
         elif operation == "profile":
-            await sync_api_module.sync_profile("broken")
+            await sync_api_module.sync_profile.fn("broken")
         else:
-            await sync_api_module.reinitialize_profile("broken")
+            await sync_api_module.reinitialize_profile.fn("broken")

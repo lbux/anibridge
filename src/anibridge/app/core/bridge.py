@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from anibridge.library import (
     LibraryMovie,
@@ -13,7 +13,6 @@ from anibridge.library import (
     MediaKind,
 )
 from anibridge.list import ListProvider
-from starlette.requests import Request
 
 from anibridge.app import log
 from anibridge.app.config.database import db
@@ -419,9 +418,8 @@ class BridgeClient:
             await show_sync.clear_cache()
             release_memory()
 
-    async def parse_webhook(
-        self, request: Request
-    ) -> tuple[bool, Sequence[str] | None]:
+    # TODO: Currently assumes Starlette request, but should be litestar request
+    async def parse_webhook(self, request: Any) -> tuple[bool, Sequence[str] | None]:
         """Parse a webhook request and extract relevant library keys.
 
         Args:

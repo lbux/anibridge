@@ -349,11 +349,11 @@ class SchedulerClient:
                     exceptions,
                 )
 
-    async def get_status(self) -> dict[str, dict[str, Any]]:
+    async def get_status(self) -> dict[str, Any]:
         """Get the status of all profiles.
 
         Returns:
-            dict[str, dict[str, Any]]: A dictionary containing the profile info.
+            dict[str, Any]: A dictionary containing the profile info.
         """
         status = {}
 

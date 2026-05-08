@@ -5,30 +5,27 @@ import re
 from pathlib import Path
 
 import msgspec
-from fastapi.param_functions import Query
-from fastapi.routing import APIRouter
+from litestar.handlers.http_handlers.decorators import get
+from litestar.router import Router
 
 from anibridge.app import config
 from anibridge.app.exceptions import InvalidLogFileNameError, LogFileNotFoundError
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 
 __all__ = ["router"]
 
 
-class LogFileModel(PydanticMsgspecMixin, msgspec.Struct):
+class LogFileModel(msgspec.Struct):
     name: str
     size: int
     mtime: int  # epoch ms
     current: bool
 
 
-class LogEntryModel(PydanticMsgspecMixin, msgspec.Struct):
+class LogEntryModel(msgspec.Struct):
     level: str
     message: str
     timestamp: str | None = None
 
-
-router = APIRouter()
 
 LOG_DIR: Path = (config.data_path / "logs").resolve()
 
@@ -57,14 +54,12 @@ def _list_log_files() -> list[Path]:
     return sorted(files.values(), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-@router.get(
-    "/files", summary="List available log files", response_model=list[LogFileModel]
-)
+@get(path="/files", sync_to_thread=True)
 def list_log_files() -> list[LogFileModel]:
     """Return metadata about available log files.
 
     Returns:
-        JSONResponse: List of log file metadata sorted by most recent first.
+        list[LogFileModel]: Log file metadata sorted by most recent first.
     """
     files = _list_log_files()
     res: list[LogFileModel] = []
@@ -158,14 +153,8 @@ def _tail_lines(path: Path, max_lines: int) -> list[str]:
     return [line.decode("utf-8", errors="replace") for line in tail_bytes]
 
 
-@router.get(
-    "/file/{name}",
-    summary="Fetch parsed tail of a log file",
-    response_model=list[LogEntryModel],
-)
-def get_log_file(
-    name: str, lines: int = Query(500, ge=0, le=2000)
-) -> list[LogEntryModel]:
+@get(path="/file/{name:str}", sync_to_thread=True)
+def get_log_file(name: str, lines: int = 500) -> list[LogEntryModel]:
     """Return the last N lines of a log file parsed into JSON entries.
 
     Args:
@@ -173,7 +162,7 @@ def get_log_file(
         lines (int): Maximum number of lines to return (tail). Default 500.
 
     Returns:
-        JSONResponse: Ordered list (oldest first) of parsed log entries.
+        list[LogEntryModel]: Ordered list (oldest first) of parsed log entries.
 
     Raises:
         InvalidLogFileNameError: If the file name is invalid.
@@ -197,3 +186,6 @@ def get_log_file(
             res.append(LogEntryModel(timestamp=None, level="INFO", message=ln))
 
     return res
+
+
+router = Router(path="/logs", route_handlers=[list_log_files, get_log_file])

@@ -1,13 +1,12 @@
 """API endpoints for mappings (v3 graph)."""
 
-import asyncio
 from typing import Annotated
 
 import msgspec
-from fastapi import Body, Request
-from fastapi.exceptions import HTTPException
-from fastapi.param_functions import Query
-from fastapi.routing import APIRouter
+from litestar.exceptions.http_exceptions import HTTPException
+from litestar.handlers.http_handlers.decorators import get, post, put
+from litestar.params import Body
+from litestar.router import Router
 
 from anibridge.app.exceptions import (
     AniListFilterError,
@@ -16,7 +15,6 @@ from anibridge.app.exceptions import (
     BooruQuerySyntaxError,
     MappingIdMismatchError,
 )
-from anibridge.app.models.schemas._pydantic_msgspec import PydanticMsgspecMixin
 from anibridge.app.models.schemas.anilist import Media
 from anibridge.app.web.services.mapping_overrides_service import (
     get_mapping_overrides_service,
@@ -27,7 +25,7 @@ from anibridge.app.web.services.mappings_service import get_mappings_service
 __all__ = ["router"]
 
 
-class MappingEdgeModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingEdgeModel(msgspec.Struct):
     target_provider: str
     target_entry_id: str
     source_range: str
@@ -36,7 +34,7 @@ class MappingEdgeModel(PydanticMsgspecMixin, msgspec.Struct):
     sources: list[str] = msgspec.field(default_factory=list)
 
 
-class MappingItemModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingItemModel(msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
@@ -47,7 +45,7 @@ class MappingItemModel(PydanticMsgspecMixin, msgspec.Struct):
     anilist: Media | None = None
 
 
-class ListMappingsResponse(PydanticMsgspecMixin, msgspec.Struct):
+class ListMappingsResponse(msgspec.Struct):
     items: list[MappingItemModel]
     total: int
     page: int
@@ -56,16 +54,16 @@ class ListMappingsResponse(PydanticMsgspecMixin, msgspec.Struct):
     with_anilist: bool = False
 
 
-class DeleteMappingResponse(PydanticMsgspecMixin, msgspec.Struct):
+class DeleteMappingResponse(msgspec.Struct):
     ok: bool
 
 
-class RangeInputModel(PydanticMsgspecMixin, msgspec.Struct):
+class RangeInputModel(msgspec.Struct):
     source_range: str
     destination_range: str | None = None
 
 
-class TargetInputModel(PydanticMsgspecMixin, msgspec.Struct):
+class TargetInputModel(msgspec.Struct):
     provider: str
     entry_id: str
     scope: str | None = None
@@ -73,14 +71,14 @@ class TargetInputModel(PydanticMsgspecMixin, msgspec.Struct):
     deleted: bool = False
 
 
-class MappingOverridePayload(PydanticMsgspecMixin, msgspec.Struct):
+class MappingOverridePayload(msgspec.Struct):
     """Payload for creating or updating a mapping override."""
 
     descriptor: str
     targets: list[TargetInputModel] = msgspec.field(default_factory=list)
 
 
-class MappingRangeViewModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingRangeViewModel(msgspec.Struct):
     source_range: str
     origin: str
     upstream: str | None = None
@@ -89,7 +87,7 @@ class MappingRangeViewModel(PydanticMsgspecMixin, msgspec.Struct):
     inherited: bool = False
 
 
-class MappingTargetViewModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingTargetViewModel(msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
@@ -99,7 +97,7 @@ class MappingTargetViewModel(PydanticMsgspecMixin, msgspec.Struct):
     ranges: list[MappingRangeViewModel] = msgspec.field(default_factory=list)
 
 
-class MappingLayersModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingLayersModel(msgspec.Struct):
     upstream: dict[str, dict[str, str | None] | None] = msgspec.field(
         default_factory=dict
     )
@@ -111,7 +109,7 @@ class MappingLayersModel(PydanticMsgspecMixin, msgspec.Struct):
     )
 
 
-class MappingDetailModel(PydanticMsgspecMixin, msgspec.Struct):
+class MappingDetailModel(msgspec.Struct):
     descriptor: str
     provider: str
     entry_id: str
@@ -120,7 +118,7 @@ class MappingDetailModel(PydanticMsgspecMixin, msgspec.Struct):
     targets: list[MappingTargetViewModel] = msgspec.field(default_factory=list)
 
 
-class FieldCapabilityModel(PydanticMsgspecMixin, msgspec.Struct):
+class FieldCapabilityModel(msgspec.Struct):
     key: str
     type: str
     operators: list[str]
@@ -129,18 +127,14 @@ class FieldCapabilityModel(PydanticMsgspecMixin, msgspec.Struct):
     desc: str | None = None
 
 
-class QueryCapabilitiesResponse(PydanticMsgspecMixin, msgspec.Struct):
+class QueryCapabilitiesResponse(msgspec.Struct):
     fields: list[FieldCapabilityModel]
 
 
-router = APIRouter()
-
-
-@router.get("", response_model=ListMappingsResponse)
+@get(path="")
 async def list_mappings(
-    request: Request,
-    page: int = Query(1, ge=1),
-    per_page: int = Query(25, ge=1, le=250),
+    page: int = 1,
+    per_page: int = 25,
     q: str | None = None,
     custom_only: bool = False,
     with_anilist: bool = False,
@@ -148,7 +142,7 @@ async def list_mappings(
     svc = get_mappings_service()
 
     async def cancel_check() -> bool:
-        return await request.is_disconnected()
+        return False
 
     try:
         raw_items, total = await svc.list_mappings(
@@ -167,8 +161,6 @@ async def list_mappings(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AniListSearchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except asyncio.CancelledError as exc:
-        raise HTTPException(status_code=499, detail="Client Closed Request") from exc
 
     items = msgspec.convert(raw_items, type=list[MappingItemModel])
     pages = (total + per_page - 1) // per_page if per_page else 1
@@ -182,7 +174,7 @@ async def list_mappings(
     )
 
 
-@router.get("/query-capabilities", response_model=QueryCapabilitiesResponse)
+@get(path="/query-capabilities", sync_to_thread=True)
 def query_capabilities() -> QueryCapabilitiesResponse:
     specs = get_query_field_specs()
     fields = [
@@ -199,36 +191,48 @@ def query_capabilities() -> QueryCapabilitiesResponse:
     return QueryCapabilitiesResponse(fields=fields)
 
 
-@router.get("/{descriptor}", response_model=MappingDetailModel)
+@get(path="/{descriptor:str}")
 async def get_mapping(descriptor: str) -> MappingDetailModel:
     svc = get_mapping_overrides_service()
     data = await svc.get_mapping_detail(descriptor)
     return msgspec.convert(data, type=MappingDetailModel)
 
 
-@router.post("", response_model=MappingDetailModel)
+@post(path="", status_code=200)
 async def create_mapping(
-    mapping: Annotated[MappingOverridePayload, Body()],
+    data: Annotated[MappingOverridePayload, Body()],
 ) -> MappingDetailModel:
     svc = get_mapping_overrides_service()
-    data = await svc.save_override(
-        descriptor=mapping.descriptor,
-        targets=msgspec.to_builtins(mapping.targets),
+    saved = await svc.save_override(
+        descriptor=data.descriptor,
+        targets=msgspec.to_builtins(data.targets),
     )
-    return msgspec.convert(data, type=MappingDetailModel)
+    return msgspec.convert(saved, type=MappingDetailModel)
 
 
-@router.put("/{descriptor}", response_model=MappingDetailModel)
+@put(path="/{descriptor:str}")
 async def update_mapping(
     descriptor: str,
-    mapping: Annotated[MappingOverridePayload, Body()],
+    data: Annotated[MappingOverridePayload, Body()],
 ) -> MappingDetailModel:
-    if mapping.descriptor != descriptor:
+    if data.descriptor != descriptor:
         raise MappingIdMismatchError("descriptor in path and body must match")
 
     svc = get_mapping_overrides_service()
-    data = await svc.save_override(
-        descriptor=mapping.descriptor,
-        targets=msgspec.to_builtins(mapping.targets),
+    saved = await svc.save_override(
+        descriptor=data.descriptor,
+        targets=msgspec.to_builtins(data.targets),
     )
-    return msgspec.convert(data, type=MappingDetailModel)
+    return msgspec.convert(saved, type=MappingDetailModel)
+
+
+router = Router(
+    path="/mappings",
+    route_handlers=[
+        list_mappings,
+        query_capabilities,
+        get_mapping,
+        create_mapping,
+        update_mapping,
+    ],
+)

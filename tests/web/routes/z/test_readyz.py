@@ -3,8 +3,8 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from litestar.app import Litestar
+from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.web.routes.z import readyz as readyz_module
 
@@ -23,8 +23,7 @@ class _DummyScheduler:
 
 @pytest.fixture
 def readyz_client() -> TestClient:
-    app = FastAPI()
-    app.include_router(readyz_module.router)
+    app = Litestar(route_handlers=[readyz_module.router])
     return TestClient(app)
 
 

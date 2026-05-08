@@ -1,7 +1,6 @@
 """Tests for status API routes."""
 
 from datetime import UTC, datetime
-from typing import Any, cast
 
 import pytest
 
@@ -9,7 +8,7 @@ from anibridge.app.web.routes.api import status as status_api_module
 
 
 class _DummyScheduler:
-    async def get_status(self) -> dict[str, Any]:
+    async def get_status(self) -> dict[str, dict[str, dict[str, object]]]:
         return {
             "primary": {
                 "config": {
@@ -32,7 +31,7 @@ class _DummyScheduler:
             }
         }
 
-    async def get_runtime_metrics(self) -> dict[str, Any]:
+    async def get_runtime_metrics(self) -> dict[str, dict[str, bool]]:
         return {"coordinator": {"running": True}}
 
 
@@ -40,7 +39,7 @@ class _DummyScheduler:
 async def test_status_route_returns_empty_without_scheduler(patch_app_state) -> None:
     patch_app_state(status_api_module, scheduler=None)
 
-    response = await status_api_module.status()
+    response = await status_api_module.status.fn()
 
     assert response.profiles == {}
     assert response.scheduler is None
@@ -48,9 +47,9 @@ async def test_status_route_returns_empty_without_scheduler(patch_app_state) -> 
 
 @pytest.mark.asyncio
 async def test_status_route_serializes_scheduler_payload(patch_app_state) -> None:
-    patch_app_state(status_api_module, scheduler=cast(Any, _DummyScheduler()))
+    patch_app_state(status_api_module, scheduler=_DummyScheduler())
 
-    response = await status_api_module.status()
+    response = await status_api_module.status.fn()
 
     profile = response.profiles["primary"]
     assert profile.config.library_namespace == "plex"
