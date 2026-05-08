@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Any, ClassVar
 
 import aiohttp
+import msgspec
 from anibridge.providers.list.anilist.client import global_anilist_limiter
 from anibridge.utils.cache import LRUDict, cache, ttl_cache
 
@@ -344,7 +345,7 @@ class AnilistClient:
             response = await self._make_request(query, variables)
 
             media_list = response.get("data", {}).get("Page", {}).get("media", []) or []
-            media_by_id = {m["id"]: Media(**m) for m in media_list}
+            media_by_id = {m["id"]: msgspec.convert(m, type=Media) for m in media_list}
 
             for anilist_id in batch_ids:
                 media = media_by_id.get(anilist_id)
