@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from litestar.connection.request import Request
 
 import anibridge.app.core.bridge as bridge_module
 from anibridge.app.config.settings import SyncRulesConfig
@@ -351,9 +352,10 @@ async def test_parse_webhook_delegates(
         list_provider=list_provider,
     )
 
-    assert (
-        await client.parse_webhook(cast(bridge_module.Request, SimpleNamespace()))
-    ) == (False, None)
+    assert (await client.parse_webhook(cast(Request, SimpleNamespace()))) == (
+        False,
+        None,
+    )
 
 
 @pytest.mark.asyncio
@@ -779,7 +781,7 @@ async def test_parse_webhook_returns_false_when_provider_raises(
         list_provider=FakeListProvider(backup_payload=""),
     )
 
-    result = await client.parse_webhook(cast(bridge_module.Request, SimpleNamespace()))
+    result = await client.parse_webhook(cast(Request, SimpleNamespace()))
 
     assert result == (False, None)
 
