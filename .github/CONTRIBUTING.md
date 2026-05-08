@@ -35,7 +35,7 @@ The AniBridge codebase can be split into three primary components:
     ├── core
     │   └── ... # Core synchronization engine (Python)
     └── web
-        └── ... # API (Python/FastAPI)
+        └── ... # API (Python/Litestar)
 ```
 
 The project has a set of developer scripts at `scripts/dev.py` to help with common tasks. You can run these scripts with `python scripts/dev.py <command>`. Run `python scripts/dev.py --help` to see a list of available commands.
