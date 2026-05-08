@@ -189,3 +189,31 @@ def test_logger_setup_handles_color_detection_errors(
     for handler in logger.handlers[:]:
         handler.close()
         logger.removeHandler(handler)
+
+
+def test_logger_setup_disables_propagation_to_root_handlers() -> None:
+    """Configured loggers should not duplicate records through the root logger."""
+    logger = Logger("propagation-test")
+    root_logger = logging.getLogger()
+    captured: list[str] = []
+
+    class CaptureHandler(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    root_handler = CaptureHandler()
+    root_logger.addHandler(root_handler)
+
+    try:
+        logger.setup("INFO")
+
+        logger.info("hello")
+
+        assert logger.propagate is False
+        assert captured == []
+    finally:
+        root_logger.removeHandler(root_handler)
+        root_handler.close()
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)

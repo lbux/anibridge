@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -361,13 +362,20 @@ async def test_on_worker_exit_logs_unexpected_exception(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Worker exit callback should log errors for unexpected task failures."""
-    task = asyncio.get_running_loop().create_future()
-    task.set_exception(RuntimeError("oops"))
+    caplog.set_level(logging.ERROR, logger="anibridge")
+    logger = logging.getLogger("anibridge")
+    logger.addHandler(caplog.handler)
 
-    # Consume the exception to prevent "Future exception was never retrieved".
-    with contextlib.suppress(RuntimeError):
-        task.result()
+    try:
+        task = asyncio.get_running_loop().create_future()
+        task.set_exception(RuntimeError("oops"))
 
-    profile_scheduler._on_worker_exit(task)  # ty:ignore[invalid-argument-type]
+        # Consume the exception to prevent "Future exception was never retrieved".
+        with contextlib.suppress(RuntimeError):
+            task.result()
+
+        profile_scheduler._on_worker_exit(task)  # ty:ignore[invalid-argument-type]
+    finally:
+        logger.removeHandler(caplog.handler)
 
     assert any("Sync worker exited unexpectedly" in r.message for r in caplog.records)

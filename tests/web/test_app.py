@@ -25,6 +25,17 @@ class _DummyHandler(Handler):
         self.loop = loop
 
 
+class _CaptureHandler(Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record) -> None:
+        self.records.append(record)
+        self.messages.append(record.getMessage())
+
+
 class _DummyState:
     def __init__(self) -> None:
         self.scheduler = None
@@ -184,3 +195,45 @@ def test_create_app_skips_spa_when_frontend_assets_missing(
     with TestClient(app) as client:
         assert client.get("/livez").status_code == 200
         assert client.get("/missing").status_code == 404
+
+
+def test_create_app_uses_builtin_logging_middleware_in_debug(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_file = tmp_path / "index.html"
+    index_file.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.DEBUG)
+
+    app = app_module.create_app()
+    handler = _CaptureHandler()
+    logger = logging.getLogger("anibridge")
+    logger.addHandler(handler)
+
+    try:
+        with TestClient(app) as client:
+            assert client.get("/livez").status_code == 200
+    finally:
+        logger.removeHandler(handler)
+
+    assert any(
+        record.levelno == logging.DEBUG
+        and "HTTP Request:" in record.getMessage()
+        and "method=GET" in record.getMessage()
+        and "path=/livez" in record.getMessage()
+        for record in handler.records
+    )
+    assert any(
+        record.levelno == logging.DEBUG
+        and "HTTP Response:" in record.getMessage()
+        and "status_code=200" in record.getMessage()
+        for record in handler.records
+    )
+    assert any(
+        "HTTP Request:" in message
+        and "method=GET" in message
+        and "path=/livez" in message
+        for message in handler.messages
+    )
+

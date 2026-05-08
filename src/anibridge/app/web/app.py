@@ -10,7 +10,8 @@ from litestar.app import Litestar
 from litestar.connection.request import Request as LitestarRequest
 from litestar.file_system import BaseLocalFileSystem
 from litestar.handlers.http_handlers.decorators import get
-from litestar.middleware.base import ASGIMiddleware
+from litestar.middleware.base import ASGIMiddleware, DefineMiddleware
+from litestar.middleware.logging import LoggingMiddlewareConfig
 from litestar.response.base import Response as LitestarResponse
 from litestar.response.file import ASGIFileResponse
 from litestar.static_files.base import StaticFiles
@@ -33,6 +34,20 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["create_app"]
 
 FRONTEND_BUILD_DIR = PROJECT_ROOT / "frontend" / "build"
+
+
+class HttpLoggingMiddleware(LoggingMiddleware):
+    """Litestar logging middleware variant that emits debug-level records."""
+
+    def log_message(self, values: dict[str, object]) -> None:
+        """Log request and response messages at debug level instead of info."""
+        message = str(values.pop("message"))
+        if self.is_struct_logger:
+            self.logger.debug(message, **values)
+            return
+
+        value_strings = [f"{key}={value}" for key, value in values.items()]
+        self.logger.debug(f"{message}: {', '.join(value_strings)}")
 
 
 @asynccontextmanager
@@ -135,11 +150,18 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
     Returns:
         Litestar: The created Litestar application.
     """
-    middleware: list[ASGIMiddleware] = []
+    middleware: list[ASGIMiddleware | DefineMiddleware] = []
 
-    # Add request logging middleware if in debug mode
+    # Use Litestar's request/response logging when debug logging is enabled.
     if cast(Logger, log).level <= DEBUG:
-        middleware.append(RequestLoggingMiddleware())
+        middleware.append(
+            LoggingMiddlewareConfig(
+                logger_name="anibridge",
+                middleware_class=RequestLoggingMiddleware,
+                request_log_fields=("method", "path", "query", "body"),
+                response_log_fields=("status_code",),
+            ).middleware
+        )
         log.debug("Web - Request logging enabled (debug mode)")
 
     # Add basic auth middleware if configured

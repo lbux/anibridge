@@ -111,6 +111,8 @@ async def run() -> int:
                 host=config.web.host,
                 port=config.web.port,
                 log_config=None,
+                log_level="warning",
+                access_log=False,
                 loop="auto",  # uses uvloop if available, falls back to asyncio
                 proxy_headers=True,
                 forwarded_allow_ips="*",

@@ -240,6 +240,10 @@ class Logger(logging.Logger):
         for handler in self.handlers[:]:
             self.removeHandler(handler)
 
+        # Once this logger owns its handlers, records should not bubble to any
+        # separately configured root handlers, or the same event is emitted twice.
+        self.propagate = False
+
         log_format = (
             "%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - "
             "%(message)s"
