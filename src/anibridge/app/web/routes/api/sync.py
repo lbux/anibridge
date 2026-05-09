@@ -1,8 +1,10 @@
 """API endpoints to trigger sync operations."""
 
-from fastapi.param_functions import Body, Path, Query
-from fastapi.routing import APIRouter
-from pydantic import BaseModel
+from typing import Annotated
+
+import msgspec
+from litestar.handlers.http_handlers.decorators import post
+from litestar.router import Router
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
 from anibridge.app.utils.async_tasks import schedule_task
@@ -11,15 +13,18 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["router"]
 
 
-class OkResponse(BaseModel):
-    ok: bool = True
+class OkResponse(msgspec.Struct):
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the sync request was accepted.",
+            examples=[True],
+        ),
+    ] = True
 
 
-router = APIRouter()
-
-
-@router.post("", response_model=OkResponse)
-async def sync_all(poll: bool = Query(False)) -> OkResponse:
+@post(path="")
+async def sync_all(poll: bool = False) -> OkResponse:
     """Trigger a sync for all profiles.
 
     Args:
@@ -41,7 +46,7 @@ async def sync_all(poll: bool = Query(False)) -> OkResponse:
     return OkResponse(ok=True)
 
 
-@router.post("/database", response_model=OkResponse)
+@post(path="/database")
 async def sync_database() -> OkResponse:
     """Trigger a sync for the database.
 
@@ -61,18 +66,13 @@ async def sync_database() -> OkResponse:
     return OkResponse(ok=True)
 
 
-@router.post("/profile/{profile}", response_model=OkResponse)
-async def sync_profile(
-    profile: str = Path(...),
-    poll: bool = Query(False),
-    library_keys: list[str] | None = Body(default=None, embed=True),
-) -> OkResponse:
+@post(path="/profile/{profile:str}")
+async def sync_profile(profile: str, poll: bool = False) -> OkResponse:
     """Trigger a sync for a specific profile.
 
     Args:
         profile (str): The profile to sync.
         poll (bool): Whether to poll for updates.
-        library_keys (list[str] | None): Specific rating keys to sync (if any).
 
     Returns:
         OkResponse: The response containing the sync status.
@@ -88,7 +88,7 @@ async def sync_profile(
         scheduler.trigger_profile_sync(
             profile,
             poll=poll,
-            library_keys=library_keys,
+            library_keys=None,
             source="api:sync_profile",
         ),
         name=f"sync_profile:{profile}",
@@ -96,8 +96,8 @@ async def sync_profile(
     return OkResponse(ok=True)
 
 
-@router.post("/profile/{profile}/reinitialize", response_model=OkResponse)
-async def reinitialize_profile(profile: str = Path(...)) -> OkResponse:
+@post(path="/profile/{profile:str}/reinitialize")
+async def reinitialize_profile(profile: str) -> OkResponse:
     """Rebuild and restart a single profile.
 
     Args:
@@ -116,3 +116,9 @@ async def reinitialize_profile(profile: str = Path(...)) -> OkResponse:
         raise SchedulerNotInitializedError("Scheduler not available")
     await scheduler.reinitialize_profile(profile)
     return OkResponse(ok=True)
+
+
+router = Router(
+    path="/sync",
+    route_handlers=[sync_all, sync_database, sync_profile, reinitialize_profile],
+)

@@ -1,5 +1,6 @@
 """Bridge Client Module."""
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,9 +14,8 @@ from anibridge.library import (
     MediaKind,
 )
 from anibridge.list import ListProvider
-from starlette.requests import Request
+from litestar.connection.request import Request
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.core.animap import AnimapClient
@@ -24,6 +24,7 @@ from anibridge.app.core.sync.movie import MovieSyncClient
 from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.stats import SyncProgress, SyncStats
 from anibridge.app.exceptions import MediaTypeError
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.housekeeping import Housekeeping
 from anibridge.app.models.db.sync_history import SyncOutcome
 from anibridge.app.utils.cron import get_next_interval_seconds
@@ -32,6 +33,8 @@ from anibridge.app.utils.terminal import ARROW
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BridgeClient"]
+
+log = get_logger(__name__)
 
 
 class BridgeClient:
@@ -515,6 +518,7 @@ class BridgeClient:
             self.current_sync.stage = (
                 "prefetching" if self.profile_config.batch_requests else "processing"
             )
+            await asyncio.sleep(0)
 
         sync_client: MovieSyncClient | ShowSyncClient
         if section.media_kind == MediaKind.MOVIE:
@@ -554,6 +558,7 @@ class BridgeClient:
                 )
             if self.current_sync is not None:
                 self.current_sync.stage = "processing"
+                await asyncio.sleep(0)
 
         for item in items:
             try:
@@ -570,6 +575,7 @@ class BridgeClient:
                 if self.current_sync is not None:
                     self.current_sync.stage = "processing"
                     self.current_sync.section_items_processed += 1
+                    await asyncio.sleep(0)
 
             except Exception:
                 log.error(
@@ -586,6 +592,7 @@ class BridgeClient:
             if self.profile_config.batch_requests:
                 if self.current_sync is not None:
                     self.current_sync.stage = "finalizing"
+                    await asyncio.sleep(0)
                 await sync_client.batch_sync()
         finally:
             sync_client.flush_failure_history_cleanup()

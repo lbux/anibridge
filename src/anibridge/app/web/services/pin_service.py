@@ -2,10 +2,10 @@
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
+import msgspec
 from anibridge.utils.cache import cache
-from pydantic import BaseModel, Field
 
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField
@@ -17,7 +17,6 @@ __all__ = [
     "PinEntry",
     "PinFieldOption",
     "PinService",
-    "UpdatePinPayload",
     "get_pin_service",
 ]
 
@@ -36,50 +35,86 @@ _SYNC_FIELD_VALUES: tuple[str, ...] = tuple(field.value for field in SyncField)
 _SYNC_FIELD_SET: frozenset[str] = frozenset(_SYNC_FIELD_VALUES)
 
 
-class PinFieldOption(BaseModel):
+class PinFieldOption(msgspec.Struct):
     """Metadata for a selectable pin field."""
 
-    value: str
-    label: str
+    value: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Sync field identifier that can be pinned.",
+            examples=["status"],
+        ),
+    ]
+    label: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Human-friendly label for the pin field option.",
+            examples=["Status"],
+        ),
+    ]
 
 
-class PinEntry(BaseModel):
+class PinEntry(msgspec.Struct):
     """Serialized representation of a pin row."""
 
-    profile_name: str
-    list_namespace: str
-    list_media_key: str
-    fields: list[str]
-    created_at: datetime
-    updated_at: datetime
-    media: ProviderMediaMetadata | None = None
-
-
-class UpdatePinPayload(BaseModel):
-    """Payload accepted when updating pin configuration."""
-
-    fields: list[str] = Field(default_factory=list)
-
-    def normalized(self) -> list[str]:
-        """Return sanitized field names as SyncField values."""
-        values = []
-        for field in self.fields:
-            if isinstance(field, SyncField):
-                value = field.value
-            else:
-                value = str(field).strip().lower()
-            if not value:
-                continue
-            if value not in _SYNC_FIELD_SET:
-                raise ValueError(f"Unsupported field '{field}'")
-            values.append(value)
-        # Preserve order based on SyncField declaration while ensuring uniqueness
-        ordered: list[str] = []
-        seen = set(values)
-        for candidate in _SYNC_FIELD_VALUES:
-            if candidate in seen and candidate not in ordered:
-                ordered.append(candidate)
-        return ordered
+    profile_name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Profile that owns the pinned entry.",
+            examples=["default"],
+        ),
+    ]
+    list_namespace: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="List provider namespace for the pinned entry.",
+            examples=["anilist"],
+        ),
+    ]
+    list_media_key: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Provider-specific media key for the pinned entry.",
+            examples=["5114"],
+        ),
+    ]
+    fields: Annotated[
+        list[str],
+        msgspec.Meta(
+            min_length=1,
+            description="Ordered set of normalized sync fields pinned for the entry.",
+            examples=[["status", "progress"]],
+        ),
+    ]
+    created_at: Annotated[
+        datetime,
+        msgspec.Meta(
+            description="UTC timestamp when the pin was first created.",
+            examples=["2026-01-01T00:00:00Z"],
+        ),
+    ]
+    updated_at: Annotated[
+        datetime,
+        msgspec.Meta(
+            description="UTC timestamp when the pin was last updated.",
+            examples=["2026-01-01T00:05:00Z"],
+        ),
+    ]
+    media: (
+        Annotated[
+            ProviderMediaMetadata,
+            msgspec.Meta(
+                description="Resolved provider metadata for the pinned media item.",
+                examples=[{"namespace": "anilist", "key": "5114"}],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class PinService:
@@ -202,7 +237,15 @@ class PinService:
                 profile, [pin.list_media_key for pin in pins]
             )
             return [
-                pin.model_copy(update={"media": metadata.get(pin.list_media_key)})
+                PinEntry(
+                    profile_name=pin.profile_name,
+                    list_namespace=pin.list_namespace,
+                    list_media_key=pin.list_media_key,
+                    fields=list(pin.fields),
+                    created_at=pin.created_at,
+                    updated_at=pin.updated_at,
+                    media=metadata.get(pin.list_media_key),
+                )
                 for pin in pins
             ]
         return pins
@@ -222,8 +265,14 @@ class PinService:
             return None
         if with_media:
             metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
-            return entry.model_copy(
-                update={"media": metadata.get(entry.list_media_key)}
+            return PinEntry(
+                profile_name=entry.profile_name,
+                list_namespace=entry.list_namespace,
+                list_media_key=entry.list_media_key,
+                fields=list(entry.fields),
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                media=metadata.get(entry.list_media_key),
             )
         return entry
 
@@ -245,8 +294,14 @@ class PinService:
         entry = self._upsert_pin(profile, media_key, fields)
         if with_media:
             metadata = await self._fetch_list_metadata(profile, [entry.list_media_key])
-            return entry.model_copy(
-                update={"media": metadata.get(entry.list_media_key)}
+            return PinEntry(
+                profile_name=entry.profile_name,
+                list_namespace=entry.list_namespace,
+                list_media_key=entry.list_media_key,
+                fields=list(entry.fields),
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                media=metadata.get(entry.list_media_key),
             )
         return entry
 
@@ -269,16 +324,17 @@ class PinService:
             ctx.session.commit()
 
     def _sanitize_fields(self, fields: Iterable[str]) -> list[str]:
-        sanitized: list[str] = []
+        requested: list[str] = []
         for field in fields:
             value = str(field).strip().lower()
             if not value:
                 continue
             if value not in self.allowed_field_set:
                 raise ValueError(f"Unsupported field '{field}'")
-            if value not in sanitized:
-                sanitized.append(value)
-        return sanitized
+            if value not in requested:
+                requested.append(value)
+
+        return [field for field in self.allowed_fields if field in requested]
 
     @staticmethod
     def _serialize(pin: Pin, media: ProviderMediaMetadata | None = None) -> PinEntry:

@@ -3,7 +3,8 @@
 from typing import Any, cast
 
 import pytest
-from fastapi import WebSocketDisconnect
+from litestar.connection.websocket import WebSocket
+from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
 
 from anibridge.app.web.routes.ws import status as status_ws_module
 
@@ -25,28 +26,64 @@ async def test_status_websocket_streams_scheduler_state(monkeypatch) -> None:
     websocket = _FakeStatusWebSocket()
 
     class _Scheduler:
-        async def get_status(self) -> dict:
-            return {"default": {"status": {"current_sync": {"state": "running"}}}}
+        def __init__(self) -> None:
+            self.calls = 0
 
-    async def _disconnect(seconds: float) -> None:
-        assert seconds == status_ws_module._ACTIVE_SYNC_INTERVAL
-        raise WebSocketDisconnect
+        async def get_status(self) -> dict[str, Any]:
+            self.calls += 1
+            stage = "enumerating" if self.calls == 1 else "processing"
+            total = 0 if self.calls == 1 else 3
+            processed = 0 if self.calls == 1 else 1
+            return {
+                "default": {
+                    "status": {
+                        "current_sync": {
+                            "state": "running",
+                            "stage": stage,
+                            "section_items_total": total,
+                            "section_items_processed": processed,
+                        }
+                    }
+                }
+            }
 
     class _State:
         scheduler = _Scheduler()
+
+        async def wait_status_change(self, max_wait: float) -> None:
+            raise AssertionError(
+                "active sync websocket path should not wait on status changes"
+            )
+
+    async def _disconnecting_sleep(delay: float) -> None:
+        assert delay == status_ws_module._ACTIVE_SYNC_INTERVAL
+        raise WebSocketDisconnect(detail="disconnect event")
 
     monkeypatch.setattr(
         status_ws_module,
         "get_app_state",
         lambda: _State(),
     )
-    monkeypatch.setattr(status_ws_module.asyncio, "sleep", _disconnect)
+    monkeypatch.setattr(status_ws_module.asyncio, "sleep", _disconnecting_sleep)
 
-    await status_ws_module.status_ws(cast(Any, websocket))
+    await status_ws_module.status_ws.fn(cast(WebSocket, websocket))
 
     assert websocket.accepted is True
     assert websocket.messages == [
-        {"profiles": {"default": {"status": {"current_sync": {"state": "running"}}}}}
+        {
+            "profiles": {
+                "default": {
+                    "status": {
+                        "current_sync": {
+                            "state": "running",
+                            "stage": "enumerating",
+                            "section_items_total": 0,
+                            "section_items_processed": 0,
+                        }
+                    }
+                }
+            }
+        }
     ]
 
 
@@ -57,8 +94,9 @@ async def test_status_websocket_handles_missing_scheduler(monkeypatch) -> None:
     class _State:
         scheduler = None
 
-        async def wait_status_change(self, *, max_wait: float) -> None:
-            raise WebSocketDisconnect
+        async def wait_status_change(self, max_wait: float) -> None:
+            assert max_wait == status_ws_module._MAX_IDLE_INTERVAL
+            raise WebSocketDisconnect(detail="disconnect event")
 
     monkeypatch.setattr(
         status_ws_module,
@@ -66,6 +104,6 @@ async def test_status_websocket_handles_missing_scheduler(monkeypatch) -> None:
         lambda: _State(),
     )
 
-    await status_ws_module.status_ws(cast(Any, websocket))
+    await status_ws_module.status_ws.fn(cast(WebSocket, websocket))
 
     assert websocket.messages == [{"profiles": {}}]

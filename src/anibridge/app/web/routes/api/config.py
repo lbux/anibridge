@@ -1,9 +1,13 @@
 """Configuration management API endpoints."""
 
-from typing import Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, ValidationError
+import msgspec
+from litestar.exceptions.http_exceptions import HTTPException
+from litestar.handlers.http_handlers.decorators import get, post
+from litestar.params import Body
+from litestar.router import Router
+from pydantic import ValidationError
 
 from anibridge.app.config.settings import AnibridgeConfig, get_config
 from anibridge.app.exceptions import SchedulerUnavailableError
@@ -12,41 +16,124 @@ from anibridge.app.web.services.configuration_service import get_configuration_s
 __all__ = ["router"]
 
 
-class ConfigDocumentResponse(BaseModel):
-    config_path: str
-    file_exists: bool
-    content: str
-    mtime: int | None = None
-    schema_: dict[str, Any] = Field(alias="schema")
+class ConfigDocumentResponse(msgspec.Struct):
+    config_path: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Absolute path to the active AniBridge configuration file.",
+            examples=["/data/config.yaml"],
+        ),
+    ]
+    file_exists: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the configuration file exists on disk.",
+            examples=[True],
+        ),
+    ]
+    content: Annotated[
+        str,
+        msgspec.Meta(
+            description="Raw YAML contents of the configuration file.",
+            examples=["profiles:\n  default: {}\n"],
+        ),
+    ]
+    schema: Annotated[
+        dict[str, object],
+        msgspec.Meta(
+            description="JSON Schema document describing the configuration file.",
+            examples=[{"title": "AnibridgeConfig", "type": "object"}],
+        ),
+    ]
+    mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "Last modification time of the configuration file "
+                    "in epoch milliseconds."
+                ),
+                examples=[1715179200000],
+            ),
+        ]
+        | None
+    ) = None
 
 
-class ConfigDocumentUpdateRequest(BaseModel):
-    content: str = Field(min_length=0)
-    expected_mtime: int | None = None
+class ConfigDocumentUpdateRequest(msgspec.Struct):
+    content: Annotated[
+        str,
+        msgspec.Meta(
+            description="Full YAML document to persist as the new configuration.",
+            examples=["profiles:\n  default: {}\n"],
+        ),
+    ] = ""
+    expected_mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "Last known file modification time used for "
+                    "optimistic concurrency checks."
+                ),
+                examples=[1715179200000],
+            ),
+        ]
+        | None
+    ) = None
 
 
-class ConfigUpdateResponse(BaseModel):
-    ok: bool
-    profiles: list[str]
-    requires_restart: bool = True
-    mtime: int | None = None
+class ConfigUpdateResponse(msgspec.Struct):
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the configuration update was accepted.",
+            examples=[True],
+        ),
+    ]
+    profiles: Annotated[
+        list[str],
+        msgspec.Meta(
+            description="Sorted profile names present in the saved configuration.",
+            examples=[["default", "movies"]],
+        ),
+    ]
+    requires_restart: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the change requires a process restart to fully apply.",
+            examples=[True],
+        ),
+    ] = True
+    mtime: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description=(
+                    "New modification time of the saved configuration file "
+                    "in epoch milliseconds."
+                ),
+                examples=[1715179260000],
+            ),
+        ]
+        | None
+    ) = None
 
 
 def require_config_api_access() -> None:
     """Ensure configuration API access is not exposed without explicit opt-in."""
-    # Use runtime_config if present (for test overrides), else get_config()
-    from anibridge.app.web.routes.api import config as config_api_module
-
-    web_config = None
-    if hasattr(config_api_module, "runtime_config"):
-        web_config = getattr(config_api_module.runtime_config, "web", None)
+    web_config = getattr(globals().get("runtime_config"), "web", None)
     if web_config is None:
         web_config = get_config().web
     if web_config.has_auth or web_config.allow_config_without_auth:
         return
 
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
+        status_code=403,
         detail=(
             "Configuration API is disabled when web authentication is not configured. "
             "Configure web.basic_auth or set "
@@ -55,72 +142,72 @@ def require_config_api_access() -> None:
     )
 
 
-router = APIRouter(dependencies=[Depends(require_config_api_access)])
-
-
-@router.get("", response_model=ConfigDocumentResponse)
+@get(path="", sync_to_thread=True)
 def get_configuration() -> ConfigDocumentResponse:
     """Return the current configuration as raw YAML text.
 
     Returns:
         ConfigDocumentResponse: The configuration document details.
     """
+    require_config_api_access()
     try:
         payload = get_configuration_service().load_document_text()
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=exc.errors(),
+            status_code=422,
+            detail=str(exc.errors()),
         ) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail=str(exc),
         ) from exc
 
-    payload["schema"] = AnibridgeConfig.model_json_schema()
-    return ConfigDocumentResponse(**payload)
+    document = dict(payload)
+    document["schema"] = AnibridgeConfig.model_json_schema()
+    return msgspec.convert(document, type=ConfigDocumentResponse)
 
 
-@router.post("", response_model=ConfigUpdateResponse)
+@post(path="", status_code=200)
 async def update_configuration(
-    request: ConfigDocumentUpdateRequest,
+    data: Annotated[ConfigDocumentUpdateRequest, Body()],
 ) -> ConfigUpdateResponse:
     """Persist the provided configuration document.
 
     Args:
-        request (ConfigDocumentUpdateRequest): The configuration update request.
+        data (ConfigDocumentUpdateRequest): The configuration update request.
 
     Returns:
         ConfigUpdateResponse: The result of the update operation.
     """
+    require_config_api_access()
     try:
         (
             config,
             requires_restart,
             mtime,
         ) = await get_configuration_service().save_document_text(
-            request.content,
-            expected_mtime=request.expected_mtime,
+            data.content,
+            expected_mtime=data.expected_mtime,
         )
     except FileExistsError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=409,
             detail=str(exc),
         ) from exc
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=exc.errors(),
+            status_code=422,
+            detail=str(exc.errors()),
         ) from exc
     except SchedulerUnavailableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail=str(exc),
         ) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail=str(exc),
         ) from exc
 
@@ -132,11 +219,18 @@ async def update_configuration(
     )
 
 
-@router.get("/openapi.json")
-def get_openapi_schema() -> dict:
+@get(path="/openapi.json", sync_to_thread=True)
+def get_openapi_schema() -> dict[str, object]:
     """Return the OpenAPI schema for the configuration API.
 
     Returns:
         dict: OpenAPI schema
     """
+    require_config_api_access()
     return AnibridgeConfig.model_json_schema()
+
+
+router = Router(
+    path="/config",
+    route_handlers=[get_configuration, update_configuration, get_openapi_schema],
+)

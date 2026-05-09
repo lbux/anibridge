@@ -4,21 +4,34 @@ import base64
 import binascii
 import secrets
 from pathlib import Path
+from typing import ClassVar
 
-from starlette.datastructures import Headers
-from starlette.responses import Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from litestar.connection.base import ASGIConnection
+from litestar.datastructures.headers import Headers
+from litestar.enums import ScopeType
+from litestar.exceptions.http_exceptions import NotAuthorizedException
+from litestar.middleware.authentication import (
+    AbstractAuthenticationMiddleware,
+    AuthenticationResult,
+)
+from litestar.types.asgi_types import ASGIApp, HeaderScope
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.htpasswd import HtpasswdFile
 
 __all__ = ["BasicAuthMiddleware"]
 
+log = get_logger(__name__)
 
-class BasicAuthMiddleware:
-    """Pure ASGI middleware that enforces HTTP Basic Authentication."""
 
-    EXEMPT_PATHS = frozenset({"/healthz", "/livez", "/readyz"})
+class BasicAuthMiddleware(AbstractAuthenticationMiddleware):
+    """Litestar authentication middleware that enforces HTTP Basic Authentication."""
+
+    EXEMPT_PATHS: ClassVar[tuple[str, ...]] = (
+        r"^/healthz/?$",
+        r"^/livez/?$",
+        r"^/readyz/?$",
+    )
 
     def __init__(
         self,
@@ -29,11 +42,13 @@ class BasicAuthMiddleware:
         realm: str = "AniBridge",
     ) -> None:
         """Initialize the BasicAuthMiddleware."""
+        super().__init__(
+            app=app, exclude=list(self.EXEMPT_PATHS), scopes={ScopeType.HTTP}
+        )
         self.username = username
         self.password = password
         self.htpasswd_path = htpasswd_path
         self.realm = realm
-        self.app = app
         self._htpasswd: HtpasswdFile | None = None
         self._htpasswd_mtime_ns: int | None = None
 
@@ -104,9 +119,9 @@ class BasicAuthMiddleware:
         htpasswd = self._load_htpasswd()
         return htpasswd.check_password(username, password) if htpasswd else False
 
-    def _extract_credentials(self, scope: Scope) -> tuple[str, str] | None:
+    def _extract_credentials(self, scope: HeaderScope) -> tuple[str, str] | None:
         """Extract Basic Auth credentials from the request headers."""
-        auth_header = Headers(scope=scope).get("authorization")
+        auth_header = Headers(scope["headers"]).get("authorization")
         if not auth_header:
             return None
 
@@ -124,32 +139,20 @@ class BasicAuthMiddleware:
             return None
         return username, password
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Process the incoming request and enforce basic authentication."""
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        normalized_path = scope["path"].rstrip("/") or "/"
-        if normalized_path in self.EXEMPT_PATHS:
-            await self.app(scope, receive, send)
-            return
-
-        credentials = self._extract_credentials(scope)
+    async def authenticate_request(
+        self, connection: ASGIConnection
+    ) -> AuthenticationResult:
+        """Authenticate an HTTP request using Basic authentication credentials."""
+        credentials = self._extract_credentials(connection.scope)
         if credentials:
             username, password = credentials
             if self._validate_plain(username, password) or self._validate_htpasswd(
                 username, password
             ):
-                await self.app(scope, receive, send)
-                return
+                return AuthenticationResult(user=username, auth="basic")
 
-        await self._challenge_response()(scope, receive, send)
-
-    def _challenge_response(self) -> Response:
-        """Return a 401 response with the proper WWW-Authenticate header."""
         log.debug("Authentication failed, sending challenge response")
-        return Response(
-            status_code=401,
+        raise NotAuthorizedException(
+            detail="Authentication required",
             headers={"WWW-Authenticate": f'Basic realm="{self.realm}"'},
         )

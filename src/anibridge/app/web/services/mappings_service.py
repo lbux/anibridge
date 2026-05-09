@@ -12,7 +12,6 @@ from anibridge.utils.cache import cache
 from anibridge.utils.mappings import descriptor_key, parse_mapping_descriptor
 from sqlalchemy.sql import func, or_, select
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import (
@@ -22,6 +21,7 @@ from anibridge.app.exceptions import (
     BooruQuerySyntaxError,
     MappingNotFoundError,
 )
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.models.schemas.anilist import Media
 from anibridge.app.utils.booru_query import (
@@ -44,6 +44,8 @@ from anibridge.app.web.state import get_app_state
 
 __all__ = ["MappingsService", "get_mappings_service"]
 
+log = get_logger(__name__)
+
 
 class EdgeView(msgspec.Struct, frozen=True):
     """Flattened view of an outgoing mapping edge."""
@@ -61,29 +63,13 @@ class MappingItem(msgspec.Struct, frozen=True):
 
     provider: str
     entry_id: str
-    scope: str | None
     edges: list[EdgeView]
     custom: bool
     sources: list[str]
+    descriptor: str = ""
+    scope: str | None = None
     anilist_id: int | None = None
     anilist: Media | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-friendly representation.
-
-        Returns:
-            dict[str, Any]: Mapping item as a dictionary.
-        """
-        return {
-            "provider": self.provider,
-            "entry_id": self.entry_id,
-            "scope": self.scope,
-            "descriptor": descriptor_key((self.provider, self.entry_id, self.scope)),
-            "edges": [msgspec.to_builtins(edge) for edge in self.edges],
-            "custom": self.custom,
-            "sources": self.sources,
-            "anilist": self.anilist.model_dump() if self.anilist else None,
-        }
 
 
 class MappingsService:
@@ -714,6 +700,9 @@ class MappingsService:
 
         anilist_id = self._resolve_anilist_id(entry, entry_by_id, edges)
         return MappingItem(
+            descriptor=descriptor_key(
+                (entry.provider, entry.entry_id, entry.entry_scope)
+            ),
             provider=entry.provider,
             entry_id=entry.entry_id,
             scope=entry.entry_scope,
@@ -1021,7 +1010,7 @@ class MappingsService:
                 ordered_entries, with_anilist, custom_only=custom_only
             )
             await ensure_not_cancelled()
-            return [item.to_dict() for item in items], total
+            return [msgspec.to_builtins(item) for item in items], total
 
         # Default listing without booru query
         with db() as ctx:
@@ -1069,7 +1058,7 @@ class MappingsService:
             entries, with_anilist, custom_only=custom_only
         )
         await ensure_not_cancelled()
-        return [item.to_dict() for item in items], total
+        return [msgspec.to_builtins(item) for item in items], total
 
     async def get_mapping(self, descriptor: str) -> dict[str, Any]:
         """Return a single mapping entry by descriptor.
@@ -1104,7 +1093,7 @@ class MappingsService:
 
         edge_rows, provenance = self._load_edges_and_provenance([entry.id])
         item = self._build_item(entry, edge_rows, provenance)
-        return item.to_dict()
+        return msgspec.to_builtins(item)
 
 
 @cache

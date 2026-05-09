@@ -24,7 +24,7 @@ class FakeProfileConfig:
     list_provider: str = "list"
     poll_interval: int = 60
     scan_interval: int = 10
-    scan_modes: list[Any] = field(default_factory=list)
+    scan_modes: list[ScanMode] = field(default_factory=list)
     full_scan: bool = False
     destructive_sync: bool = False
 
@@ -439,7 +439,7 @@ async def test_scheduler_start_and_stop(
     monkeypatch.setattr(sched_module, "AnimapClient", FakeAnimapClient)
 
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
+    cast(dict[str, object], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
     class StubScheduler:
         def __init__(self, *_, **__):
@@ -475,8 +475,8 @@ async def test_scheduler_trigger_sync(
     config = FakeConfig(profiles=profiles, data_path=tmp_path)
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
-    cast(dict[str, Any], scheduler.bridge_clients)["two"] = FakeBridgeClient("two")
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
+    cast(dict[str, object], scheduler.bridge_clients)["two"] = FakeBridgeClient("two")
 
     class StubScheduler:
         def __init__(self) -> None:
@@ -491,8 +491,8 @@ async def test_scheduler_trigger_sync(
         ) -> None:
             self.calls.append((poll, library_keys, source))
 
-    cast(dict[str, Any], scheduler.profile_schedulers)["one"] = StubScheduler()
-    cast(dict[str, Any], scheduler.profile_schedulers)["two"] = StubScheduler()
+    cast(dict[str, object], scheduler.profile_schedulers)["one"] = StubScheduler()
+    cast(dict[str, object], scheduler.profile_schedulers)["two"] = StubScheduler()
 
     await scheduler.trigger_profile_sync("one", poll=True, library_keys=["x"])
 
@@ -520,7 +520,7 @@ async def test_scheduler_trigger_profile_sync_without_running_scheduler(
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
 
     bridge = FakeBridgeClient("one")
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = bridge
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = bridge
 
     await scheduler.trigger_profile_sync("one", poll=True, library_keys=["k1"])
 
@@ -547,8 +547,8 @@ async def test_scheduler_trigger_all_profiles_sync_raises_on_failures(
         async def sync(self, *, poll: bool = False, library_keys=None) -> None:
             raise RuntimeError("boom")
 
-    cast(dict[str, Any], scheduler.bridge_clients)["good"] = GoodBridge("good")
-    cast(dict[str, Any], scheduler.bridge_clients)["bad"] = BadBridge("bad")
+    cast(dict[str, object], scheduler.bridge_clients)["good"] = GoodBridge("good")
+    cast(dict[str, object], scheduler.bridge_clients)["bad"] = BadBridge("bad")
 
     with pytest.raises(ExceptionGroup):
         await scheduler.trigger_all_profiles_sync(source="test:all")
@@ -642,13 +642,24 @@ async def test_scheduler_get_status(tmp_path: Path) -> None:
 
     bridge = FakeBridgeClient("one")
     bridge.last_synced = datetime(2025, 1, 1, tzinfo=UTC)
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = bridge
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = bridge
 
     class SchedulerStub:
         _running = True
 
-        async def get_runtime_metrics(self) -> dict[str, Any]:
-            return {"requests_total": 0}
+        async def get_runtime_metrics(
+            self,
+        ) -> dict[str, Any]:
+            return {
+                "pending_waiters": 0,
+                "requests_total": 0,
+                "requests_coalesced": 0,
+                "requests_rejected": 0,
+                "max_pending_waiters": 0,
+                "last_sync_sources": [],
+                "running": True,
+                "sync_active": False,
+            }
 
     scheduler.profile_schedulers["one"] = cast(
         "sched_module.ProfileScheduler", SchedulerStub()
@@ -673,7 +684,7 @@ async def test_daily_db_sync_loop_runs(
     config = FakeConfig(profiles={}, data_path=tmp_path)
     scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
     scheduler.shared_animap_client = cast(sched_module.AnimapClient, FakeAnimapClient())
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
 
     scheduler._running = True
 
@@ -712,7 +723,7 @@ async def test_trigger_database_sync_runs_refresh(tmp_path: Path) -> None:
     scheduler.shared_animap_client = cast(sched_module.AnimapClient, FakeAnimapClient())
 
     bridge = FakeBridgeClient("one")
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = bridge
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = bridge
 
     await scheduler.trigger_database_sync(source="test:database")
 
@@ -743,7 +754,7 @@ def test_get_profiles_for_library_provider(tmp_path: Path) -> None:
     """Profiles should be grouped by library provider namespace."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    cast(dict[str, Any], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
+    cast(dict[str, object], scheduler.bridge_clients)["one"] = FakeBridgeClient("one")
 
     scheduler.get_profiles_for_library_provider.cache_clear()
 
@@ -915,7 +926,7 @@ async def test_scheduler_start_with_scan_modes(
     monkeypatch.setattr(sched_module, "ProfileScheduler", StubScheduler)
 
     scheduler = SchedulerClient(cast(sched_module.AnibridgeConfig, config))
-    cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
+    cast(dict[str, object], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
 
     await scheduler.start()
 
@@ -1040,8 +1051,10 @@ def test_get_profiles_for_library_provider_skips_none(tmp_path: Path) -> None:
     """None bridge clients should be ignored when grouping profiles."""
     config = FakeConfig(profiles={}, data_path=tmp_path)
     scheduler = SchedulerClient(cast("sched_module.AnibridgeConfig", config))
-    cast(dict[str, Any], scheduler.bridge_clients)["none"] = None
-    cast(dict[str, Any], scheduler.bridge_clients)["good"] = FakeBridgeClient("good")
+    cast(dict[str, object | None], scheduler.bridge_clients)["none"] = None
+    cast(dict[str, object | None], scheduler.bridge_clients)["good"] = FakeBridgeClient(
+        "good"
+    )
 
     scheduler.get_profiles_for_library_provider.cache_clear()
 

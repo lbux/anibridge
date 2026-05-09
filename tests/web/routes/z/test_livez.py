@@ -1,14 +1,13 @@
 """Tests for liveness probe routes."""
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from litestar.app import Litestar
+from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.web.routes.z import livez as livez_module
 
 
 def test_livez_route_serves_livez_and_healthz_aliases() -> None:
-    app = FastAPI()
-    app.include_router(livez_module.router)
+    app = Litestar(route_handlers=[livez_module.router])
     client = TestClient(app)
 
     livez_response = client.get("/livez")

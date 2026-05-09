@@ -2,13 +2,12 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
+import msgspec
 import msgspec.json
 from anibridge.utils.cache import cache
-from pydantic import BaseModel
 
-from anibridge.app import log
 from anibridge.app.exceptions import (
     BackupFileNotFoundError,
     BackupParseError,
@@ -17,20 +16,69 @@ from anibridge.app.exceptions import (
     SchedulerNotInitializedError,
     SchedulerUnavailableError,
 )
+from anibridge.app.logging import get_logger
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BackupService", "get_backup_service"]
 
+log = get_logger(__name__)
 
-class BackupMeta(BaseModel):
+
+class BackupMeta(msgspec.Struct):
     """Metadata about a backup file used for listing in the UI."""
 
-    filename: str
-    created_at: datetime
-    size_bytes: int
-    entries: int | None = None
-    user: str | None = None
-    age_seconds: float
+    filename: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Backup file name stored on disk.",
+            examples=["anibridge_default_anilist_20260508120000.json"],
+        ),
+    ]
+    created_at: Annotated[
+        datetime,
+        msgspec.Meta(
+            description="UTC timestamp when the backup file was created.",
+            examples=["2026-01-01T00:00:00Z"],
+        ),
+    ]
+    size_bytes: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Backup file size in bytes.",
+            examples=[2048],
+        ),
+    ]
+    age_seconds: Annotated[
+        float,
+        msgspec.Meta(
+            ge=0,
+            description="Age of the backup relative to the current time, in seconds.",
+            examples=[3600.5],
+        ),
+    ]
+    entries: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description="Number of list entries contained in the backup if known.",
+                examples=[142],
+            ),
+        ]
+        | None
+    ) = None
+    user: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Provider user associated with the backup when available.",
+                examples=["DemoUser"],
+            ),
+        ]
+        | None
+    ) = None
 
 
 class BackupService:

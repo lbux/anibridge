@@ -1,9 +1,10 @@
 """Tests for logs websocket endpoint."""
 
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from fastapi import WebSocketDisconnect
+from litestar.connection.websocket import WebSocket
+from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
 
 from anibridge.app.web.routes.ws import logs as logs_ws_module
 
@@ -17,7 +18,7 @@ class _FakeLogsWebSocket:
         self.accepted = True
 
     async def receive_text(self) -> str:
-        raise WebSocketDisconnect
+        raise WebSocketDisconnect(detail="disconnect event")
 
 
 @pytest.mark.asyncio
@@ -34,7 +35,7 @@ async def test_logs_websocket_registers_and_unregisters(monkeypatch) -> None:
     websocket = _FakeLogsWebSocket()
     monkeypatch.setattr(logs_ws_module, "get_log_ws_handler", lambda: _Handler())
 
-    await logs_ws_module.logs_ws(cast(Any, websocket))
+    await logs_ws_module.logs_ws.fn(cast(WebSocket, websocket))
 
     assert websocket.accepted is True
     assert [name for name, _ in calls] == ["add", "remove"]

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from litestar.connection.request import Request
 
 import anibridge.app.core.bridge as bridge_module
 from anibridge.app.config.settings import SyncRulesConfig
@@ -179,8 +180,20 @@ def in_memory_db(monkeypatch: pytest.MonkeyPatch, in_memory_db_factory):
     return in_memory_db_factory(monkeypatch, bridge_module)
 
 
-def _make_profile_config(**overrides: Any) -> SimpleNamespace:
-    defaults = {
+def _make_bridge_client(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    provider: FakeLibraryProvider,
+    list_provider: FakeListProvider,
+    shared_animap_client: Any | None = None,
+    **profile_overrides: Any,
+) -> BridgeClient:
+    """Construct a BridgeClient with patched fake providers."""
+    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
+    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
+
+    profile_config_values = {
         "library_provider": "fake",
         "list_provider": "fake",
         "library_provider_config": {},
@@ -195,33 +208,13 @@ def _make_profile_config(**overrides: Any) -> SimpleNamespace:
         "backup_retention_days": -1,
         "dry_run": False,
     }
-    defaults.update(overrides)
-    return SimpleNamespace(**defaults)
-
-
-def _make_global_config(tmp_path: Path) -> SimpleNamespace:
-    return SimpleNamespace(data_path=tmp_path)
-
-
-def _make_bridge_client(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    provider: FakeLibraryProvider,
-    list_provider: FakeListProvider,
-    shared_animap_client: Any | None = None,
-    **profile_overrides: Any,
-) -> BridgeClient:
-    """Construct a BridgeClient with patched fake providers."""
-    monkeypatch.setattr(bridge_module, "build_library_provider", lambda _: provider)
-    monkeypatch.setattr(bridge_module, "build_list_provider", lambda _: list_provider)
-
-    profile_config = _make_profile_config(**profile_overrides)
+    profile_config_values.update(profile_overrides)
+    profile_config = SimpleNamespace(**profile_config_values)
     return BridgeClient(
         profile_name="default",
         profile_config=cast("bridge_module.AnibridgeProfileConfig", profile_config),
         global_config=cast(
-            "bridge_module.AnibridgeConfig", _make_global_config(tmp_path)
+            "bridge_module.AnibridgeConfig", SimpleNamespace(data_path=tmp_path)
         ),
         shared_animap_client=cast(
             Any, object() if shared_animap_client is None else shared_animap_client
@@ -351,9 +344,10 @@ async def test_parse_webhook_delegates(
         list_provider=list_provider,
     )
 
-    assert (
-        await client.parse_webhook(cast("bridge_module.Request", SimpleNamespace()))
-    ) == (False, None)
+    assert (await client.parse_webhook(cast(Request, SimpleNamespace()))) == (
+        False,
+        None,
+    )
 
 
 @pytest.mark.asyncio
@@ -779,9 +773,7 @@ async def test_parse_webhook_returns_false_when_provider_raises(
         list_provider=FakeListProvider(backup_payload=""),
     )
 
-    result = await client.parse_webhook(
-        cast("bridge_module.Request", SimpleNamespace())
-    )
+    result = await client.parse_webhook(cast(Request, SimpleNamespace()))
 
     assert result == (False, None)
 

@@ -1,21 +1,27 @@
 """Route for basic liveness check (not readiness)."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi.routing import APIRouter
-from pydantic import BaseModel
+import msgspec
+from litestar.handlers.http_handlers.decorators import get
+from litestar.router import Router
 
-router = APIRouter()
+__all__ = ["router"]
 
 
-class LivezResponse(BaseModel):
+class LivezResponse(msgspec.Struct):
     """Minimal liveness payload for unauthenticated probes."""
 
-    status: Literal["ok"] = "ok"
+    status: Annotated[
+        Literal["ok"],
+        msgspec.Meta(
+            description="Fixed liveness status returned while the process is alive.",
+            examples=["ok"],
+        ),
+    ] = "ok"
 
 
-@router.get("/livez", include_in_schema=False, response_model=LivezResponse)
-@router.get("/healthz", include_in_schema=False, response_model=LivezResponse)
+@get(path=["/livez", "/healthz"], include_in_schema=False)
 async def livez() -> LivezResponse:
     """Liveness check endpoint.
 
@@ -23,3 +29,6 @@ async def livez() -> LivezResponse:
         LivezResponse: Always returns status "ok" if the application is running.
     """
     return LivezResponse()
+
+
+router = Router(path="", route_handlers=[livez])

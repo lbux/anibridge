@@ -10,11 +10,14 @@ from anibridge.utils.cache import cache
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from anibridge.app import config, log
+from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import DataPathError
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.paths import PROJECT_ROOT
 
 __all__ = ["AnibridgeDb", "db"]
+
+log = get_logger(__name__)
 
 
 if TYPE_CHECKING:
@@ -249,4 +252,4 @@ def db() -> AnibridgeDb:
     Returns:
         AnibridgeDb: The singleton database manager instance
     """
-    return AnibridgeDb(config.data_path)
+    return AnibridgeDb(get_config().data_path)

@@ -11,15 +11,19 @@ from anibridge.app.config.database import AnibridgeDb, db
 from anibridge.app.exceptions import DataPathError
 
 
+@pytest.fixture
+def no_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip migration execution when a test only exercises session setup."""
+    monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
+
+
 def test_anibridge_db_rejects_file_data_path(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    no_migrations: None,
 ) -> None:
     """A file data path should raise the domain-specific error."""
     file_path = tmp_path / "not-a-directory"
     file_path.write_text("boom", encoding="utf-8")
-
-    monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
 
     with pytest.raises(DataPathError, match="is a file"):
         AnibridgeDb(file_path)
@@ -27,10 +31,9 @@ def test_anibridge_db_rejects_file_data_path(
 
 def test_anibridge_db_session_property_lazily_creates_session(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    no_migrations: None,
 ) -> None:
     """The session property should create a session outside the context manager."""
-    monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
     db_client = AnibridgeDb(tmp_path / "data")
     try:
         session = db_client.session
@@ -41,10 +44,9 @@ def test_anibridge_db_session_property_lazily_creates_session(
 
 def test_anibridge_db_nested_contexts_keep_distinct_sessions(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    no_migrations: None,
 ) -> None:
     """Nested contexts should not stomp each other's active sessions."""
-    monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
     db_client = AnibridgeDb(tmp_path / "data")
     try:
         with db_client as outer:
@@ -62,10 +64,14 @@ def test_anibridge_db_nested_contexts_keep_distinct_sessions(
 def test_db_cached_factory_uses_configured_data_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    no_migrations: None,
 ) -> None:
     """The cached db factory should honor the configured data path."""
-    monkeypatch.setattr(database_module, "config", SimpleNamespace(data_path=tmp_path))
-    monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
+    monkeypatch.setattr(
+        database_module,
+        "get_config",
+        lambda: SimpleNamespace(data_path=tmp_path),
+    )
     db.cache_clear()
     instance: AnibridgeDb | None = None
     try:

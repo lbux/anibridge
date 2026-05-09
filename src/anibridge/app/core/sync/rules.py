@@ -12,6 +12,7 @@ from anibridge.list import ListStatus
 __all__ = [
     "SyncRuleDecision",
     "SyncRuleEngine",
+    "build_rule_context",
     "validate_sync_rule_expression",
 ]
 
@@ -128,6 +129,19 @@ _ALLOWED_NODES = (
 class _ContextNamespace(Mapping[str, Any]):
     """Mapping wrapper that exposes sync context values via attribute access."""
 
+    @classmethod
+    def wrap(cls, value: Any, *, missing_value: Any = ...) -> Any:
+        """Normalize arbitrary values into the rule-engine view types."""
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, Mapping):
+            return cls(value, missing_value=missing_value)
+        if isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
+            return tuple(cls.wrap(item, missing_value=missing_value) for item in value)
+        return value
+
     def __init__(
         self,
         values: Mapping[str, Any],
@@ -163,13 +177,102 @@ class _ContextNamespace(Mapping[str, Any]):
 
     def _normalize(self, value: Any) -> Any:
         """Normalize values before exposing them to expressions."""
-        if isinstance(value, Mapping):
-            return _ContextNamespace(value, missing_value=self._missing_value)
-        if isinstance(value, Sequence) and not isinstance(
-            value, (str, bytes, bytearray)
-        ):
-            return tuple(self._normalize(item) for item in value)
-        return value
+        return self.wrap(value, missing_value=self._missing_value)
+
+
+def _build_rule_mapping_view(mapping: Any) -> _ContextNamespace:
+    """Build the stable mapping view exposed under `ctx.mappings`."""
+    return _ContextNamespace(
+        {
+            "source": mapping.source,
+            "target": mapping.target,
+            "mappings": tuple(
+                _ContextNamespace(
+                    {
+                        "source_range": _ContextNamespace(
+                            {
+                                "start": item.source_range.start,
+                                "end": item.source_range.end,
+                                "length": item.source_range.length,
+                            },
+                            missing_value=None,
+                        ),
+                        "target_ranges": tuple(
+                            _ContextNamespace(
+                                {
+                                    "start": range_.start,
+                                    "end": range_.end,
+                                    "length": range_.length,
+                                },
+                                missing_value=None,
+                            )
+                            for range_ in item.target_ranges
+                        ),
+                        "target_ratio": item.target_ratio,
+                        "source_weight": item.source_weight,
+                        "target_weight": item.target_weight,
+                    },
+                    missing_value=None,
+                )
+                for item in mapping.mappings
+            ),
+        },
+        missing_value=None,
+    )
+
+
+def _build_rule_media_view(
+    media: Any,
+    required_media_fields: frozenset[str],
+) -> _ContextNamespace:
+    """Build the stable media view exposed under `ctx` namespaces."""
+    payload = {
+        "key": getattr(media, "key", None),
+        "title": getattr(media, "title", None),
+        "media_kind": getattr(getattr(media, "media_kind", None), "value", None),
+    }
+
+    if "on_watching" in required_media_fields:
+        payload["on_watching"] = getattr(media, "on_watching", None)
+    if "on_watchlist" in required_media_fields:
+        payload["on_watchlist"] = getattr(media, "on_watchlist", None)
+    if "user_rating" in required_media_fields:
+        payload["user_rating"] = getattr(media, "user_rating", None)
+    if "view_count" in required_media_fields:
+        payload["view_count"] = getattr(media, "view_count", None)
+    if "index" in required_media_fields and hasattr(media, "index"):
+        payload["index"] = getattr(media, "index", None)
+    if "season_index" in required_media_fields and hasattr(media, "season_index"):
+        payload["season_index"] = getattr(media, "season_index", None)
+
+    return _ContextNamespace(payload, missing_value=None)
+
+
+def build_rule_context(
+    *,
+    item: Any,
+    child_item: Any,
+    grandchild_items: Sequence[Any],
+    list_media_key: str | None,
+    required_media_fields: frozenset[str],
+    mappings: Sequence[Any] | None = None,
+) -> _ContextNamespace:
+    """Build the rule-facing `ctx` namespace for expression evaluation."""
+    return _ContextNamespace(
+        {
+            "list_media_key": list_media_key,
+            "item": _build_rule_media_view(item, required_media_fields),
+            "child": _build_rule_media_view(child_item, required_media_fields),
+            "grandchildren": tuple(
+                _build_rule_media_view(grandchild, required_media_fields)
+                for grandchild in grandchild_items
+            ),
+            "mappings": tuple(
+                _build_rule_mapping_view(mapping) for mapping in (mappings or ())
+            ),
+        },
+        missing_value=None,
+    )
 
 
 class SyncRuleDecision(msgspec.Struct, frozen=True):
@@ -381,7 +484,7 @@ class SyncRuleEngine:
         field_name: str,
         current_values: Mapping[str, Any],
         computed_values: Mapping[str, Any],
-        rule_context: Mapping[str, Any] | None = None,
+        rule_context: Mapping[str, Any] | _ContextNamespace | None = None,
     ) -> SyncRuleDecision:
         """Resolve one field using first-match wins with default fallback.
 
@@ -390,8 +493,8 @@ class SyncRuleEngine:
             current_values (Mapping[str, Any]): Current list-entry field values.
             computed_values (Mapping[str, Any]): Newly computed field values before
                 declarative overrides.
-            rule_context (Mapping[str, Any] | None): Shimmed sync metadata exposed
-                under `ctx` for rule expressions.
+            rule_context (Mapping[str, Any] | _ContextNamespace | None): Sync
+                metadata exposed under `ctx` for rule expressions.
 
         Returns:
             SyncRuleDecision: Decision describing whether the field may sync and
@@ -458,12 +561,15 @@ class SyncRuleEngine:
         *,
         current_values: Mapping[str, Any],
         computed_values: Mapping[str, Any],
-        rule_context: Mapping[str, Any] | None = None,
+        rule_context: Mapping[str, Any] | _ContextNamespace | None = None,
     ) -> dict[str, Any]:
         """Build the evaluation environment for expressions."""
         current = _ContextNamespace(current_values, missing_value=None)
         computed = _ContextNamespace(computed_values, missing_value=None)
-        ctx = _ContextNamespace(rule_context or {}, missing_value=None)
+        ctx = _ContextNamespace.wrap(
+            rule_context if rule_context is not None else {},
+            missing_value=None,
+        )
         variables: dict[str, Any] = {}
         base_environment: dict[str, Any] = {
             **_SAFE_FUNCTIONS,

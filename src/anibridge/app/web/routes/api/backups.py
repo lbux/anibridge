@@ -1,28 +1,43 @@
 """Backup API endpoints."""
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi.routing import APIRouter
-from pydantic import BaseModel
+import msgspec
+from litestar.handlers.http_handlers.decorators import get, post
+from litestar.params import Body
+from litestar.router import Router
 
 from anibridge.app.web.services.backup_service import BackupMeta, get_backup_service
 
-router = APIRouter()
+__all__ = ["router"]
 
 
-class ListBackupsResponse(BaseModel):
+class ListBackupsResponse(msgspec.Struct):
     """Response model for listing backups."""
 
-    backups: list[BackupMeta]
+    backups: Annotated[
+        list[BackupMeta],
+        msgspec.Meta(
+            description="Available backup files for the requested profile.",
+            examples=[[{"filename": "anibridge_default_anilist_20260508120000.json"}]],
+        ),
+    ]
 
 
-class RestoreRequest(BaseModel):
+class RestoreRequest(msgspec.Struct):
     """Request body for triggering a restore."""
 
-    filename: str
+    filename: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Backup file name to restore for the selected profile.",
+            examples=["anibridge_default_anilist_20260508120000.json"],
+        ),
+    ]
 
 
-@router.get("/{profile}", response_model=ListBackupsResponse)
+@get(path="/{profile:str}", sync_to_thread=True)
 def list_backups(profile: str) -> ListBackupsResponse:
     """List backups for a profile.
 
@@ -40,8 +55,8 @@ def list_backups(profile: str) -> ListBackupsResponse:
     return ListBackupsResponse(backups=backups)
 
 
-@router.post("/{profile}/restore")
-async def restore_backup(profile: str, req: RestoreRequest) -> None:
+@post(path="/{profile:str}/restore", status_code=200)
+async def restore_backup(profile: str, data: Annotated[RestoreRequest, Body()]) -> None:
     """Restore a backup file (no dry-run mode).
 
     Raises:
@@ -51,10 +66,10 @@ async def restore_backup(profile: str, req: RestoreRequest) -> None:
         BackupFileNotFoundError: If the backup file does not exist.
         BackupParseError: If there was an error parsing or restoring the backup.
     """
-    await get_backup_service().restore_backup(profile=profile, filename=req.filename)
+    await get_backup_service().restore_backup(profile=profile, filename=data.filename)
 
 
-@router.get("/{profile}/raw/{filename}")
+@get(path="/{profile:str}/raw/{filename:str}", sync_to_thread=True)
 def get_backup_raw(profile: str, filename: str) -> Any:
     """Return raw JSON content of a backup.
 
@@ -67,3 +82,9 @@ def get_backup_raw(profile: str, filename: str) -> Any:
         BackupFileNotFoundError: If the backup file was not found.
     """
     return get_backup_service().read_backup_raw(profile, filename)
+
+
+router = Router(
+    path="/backups",
+    route_handlers=[list_backups, restore_backup, get_backup_raw],
+)

@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Any, cast
 
 import pytest
 
@@ -29,7 +28,7 @@ async def test_logging_handler_emits_inside_running_loop():
     """Emit broadcasts schedule tasks on the current loop when available."""
     handler = WebsocketLogHandler()
     ws = DummyWebSocket()
-    await handler.add(cast(Any, ws))
+    await handler.add(ws)
 
     record = logging.LogRecord("test", logging.INFO, __file__, 0, "hello", None, None)
     handler.emit(record)
@@ -38,7 +37,7 @@ async def test_logging_handler_emits_inside_running_loop():
     assert ws.messages
     message = ws.messages[0]["message"]
     assert message is not None and message.endswith("hello")
-    await handler.remove(cast(Any, ws))
+    await handler.remove(ws)
 
 
 def test_logging_handler_falls_back_to_threadsafe(monkeypatch: pytest.MonkeyPatch):
@@ -47,7 +46,7 @@ def test_logging_handler_falls_back_to_threadsafe(monkeypatch: pytest.MonkeyPatc
     handler = WebsocketLogHandler()
     handler.set_event_loop(loop)
     ws = DummyWebSocket()
-    loop.run_until_complete(handler.add(cast(Any, ws)))
+    loop.run_until_complete(handler.add(ws))
 
     def _raise_runtime_error():
         raise RuntimeError("no loop")
@@ -65,5 +64,5 @@ def test_logging_handler_falls_back_to_threadsafe(monkeypatch: pytest.MonkeyPatc
     handler.emit(record)
     loop.run_until_complete(asyncio.sleep(0.01))
     assert ws not in handler._connections
-    loop.run_until_complete(handler.remove(cast(Any, ws)))
+    loop.run_until_complete(handler.remove(ws))
     loop.close()

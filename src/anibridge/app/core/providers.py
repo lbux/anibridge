@@ -7,14 +7,16 @@ from anibridge.library import LibraryProvider
 from anibridge.list import ListProvider
 from anibridge.utils.registry import ProviderRegistry
 
-from anibridge.app import log
 from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.exceptions import ProfileConfigError
+from anibridge.app.logging import get_logger
 
 __all__ = [
     "build_library_provider",
     "build_list_provider",
 ]
+
+log = get_logger(__name__)
 
 _ROOT_LIBRARY_PACKAGE = "anibridge.providers.library"
 _ROOT_LIST_PACKAGE = "anibridge.providers.list"
@@ -117,9 +119,15 @@ def build_library_provider(profile: AnibridgeProfileConfig) -> LibraryProvider:
 
     namespace = profile.library_provider
     config = profile.library_provider_config.get(namespace)
+    try:
+        provider_cls = library_registry.get(namespace)
+    except LookupError:
+        logger = log
+    else:
+        logger = get_logger(provider_cls.__module__)
 
     try:
-        return library_registry.create(namespace, logger=log, config=config)
+        return library_registry.create(namespace, logger=logger, config=config)
     except LookupError as exc:
         raise ProfileConfigError(
             f"No library provider registered for namespace '{namespace or 'None'}'. "
@@ -142,9 +150,15 @@ def build_list_provider(profile: AnibridgeProfileConfig) -> ListProvider:
 
     namespace = profile.list_provider
     config = profile.list_provider_config.get(namespace)
+    try:
+        provider_cls = list_registry.get(namespace)
+    except LookupError:
+        logger = log
+    else:
+        logger = get_logger(provider_cls.__module__)
 
     try:
-        return list_registry.create(namespace, logger=log, config=config)
+        return list_registry.create(namespace, logger=logger, config=config)
     except LookupError as exc:
         raise ProfileConfigError(
             f"No list provider registered for namespace '{namespace}'. "

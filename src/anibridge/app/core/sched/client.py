@@ -9,18 +9,20 @@ from typing import Any
 import msgspec
 from anibridge.utils.cache import lru_cache
 
-from anibridge.app import log
 from anibridge.app.config.settings import AnibridgeConfig, ScanMode
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.core.sched.coord import GlobalSyncCoordinator
 from anibridge.app.core.sched.profile import ProfileScheduler
 from anibridge.app.exceptions import ProfileNotFoundError, SchedulerUnavailableError
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.cron import format_interval, is_enabled_interval
 from anibridge.app.utils.human import human_duration
 from anibridge.app.utils.memory import release_memory
 
 __all__ = ["SchedulerClient"]
+
+log = get_logger(__name__)
 
 _MAINTENANCE_TIMEOUT: float = 3600
 
@@ -349,11 +351,11 @@ class SchedulerClient:
                     exceptions,
                 )
 
-    async def get_status(self) -> dict[str, dict[str, Any]]:
+    async def get_status(self) -> dict[str, Any]:
         """Get the status of all profiles.
 
         Returns:
-            dict[str, dict[str, Any]]: A dictionary containing the profile info.
+            dict[str, Any]: A dictionary containing the profile info.
         """
         status = {}
 

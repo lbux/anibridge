@@ -1,16 +1,21 @@
-"""Tests for the FastAPI application factory and lifespan."""
+"""Tests for the web application factory and lifespan."""
 
 import logging
+from collections.abc import Callable
 from logging import Handler
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from fastapi.responses import Response
-from fastapi.testclient import TestClient
-from starlette.requests import Request
+from litestar.response.base import Response
+from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.exceptions import AnibridgeError, ProfileNotFoundError
 from anibridge.app.web import app as app_module
+from tests.web.support import SchedulerStub
+
+_ExceptionHandler = Callable[[object, Exception], Response[dict[str, str]]]
 
 
 class _DummyHandler(Handler):
@@ -19,6 +24,17 @@ class _DummyHandler(Handler):
 
     def set_event_loop(self, loop) -> None:
         self.loop = loop
+
+
+class _CaptureHandler(Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record) -> None:
+        self.records.append(record)
+        self.messages.append(record.getMessage())
 
 
 class _DummyState:
@@ -37,25 +53,6 @@ class _DummyState:
 
     async def shutdown(self) -> None:
         self.shutdown_called = True
-
-
-class _DummyScheduler:
-    def __init__(self, *, running: bool = False) -> None:
-        self._running = running
-        self.initialized = False
-        self.started = False
-        self.stopped = False
-
-    async def initialize(self) -> None:
-        self.initialized = True
-
-    async def start(self) -> None:
-        self.started = True
-        self._running = True
-
-    async def stop(self) -> None:
-        self.stopped = True
-        self._running = False
 
 
 class _DummyHistoryService:
@@ -100,10 +97,10 @@ async def test_lifespan_manages_scheduler_startup_and_shutdown(
     log_handler: _DummyHandler,
 ) -> None:
     history_service.count = 2
-    scheduler = _DummyScheduler(running=False)
+    scheduler = SchedulerStub(running=False)
 
-    app = app_module.FastAPI()
-    app.extra["scheduler"] = scheduler
+    app = app_module.Litestar(route_handlers=[])
+    app.state.scheduler = scheduler
 
     async with app_module.lifespan(app):
         assert state.scheduler_set is scheduler
@@ -124,7 +121,7 @@ async def test_lifespan_handles_missing_scheduler_and_public_anilist_errors(
 
     monkeypatch.setattr(_DummyState, "ensure_public_anilist", _boom)
 
-    async with app_module.lifespan(app_module.FastAPI()):
+    async with app_module.lifespan(app_module.Litestar(route_handlers=[])):
         pass
 
     assert state.shutdown_called is True
@@ -136,35 +133,35 @@ def test_create_app_serves_spa_and_domain_errors(
 ) -> None:
     index_file = tmp_path / "index.html"
     index_file.write_text("<html>SPA</html>", encoding="utf-8")
+    css_asset = tmp_path / "_app" / "immutable" / "assets" / "0.test.css"
+    css_asset.parent.mkdir(parents=True)
+    css_asset.write_text("body { color: red; }\n", encoding="utf-8")
     monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
     monkeypatch.setattr(app_module.log, "level", logging.INFO)
 
     spa_app = app_module.create_app()
 
     with TestClient(spa_app) as client:
-        assert client.get("/missing").text == "<html>SPA</html>"
+        spa_response = client.get("/missing")
+        assert spa_response.text == "<html>SPA</html>"
+        assert spa_response.headers["content-disposition"].startswith("inline")
+        assert spa_response.headers["content-type"].startswith("text/html")
+        asset_response = client.get("/_app/immutable/assets/0.test.css")
+        assert asset_response.text == "body { color: red; }\n"
+        assert asset_response.headers["content-disposition"].startswith("inline")
+        assert asset_response.headers["content-type"].startswith("text/css")
         assert client.get("/api/missing").status_code == 404
 
-    handler = spa_app.exception_handlers[AnibridgeError]
-    request = Request(
-        {
-            "type": "http",
-            "path": "/boom",
-            "headers": [],
-            "query_string": b"",
-            "method": "GET",
-            "scheme": "http",
-            "server": ("testserver", 80),
-            "client": ("127.0.0.1", 12345),
-        }
-    )
+    handler = cast(_ExceptionHandler, spa_app.exception_handlers[AnibridgeError])
+    request = SimpleNamespace(url=SimpleNamespace(path="/boom"))
     error = handler(request, ProfileNotFoundError("missing profile"))
     assert isinstance(error, Response)
     assert error.status_code == 404
-    assert error.body == (
-        b'{"error":"ProfileNotFoundError",'
-        b'"detail":"\'missing profile\'","path":"/boom"}'
-    )
+    assert error.content == {
+        "error": "ProfileNotFoundError",
+        "detail": "'missing profile'",
+        "path": "/boom",
+    }
 
 
 def test_create_app_skips_spa_when_frontend_assets_missing(
@@ -177,6 +174,121 @@ def test_create_app_skips_spa_when_frontend_assets_missing(
 
     app = app_module.create_app()
 
-    middleware_classes = {middleware.cls for middleware in app.user_middleware}
-    assert app.router.routes
-    assert app_module.RequestLoggingMiddleware in middleware_classes
+    with TestClient(app) as client:
+        assert client.get("/livez").status_code == 200
+        assert client.get("/missing").status_code == 404
+
+
+def test_create_app_exposes_openapi_json_and_docs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_file = tmp_path / "index.html"
+    index_file.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.INFO)
+
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        schema_response = client.get("/docs/openapi.json")
+        docs_response = client.get("/docs")
+
+    assert schema_response.status_code == 200
+    schema = schema_response.json()
+    assert schema["info"]["title"] == "AniBridge"
+    assert schema["info"]["version"] == app_module.__version__
+
+    components = schema["components"]["schemas"]
+    mapping_descriptor = components["MappingOverridePayload"]["properties"][
+        "descriptor"
+    ]
+    assert mapping_descriptor["minLength"] == 1
+    assert (
+        mapping_descriptor["description"]
+        == "Canonical descriptor whose override is being created or updated."
+    )
+    assert mapping_descriptor["examples"] == ["anilist:5114"]
+
+    restore_filename = components["RestoreRequest"]["properties"]["filename"]
+    assert restore_filename["minLength"] == 1
+    assert restore_filename["examples"] == [
+        "anibridge_default_anilist_20260508120000.json"
+    ]
+
+    expected_mtime = components["ConfigDocumentUpdateRequest"]["properties"][
+        "expected_mtime"
+    ]
+    assert expected_mtime["oneOf"] == [{"type": "integer"}, {"type": "null"}]
+
+    provider_namespace = components["ProviderMediaMetadata"]["properties"]["namespace"]
+    assert provider_namespace["minLength"] == 1
+    assert provider_namespace["description"] == "Provider namespace for the media item."
+    assert provider_namespace["examples"] == ["anilist"]
+
+    assert docs_response.status_code == 200
+    assert docs_response.headers["content-type"].startswith("text/html")
+
+
+def test_create_app_uses_builtin_logging_middleware_in_debug(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    index_file = tmp_path / "index.html"
+    index_file.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.DEBUG)
+
+    app = app_module.create_app()
+    handler = _CaptureHandler()
+    logger = logging.getLogger("anibridge")
+    logger.addHandler(handler)
+
+    try:
+        with TestClient(app) as client:
+            assert client.get("/livez").status_code == 200
+    finally:
+        logger.removeHandler(handler)
+
+    assert any(
+        record.levelno == logging.DEBUG
+        and "HTTP Request:" in record.getMessage()
+        and "method=GET" in record.getMessage()
+        and "path=/livez" in record.getMessage()
+        for record in handler.records
+    )
+    assert any(
+        record.levelno == logging.DEBUG
+        and "HTTP Response:" in record.getMessage()
+        and "status_code=200" in record.getMessage()
+        for record in handler.records
+    )
+    assert any(
+        "HTTP Request:" in message
+        and "method=GET" in message
+        and "path=/livez" in message
+        for message in handler.messages
+    )
+
+
+def test_create_app_enables_gzip_compression(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    html = "<html>" + ("x" * 1024) + "</html>"
+    index_file = tmp_path / "index.html"
+    index_file.write_text(html, encoding="utf-8")
+    monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(app_module.log, "level", logging.INFO)
+
+    app = app_module.create_app()
+
+    assert app.compression_config is not None
+    assert app.compression_config.backend == "gzip"
+
+    with TestClient(app) as client:
+        response = client.get("/missing", headers={"Accept-Encoding": "gzip"})
+
+    assert response.status_code == 200
+    assert response.text == html
+    assert response.headers.get("content-encoding") == "gzip"

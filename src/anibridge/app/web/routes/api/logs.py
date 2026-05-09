@@ -3,33 +3,88 @@
 import logging
 import re
 from pathlib import Path
+from typing import Annotated
 
-from fastapi.param_functions import Query
-from fastapi.routing import APIRouter
-from pydantic import BaseModel
+import msgspec
+from litestar.handlers.http_handlers.decorators import get
+from litestar.router import Router
 
-from anibridge.app import config
+from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import InvalidLogFileNameError, LogFileNotFoundError
+from anibridge.app.logging import APP_LOGGER_NAME, get_logger
 
 __all__ = ["router"]
 
-
-class LogFileModel(BaseModel):
-    name: str
-    size: int
-    mtime: int  # epoch ms
-    current: bool
+LOG_DIR: Path | None = None
 
 
-class LogEntryModel(BaseModel):
-    timestamp: str | None = None
-    level: str
-    message: str
+class LogFileModel(msgspec.Struct):
+    name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Log file base name.",
+            examples=["anibridge.INFO.log"],
+        ),
+    ]
+    size: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Log file size in bytes.",
+            examples=[8192],
+        ),
+    ]
+    mtime: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Log file modification time in epoch milliseconds.",
+            examples=[1715179200000],
+        ),
+    ]
+    current: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether this file is the currently active log target.",
+            examples=[True],
+        ),
+    ]
 
 
-router = APIRouter()
+class LogEntryModel(msgspec.Struct):
+    level: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Parsed log level for the line.",
+            examples=["INFO"],
+        ),
+    ]
+    message: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Rendered log message.",
+            examples=["Scheduler initialized successfully"],
+        ),
+    ]
+    timestamp: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Parsed timestamp from the log line when available.",
+                examples=["2026-01-01 00:00:00"],
+            ),
+        ]
+        | None
+    ) = None
 
-LOG_DIR: Path = (config.data_path / "logs").resolve()
+
+def _get_log_dir() -> Path:
+    if LOG_DIR is not None:
+        return LOG_DIR.resolve()
+    return (get_config().data_path / "logs").resolve()
 
 
 def _is_log_filename(name: str) -> bool:
@@ -39,37 +94,37 @@ def _is_log_filename(name: str) -> bool:
 
 LINE_RE = re.compile(
     r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "
-    r"(?P<logger>[^ ]+?) - (?P<level>[A-Z]+)\t(?P<message>.*)$"
+    r"(?P<level>[A-Z]+) - (?P<logger>[^ ]+?)"
+    r"(?: - (?P<source>[^ ]+:\d+))? - (?P<message>.*)$"
 )
 
 
 def _list_log_files() -> list[Path]:
-    if not LOG_DIR.exists():
+    log_dir = _get_log_dir()
+    if not log_dir.exists():
         return []
     # Include the active log file and rotated backups.
     files = {
         path.name: path
-        for path in LOG_DIR.iterdir()
+        for path in log_dir.iterdir()
         if path.is_file() and _is_log_filename(path.name)
     }
 
     return sorted(files.values(), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-@router.get(
-    "/files", summary="List available log files", response_model=list[LogFileModel]
-)
+@get(path="/files", sync_to_thread=True)
 def list_log_files() -> list[LogFileModel]:
     """Return metadata about available log files.
 
     Returns:
-        JSONResponse: List of log file metadata sorted by most recent first.
+        list[LogFileModel]: Log file metadata sorted by most recent first.
     """
     files = _list_log_files()
     res: list[LogFileModel] = []
 
     # Determine current effective log level to identify active file.
-    root_logger = logging.getLogger("anibridge")
+    root_logger = get_logger(APP_LOGGER_NAME)
     current_level_name = logging.getLevelName(root_logger.getEffectiveLevel())
     active_basename = f"anibridge.{current_level_name}.log"
 
@@ -101,9 +156,10 @@ def _safe_resolve(name: str) -> Path:
     if "/" in name or ".." in name:
         raise InvalidLogFileNameError("Invalid log file name")
 
-    target = (LOG_DIR / name).resolve()
+    log_dir = _get_log_dir()
+    target = (log_dir / name).resolve()
 
-    if not str(target).startswith(str(LOG_DIR)):
+    if not str(target).startswith(str(log_dir)):
         raise InvalidLogFileNameError("Invalid log file name")
 
     if not target.exists() or not target.is_file():
@@ -157,14 +213,8 @@ def _tail_lines(path: Path, max_lines: int) -> list[str]:
     return [line.decode("utf-8", errors="replace") for line in tail_bytes]
 
 
-@router.get(
-    "/file/{name}",
-    summary="Fetch parsed tail of a log file",
-    response_model=list[LogEntryModel],
-)
-def get_log_file(
-    name: str, lines: int = Query(500, ge=0, le=2000)
-) -> list[LogEntryModel]:
+@get(path="/file/{name:str}", sync_to_thread=True)
+def get_log_file(name: str, lines: int = 500) -> list[LogEntryModel]:
     """Return the last N lines of a log file parsed into JSON entries.
 
     Args:
@@ -172,7 +222,7 @@ def get_log_file(
         lines (int): Maximum number of lines to return (tail). Default 500.
 
     Returns:
-        JSONResponse: Ordered list (oldest first) of parsed log entries.
+        list[LogEntryModel]: Ordered list (oldest first) of parsed log entries.
 
     Raises:
         InvalidLogFileNameError: If the file name is invalid.
@@ -196,3 +246,6 @@ def get_log_file(
             res.append(LogEntryModel(timestamp=None, level="INFO", message=ln))
 
     return res
+
+
+router = Router(path="/logs", route_handlers=[list_log_files, get_log_file])

@@ -45,7 +45,7 @@ async def test_provider_webhook_requires_scheduler(monkeypatch) -> None:
     )
 
     with pytest.raises(SchedulerNotInitializedError):
-        await webhook_module.provider_webhook("plex", cast(Any, object()))
+        await webhook_module.provider_webhook.fn("plex", cast(Any, object()))
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,7 @@ async def test_provider_webhook_triggers_matching_profiles(monkeypatch) -> None:
     monkeypatch.setattr(webhook_module, "schedule_task", _schedule_task)
 
     request = cast(Any, object())
-    await webhook_module.provider_webhook("plex", request)
+    await webhook_module.provider_webhook.fn("plex", request)
 
     assert scheduler.bridge_clients["valid"].requests == [request]
     assert scheduler.bridge_clients["invalid"].requests == [request]

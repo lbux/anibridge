@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql import delete, select, tuple_
 from sqlalchemy.sql.functions import func
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.core.mappings import MappingsClient
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.models.db.housekeeping import Housekeeping
 from anibridge.app.utils.memory import release_memory
@@ -29,6 +29,8 @@ __all__ = [
     "AnimapClient",
     "AnimapEdge",
 ]
+
+log = get_logger(__name__)
 
 
 class AnimapEdge(msgspec.Struct, frozen=True):

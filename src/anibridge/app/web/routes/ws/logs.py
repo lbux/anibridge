@@ -1,31 +1,34 @@
 """Websocket endpoint for live logs."""
 
-from fastapi.routing import APIRouter
-from fastapi.websockets import WebSocket, WebSocketDisconnect
+from litestar.connection.websocket import WebSocket
+from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
+from litestar.handlers.websocket_handlers.route_handler import websocket
+from litestar.router import Router
 
 from anibridge.app.web.services.logging_handler import get_log_ws_handler
 
 __all__ = ["router"]
 
-router = APIRouter()
 
-
-@router.websocket("")
-async def logs_ws(ws: WebSocket) -> None:
+@websocket(path="")
+async def logs_ws(socket: WebSocket) -> None:
     """Websocket endpoint for live logs.
 
     Args:
-        ws (WebSocket): The WebSocket connection instance.
+        socket (WebSocket): The WebSocket connection instance.
     """
     log_ws_handler = get_log_ws_handler()
 
-    await ws.accept()
-    await log_ws_handler.add(ws)
+    await socket.accept()
+    await log_ws_handler.add(socket)
     try:
         while True:
             # Keep connection alive; we don't expect client messages
-            await ws.receive_text()
+            await socket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        await log_ws_handler.remove(ws)
+        await log_ws_handler.remove(socket)
+
+
+router = Router(path="/logs", route_handlers=[logs_ws])

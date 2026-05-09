@@ -3,13 +3,10 @@
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, ClassVar, get_args, get_origin
+from typing import Any, ClassVar, get_args, get_origin
 
+import msgspec
 from anibridge.utils.cache import cache
-from pydantic import AfterValidator, BaseModel, ConfigDict
-from pydantic.alias_generators import to_camel
-
-UTCDateTime = Annotated[datetime, AfterValidator(lambda dt: dt.astimezone(UTC))]
 
 
 class AniListBaseEnum(StrEnum):
@@ -112,29 +109,17 @@ class MediaListStatus(AniListBaseEnum):
     REPEATING = "REPEATING"
 
 
-class AniListBaseModel(BaseModel):
+class AniListBaseModel(
+    msgspec.Struct,
+    rename="camel",
+    kw_only=True,
+):
     """Base, abstract class for all AniList models to represent GraphQL objects.
 
     Provides serialization, aliasing, and GraphQL query generation utilities.
     """
 
-    _processed_models: ClassVar[set] = set()
-
-    def model_dump(self, **kwargs) -> dict:
-        """Convert the model to a dictionary, converting all keys to camelCase.
-
-        Returns:
-            dict: Dictionary representation of the model.
-        """
-        return super().model_dump(by_alias=True, **kwargs)
-
-    def model_dump_json(self, **kwargs) -> str:
-        """Serialize the model to JSON, converting all keys to camelCase.
-
-        Returns:
-            str: JSON serialized string of the model.
-        """
-        return super().model_dump_json(by_alias=True, **kwargs)
+    _processed_models: ClassVar[set[str]] = set()
 
     def unset_fields(self, fields: Iterable[str]) -> None:
         """Unset specified fields to their default values.
@@ -142,9 +127,14 @@ class AniListBaseModel(BaseModel):
         Args:
             fields (Iterable[str]): Field names to unset.
         """
-        for field, field_info in self.__class__.model_fields.items():
-            if field in fields:
-                setattr(self, field, field_info.default)
+        field_set = set(fields)
+        for field_info in msgspec.structs.fields(type(self)):
+            if field_info.name not in field_set:
+                continue
+            if field_info.default_factory is not msgspec.NODEFAULT:
+                setattr(self, field_info.name, field_info.default_factory())
+            elif field_info.default is not msgspec.NODEFAULT:
+                setattr(self, field_info.name, field_info.default)
 
     @classmethod
     @cache
@@ -158,26 +148,18 @@ class AniListBaseModel(BaseModel):
             return ""
 
         cls._processed_models.add(cls.__name__)
-        fields = cls.model_fields
         graphql_fields = []
 
-        for field_name, field in fields.items():
-            field_type = (
-                get_args(field.annotation)[0]
-                if get_origin(field.annotation)
-                else field.annotation
-            )
-
-            camel_field_name = to_camel(field_name)
-
-            if isinstance(field_type, type) and issubclass(
-                field_type, AniListBaseModel
-            ):
+        for field_info in msgspec.structs.fields(cls):
+            field_type = _resolve_model_type(field_info.type)
+            if field_type is not None:
                 nested_fields = field_type.model_dump_graphql()
                 if nested_fields:
-                    graphql_fields.append(f"{camel_field_name} {{\n{nested_fields}\n}}")
+                    graphql_fields.append(
+                        f"{field_info.encode_name} {{\n{nested_fields}\n}}"
+                    )
             else:
-                graphql_fields.append(f"{camel_field_name}")
+                graphql_fields.append(f"{field_info.encode_name}")
 
         cls._processed_models.remove(cls.__name__)
         return "\n".join(graphql_fields)
@@ -188,13 +170,26 @@ class AniListBaseModel(BaseModel):
 
     def __repr__(self) -> str:
         """Return string representation of the model."""
-        return f"<{
-            ' : '.join(
-                [f'{k}={v}' for k, v in self.model_dump().items() if v is not None]
-            )
-        }>"
+        values = [
+            f"{k}={v}" for k, v in msgspec.to_builtins(self).items() if v is not None
+        ]
+        return f"<{' : '.join(values)}>"
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+def _resolve_model_type(annotation: Any) -> type[AniListBaseModel] | None:
+    """Recursively resolve a type annotation to find an AniListBaseModel subclass."""
+    if isinstance(annotation, type) and issubclass(annotation, AniListBaseModel):
+        return annotation
+
+    origin = get_origin(annotation)
+    if origin is None:
+        return None
+
+    for arg in get_args(annotation):
+        resolved = _resolve_model_type(arg)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 class PageInfo(AniListBaseModel):
@@ -221,7 +216,7 @@ class MediaTitle(AniListBaseModel):
         Returns:
             list[str]: All the available titles.
         """
-        return [getattr(self, t) for t in self.__class__.model_fields if t]
+        return [getattr(self, field) for field in self.__struct_fields__ if field]
 
     def __str__(self) -> str:
         """Return the first available title or an empty string.
@@ -265,10 +260,14 @@ class AiringSchedule(AniListBaseModel):
     """Model representing an airing schedule for a media entry."""
 
     id: int
-    airing_at: UTCDateTime
+    airing_at: datetime
     time_until_airing: timedelta
     episode: int
     media_id: int
+
+    def __post_init__(self) -> None:
+        """Normalize AniList datetimes to UTC."""
+        self.airing_at = self.airing_at.astimezone(UTC)
 
 
 class Media(AniListBaseModel):

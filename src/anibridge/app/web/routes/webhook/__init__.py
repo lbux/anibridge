@@ -1,10 +1,9 @@
-"""Webhook route aggregator."""
+"""Litestar webhook route aggregator."""
 
-from fastapi.routing import APIRouter
+from litestar.router import Router
 
 from anibridge.app.web.routes.webhook.provider import router as provider_router
 
 __all__ = ["router"]
 
-router = APIRouter()
-router.include_router(provider_router, prefix="")
+router = Router(path="/webhook", route_handlers=[provider_router])

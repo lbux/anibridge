@@ -10,7 +10,7 @@ from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField
 from anibridge.app.core.sched import SchedulerClient
 from anibridge.app.models.db.pin import Pin
-from anibridge.app.web.services.pin_service import PinService, UpdatePinPayload
+from anibridge.app.web.services.pin_service import PinService
 from anibridge.app.web.state import get_app_state
 
 
@@ -76,28 +76,34 @@ def _insert_pin(**overrides) -> Pin:
     return pin
 
 
-def test_update_pin_payload_normalizes_and_validates():
-    """Normalize payloads into SyncField order and reject invalid fields."""
-    payload = UpdatePinPayload(
-        fields=[
+@pytest.mark.asyncio
+async def test_pin_service_upsert_normalizes_and_validates_fields():
+    """Upserts should normalize field order, dedupe entries, and reject invalid
+    fields.
+    """
+    service = PinService()
+
+    created = await service.upsert_pin(
+        "default",
+        "abc",
+        [
             SyncField.STATUS,
             " progress ",
-            SyncField.STATUS,  # duplicate
+            SyncField.STATUS,
             "USER_RATING",
-        ]
+        ],
     )
-    assert payload.normalized() == [
+    assert created.fields == [
         SyncField.STATUS.value,
         SyncField.PROGRESS.value,
         SyncField.USER_RATING.value,
     ]
 
     with pytest.raises(ValueError, match="Unsupported field"):
-        UpdatePinPayload(fields=["missing"]).normalized()
+        await service.upsert_pin("default", "missing", ["missing"])
 
-    assert UpdatePinPayload(fields=[" ", "status"]).normalized() == [
-        SyncField.STATUS.value
-    ]
+    spaced = await service.upsert_pin("default", "spaced", [" ", "status"])
+    assert spaced.fields == [SyncField.STATUS.value]
 
 
 def test_pin_service_lists_available_field_options():

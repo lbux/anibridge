@@ -1416,7 +1416,7 @@ async def test_sync_media_allows_vars_to_reference_missing_computed_fields(
 async def test_sync_media_exposes_ctx_item_child_and_grandchildren(
     stub_client: StubSyncClient,
 ) -> None:
-    """Rule expressions should receive shimmed item context under ctx."""
+    """Rule expressions should receive stable item context under ctx."""
     provider = cast(FakeListProvider, stub_client.list_provider)
     show = FakeLibraryShow(key="show-ctx", title="Ctx Show")
     season = FakeLibrarySeason(

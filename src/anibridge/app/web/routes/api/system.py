@@ -4,12 +4,12 @@ import os
 import platform
 import sqlite3
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
+import msgspec
 import psutil
-from fastapi import Depends
-from fastapi.routing import APIRouter
-from pydantic import BaseModel
+from litestar.handlers.http_handlers.decorators import get, post
+from litestar.router import Router
 
 from anibridge.app import __git_hash__, __version__
 from anibridge.app.exceptions import AnibridgeError, SchedulerUnavailableError
@@ -24,108 +24,390 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["router"]
 
 
-class SettingsProfileModel(BaseModel):
-    name: str
-    settings: dict[str, Any]
+class SettingsProfileModel(msgspec.Struct):
+    name: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Profile name from the current configuration.",
+            examples=["default"],
+        ),
+    ]
+    settings: Annotated[
+        dict[str, Any],
+        msgspec.Meta(
+            description="Serialized profile settings payload.",
+            examples=[{"library_provider": "plex", "list_provider": "anilist"}],
+        ),
+    ]
 
 
-class SettingsResponse(BaseModel):
-    global_config: dict[str, Any]
-    profiles: list[SettingsProfileModel]
+class SettingsResponse(msgspec.Struct):
+    global_config: Annotated[
+        dict[str, Any],
+        msgspec.Meta(
+            description=(
+                "Serialized global AniBridge configuration without per-profile entries."
+            ),
+            examples=[{"web_enabled": True, "log_level": "INFO"}],
+        ),
+    ]
+    profiles: Annotated[
+        list[SettingsProfileModel],
+        msgspec.Meta(
+            description="Per-profile configuration payloads.",
+            examples=[[{"name": "default", "settings": {"library_provider": "plex"}}]],
+        ),
+    ]
 
 
-class AboutInfoModel(BaseModel):
-    version: str
-    git_hash: str
-    python: str
-    platform: str
-    utc_now: str
-    started_at: str | None = None
-    uptime_seconds: int | None = None
-    uptime: str | None = None
-    sqlite: str | None = None
+class AboutInfoModel(msgspec.Struct):
+    version: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Running AniBridge version.",
+            examples=["2.1.4"],
+        ),
+    ]
+    git_hash: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Git commit hash for the running build.",
+            examples=["abc123def456"],
+        ),
+    ]
+    python: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Python runtime version.",
+            examples=["3.14.3"],
+        ),
+    ]
+    platform: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Operating system and platform string.",
+            examples=["Linux-6.8.0-x86_64-with-glibc2.39"],
+        ),
+    ]
+    utc_now: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Current UTC timestamp when the payload was generated.",
+            examples=["2026-01-01T00:00:00+00:00"],
+        ),
+    ]
+    started_at: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="UTC timestamp when the process started.",
+                examples=["2026-01-01T00:00:00+00:00"],
+            ),
+        ]
+        | None
+    ) = None
+    uptime_seconds: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=0,
+                description="Process uptime in seconds.",
+                examples=[3600],
+            ),
+        ]
+        | None
+    ) = None
+    uptime: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="Human-readable process uptime.",
+                examples=["1h"],
+            ),
+        ]
+        | None
+    ) = None
+    sqlite: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="SQLite library version linked into the process.",
+                examples=["3.46.0"],
+            ),
+        ]
+        | None
+    ) = None
 
 
-class ProcessInfoModel(BaseModel):
-    pid: int
-    cpu_count: int | None = None
-    memory_mb: float | None = None
+class ProcessInfoModel(msgspec.Struct):
+    pid: Annotated[
+        int,
+        msgspec.Meta(
+            ge=1,
+            description="Current AniBridge process identifier.",
+            examples=[1234],
+        ),
+    ]
+    cpu_count: (
+        Annotated[
+            int,
+            msgspec.Meta(
+                ge=1,
+                description="Visible logical CPU count for the running process.",
+                examples=[8],
+            ),
+        ]
+        | None
+    ) = None
+    memory_mb: (
+        Annotated[
+            float,
+            msgspec.Meta(
+                ge=0,
+                description="Memory usage of the process in megabytes.",
+                examples=[128.5],
+            ),
+        ]
+        | None
+    ) = None
 
 
-class SchedulerSummaryModel(BaseModel):
-    running: bool
-    configured_profiles: int
-    total_profiles: int
-    running_profiles: int
-    syncing_profiles: int
-    sync_mode_counts: dict[str, int]
-    most_recent_sync: str | None = None
-    most_recent_sync_profile: str | None = None
-    next_database_sync_at: str | None = None
-    coordinator: dict | None = None
-    profiles: dict[str, ProfileStatusModel]
+class SchedulerSummaryModel(msgspec.Struct):
+    running: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the scheduler process is currently active.",
+            examples=[True],
+        ),
+    ]
+    configured_profiles: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profiles configured in the current settings file.",
+            examples=[3],
+        ),
+    ]
+    total_profiles: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profile status entries currently available.",
+            examples=[3],
+        ),
+    ]
+    running_profiles: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profiles whose runtime state is active.",
+            examples=[2],
+        ),
+    ]
+    syncing_profiles: Annotated[
+        int,
+        msgspec.Meta(
+            ge=0,
+            description="Number of profiles actively syncing at the moment.",
+            examples=[1],
+        ),
+    ]
+    sync_mode_counts: Annotated[
+        dict[str, int],
+        msgspec.Meta(
+            description="Count of profiles participating in each configured scan mode.",
+            examples=[{"poll": 2, "webhook": 1}],
+        ),
+    ]
+    profiles: Annotated[
+        dict[str, ProfileStatusModel],
+        msgspec.Meta(
+            description="Per-profile scheduler summary keyed by profile name.",
+            examples=[
+                {
+                    "default": {
+                        "config": {
+                            "library_namespace": "plex",
+                            "list_namespace": "anilist",
+                        },
+                        "status": {"running": True},
+                    }
+                }
+            ],
+        ),
+    ]
+    most_recent_sync: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description=(
+                    "ISO-8601 timestamp of the most recent completed "
+                    "sync across all profiles."
+                ),
+                examples=["2026-01-01T00:00:00+00:00"],
+            ),
+        ]
+        | None
+    ) = None
+    most_recent_sync_profile: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description=(
+                    "Profile name associated with the most recent completed sync."
+                ),
+                examples=["default"],
+            ),
+        ]
+        | None
+    ) = None
+    next_database_sync_at: (
+        Annotated[
+            str,
+            msgspec.Meta(
+                description="ISO-8601 timestamp for the next scheduled database sync.",
+                examples=["2026-01-01T13:00:00+00:00"],
+            ),
+        ]
+        | None
+    ) = None
+    coordinator: (
+        Annotated[
+            dict[str, Any],
+            msgspec.Meta(
+                description=(
+                    "Low-level coordinator state returned by the "
+                    "scheduler runtime metrics."
+                ),
+                examples=[{"active_profiles": ["default"], "queued_profiles": []}],
+            ),
+        ]
+        | None
+    ) = None
 
 
-class AboutResponse(BaseModel):
-    info: AboutInfoModel
-    process: ProcessInfoModel
-    scheduler: SchedulerSummaryModel
-    status: dict[str, ProfileStatusModel]
+class AboutResponse(msgspec.Struct):
+    info: Annotated[
+        AboutInfoModel,
+        msgspec.Meta(
+            description="General runtime metadata about the AniBridge process.",
+            examples=[{"version": "2.1.4", "git_hash": "abc123def456"}],
+        ),
+    ]
+    process: Annotated[
+        ProcessInfoModel,
+        msgspec.Meta(
+            description="Current process resource information.",
+            examples=[{"pid": 1234, "cpu_count": 8, "memory_mb": 128.5}],
+        ),
+    ]
+    scheduler: Annotated[
+        SchedulerSummaryModel,
+        msgspec.Meta(
+            description="Aggregated scheduler status and profile summary.",
+            examples=[
+                {
+                    "running": True,
+                    "configured_profiles": 3,
+                    "total_profiles": 3,
+                    "running_profiles": 2,
+                    "syncing_profiles": 1,
+                    "sync_mode_counts": {"poll": 2},
+                    "profiles": {},
+                }
+            ],
+        ),
+    ]
+    status: Annotated[
+        dict[str, ProfileStatusModel],
+        msgspec.Meta(
+            description="Raw per-profile status payload keyed by profile name.",
+            examples=[
+                {
+                    "default": {
+                        "config": {
+                            "library_namespace": "plex",
+                            "list_namespace": "anilist",
+                        },
+                        "status": {"running": True},
+                    }
+                }
+            ],
+        ),
+    ]
 
 
-class MetaResponse(BaseModel):
-    version: str
-    git_hash: str
+class MetaResponse(msgspec.Struct):
+    version: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Running AniBridge version.",
+            examples=["2.1.4"],
+        ),
+    ]
+    git_hash: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Git commit hash for the running build.",
+            examples=["abc123def456"],
+        ),
+    ]
 
 
-class RestartResponse(BaseModel):
-    ok: bool
-    message: str
+class RestartResponse(msgspec.Struct):
+    ok: Annotated[
+        bool,
+        msgspec.Meta(
+            description="Whether the restart request was accepted.",
+            examples=[True],
+        ),
+    ]
+    message: Annotated[
+        str,
+        msgspec.Meta(
+            min_length=1,
+            description="Human-readable result message for the restart request.",
+            examples=["Restart requested. AniBridge will restart shortly."],
+        ),
+    ]
 
 
-router = APIRouter()
-
-
-@router.get(
-    "/settings",
-    summary="Return serialized configuration",
-    response_model=SettingsResponse,
-)
+@get(path="/settings", sync_to_thread=True)
 def api_settings() -> SettingsResponse:
     """Return the current application configuration as JSON.
 
     Returns:
-        dict[str, Any]: The serialized configuration.
+        SettingsResponse: The serialized configuration.
     """
     scheduler = get_app_state().scheduler
     if not scheduler:
-        return SettingsResponse.model_construct(global_config={}, profiles=[])
+        return SettingsResponse(global_config={}, profiles=[])
 
     global_config = scheduler.global_config.model_dump(
         mode="json", exclude={"profiles"}
     )
     profiles = [
-        SettingsProfileModel.model_construct(
-            name=name, settings=pdata.model_dump(mode="json")
-        )
+        SettingsProfileModel(name=name, settings=pdata.model_dump(mode="json"))
         for name, pdata in scheduler.global_config.profiles.items()
     ]
 
-    return SettingsResponse.model_construct(
-        global_config=global_config, profiles=profiles
-    )
+    return SettingsResponse(global_config=global_config, profiles=profiles)
 
 
-@router.get(
-    "/about",
-    summary="Return runtime & scheduler diagnostics",
-    response_model=AboutResponse,
-)
+@get(path="/about")
 async def api_about() -> AboutResponse:
     """Get runtime metadata.
 
     Returns:
-        dict[str, Any]: The runtime metadata.
+        AboutResponse: The runtime metadata.
 
     Raises:
         SchedulerUnavailableError: If scheduler status cannot be retrieved.
@@ -162,7 +444,7 @@ async def api_about() -> AboutResponse:
         uptime_seconds = int(delta.total_seconds())
         human_uptime = human_duration(uptime_seconds)
 
-    info = AboutInfoModel.model_construct(
+    info = AboutInfoModel(
         version=__version__,
         git_hash=__git_hash__,
         python=platform.python_version(),
@@ -216,28 +498,26 @@ async def api_about() -> AboutResponse:
         else 0
     )
 
-    scheduler_summary = SchedulerSummaryModel.model_construct(
+    scheduler_summary = SchedulerSummaryModel(
         running=scheduler_running,
         configured_profiles=configured_profiles,
         total_profiles=len(converted),
         running_profiles=running_profiles,
         syncing_profiles=syncing_profiles,
         sync_mode_counts=sync_mode_counts,
+        profiles=converted,
         most_recent_sync=most_recent_sync_iso,
         most_recent_sync_profile=most_recent_sync_profile,
         next_database_sync_at=next_db_sync_iso,
         coordinator=scheduler_runtime_metrics.get("coordinator"),
-        profiles=converted,
     )
 
     pid = os.getpid()
     cpu_count = psutil.cpu_count(logical=True)
     memory_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
-    process_info = ProcessInfoModel.model_construct(
-        pid=pid, cpu_count=cpu_count, memory_mb=memory_mb
-    )
+    process_info = ProcessInfoModel(pid=pid, cpu_count=cpu_count, memory_mb=memory_mb)
 
-    return AboutResponse.model_construct(
+    return AboutResponse(
         info=info,
         process=process_info,
         scheduler=scheduler_summary,
@@ -245,23 +525,17 @@ async def api_about() -> AboutResponse:
     )
 
 
-@router.get("/meta", tags=["meta"], response_model=MetaResponse)
+@get(path="/meta", sync_to_thread=True)
 def meta() -> MetaResponse:
     """Application metadata (version, git hash).
 
     Returns:
-        dict[str, str]: The application metadata.
+        MetaResponse: The application metadata.
     """
-    return MetaResponse.model_construct(version=__version__, git_hash=__git_hash__)
+    return MetaResponse(version=__version__, git_hash=__git_hash__)
 
 
-@router.post(
-    "/restart",
-    summary="Request graceful server restart",
-    dependencies=[Depends(require_config_api_access)],
-    response_model=RestartResponse,
-    status_code=202,
-)
+@post(path="/restart", status_code=202, sync_to_thread=True)
 def api_restart() -> RestartResponse:
     """Request a graceful scheduler shutdown and process restart.
 
@@ -271,6 +545,7 @@ def api_restart() -> RestartResponse:
     Raises:
         SchedulerUnavailableError: If scheduler is unavailable.
     """
+    require_config_api_access()
     app_state = get_app_state()
     scheduler = app_state.scheduler
     if not scheduler:
@@ -281,7 +556,13 @@ def api_restart() -> RestartResponse:
     app_state.request_restart()
     scheduler.request_shutdown()
 
-    return RestartResponse.model_construct(
+    return RestartResponse(
         ok=True,
         message="Restart requested. AniBridge will restart shortly.",
     )
+
+
+router = Router(
+    path="/system",
+    route_handlers=[api_settings, api_about, meta, api_restart],
+)

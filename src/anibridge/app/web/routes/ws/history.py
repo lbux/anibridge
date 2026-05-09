@@ -2,25 +2,25 @@
 
 import asyncio
 
-from fastapi.routing import APIRouter
-from fastapi.websockets import WebSocket, WebSocketDisconnect
+from litestar.connection.websocket import WebSocket
+from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
+from litestar.handlers.websocket_handlers.route_handler import websocket
+from litestar.router import Router
 
 from anibridge.app.web.services.history_service import get_history_service
 
 __all__ = ["router"]
 
-router = APIRouter()
 
-
-@router.websocket("/{profile}")
-async def history_websocket(websocket: WebSocket, profile: str) -> None:
+@websocket(path="/{profile:str}")
+async def history_websocket(socket: WebSocket, profile: str) -> None:
     """Stream live history updates to client.
 
     Polls for latest id and pushes only cursor updates when it changes.
     """
-    await websocket.accept()
+    await socket.accept()
 
-    outcome = websocket.query_params.get("outcome") or None
+    outcome = socket.query_params.get("outcome") or None
     last_latest_id: int | None = None
     history_service = get_history_service()
 
@@ -31,7 +31,7 @@ async def history_websocket(websocket: WebSocket, profile: str) -> None:
             )
             if latest_id != last_latest_id:
                 last_latest_id = latest_id
-                await websocket.send_json(
+                await socket.send_json(
                     {
                         "profile": profile,
                         "outcome": outcome,
@@ -44,4 +44,7 @@ async def history_websocket(websocket: WebSocket, profile: str) -> None:
     except WebSocketDisconnect:
         pass
     except Exception:
-        await websocket.close()
+        await socket.close()
+
+
+router = Router(path="/history", route_handlers=[history_websocket])

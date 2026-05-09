@@ -1,26 +1,36 @@
-"""FastAPI application factory and setup."""
+"""Litestar application factory and setup."""
 
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from logging import DEBUG, Logger
-from typing import Any, cast
+from logging import DEBUG
 
-from fastapi.applications import FastAPI
-from fastapi.exception_handlers import http_exception_handler
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.requests import Request
+from litestar.app import Litestar
+from litestar.config.compression import CompressionConfig
+from litestar.connection.request import Request as LitestarRequest
+from litestar.file_system import BaseLocalFileSystem
+from litestar.handlers.http_handlers.decorators import get
+from litestar.middleware.base import ASGIMiddleware, DefineMiddleware
+from litestar.middleware.logging import LoggingMiddlewareConfig
+from litestar.openapi.config import OpenAPIConfig
+from litestar.openapi.plugins import ScalarRenderPlugin
+from litestar.response.base import Response as LitestarResponse
+from litestar.response.file import ASGIFileResponse
+from litestar.static_files.base import StaticFiles
+from litestar.types.internal_types import ControllerRouterHandler
 
-from anibridge.app import __version__, config, log
+from anibridge.app import __version__
+from anibridge.app.config.settings import get_config
 from anibridge.app.core.sched import SchedulerClient
 from anibridge.app.exceptions import AnibridgeError
+from anibridge.app.logging import APP_LOGGER_NAME, attach_handler, get_logger
 from anibridge.app.utils.paths import PROJECT_ROOT
 from anibridge.app.web.middlewares.basic_auth import BasicAuthMiddleware
 from anibridge.app.web.middlewares.request_logging import RequestLoggingMiddleware
-from anibridge.app.web.routes import router
+from anibridge.app.web.routes.api import router as api_router
+from anibridge.app.web.routes.webhook import router as webhook_router
+from anibridge.app.web.routes.ws import router as ws_router
+from anibridge.app.web.routes.z import router as z_router
 from anibridge.app.web.services.history_service import get_history_service
 from anibridge.app.web.services.logging_handler import get_log_ws_handler
 from anibridge.app.web.state import get_app_state
@@ -28,44 +38,43 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["create_app"]
 
 FRONTEND_BUILD_DIR = PROJECT_ROOT / "frontend" / "build"
+log = get_logger(APP_LOGGER_NAME)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator:
+async def lifespan(app: Litestar) -> AsyncGenerator[None]:
     """Application lifespan context manager.
 
     Args:
-        app (FastAPI): The FastAPI application instance.
+        app (Litestar): The Litestar application instance.
 
     Returns:
         AsyncGenerator: The application lifespan context manager.
     """
-    scheduler: SchedulerClient | None = app.extra.get("scheduler")
+    scheduler: SchedulerClient | None = getattr(app.state, "scheduler", None)
     if scheduler is None:
-        log.info("Web - No scheduler passed; external lifecycle management expected")
+        log.info("No scheduler passed; external lifecycle management expected")
     else:
         get_app_state().set_scheduler(scheduler)
         if not scheduler._running:
             await scheduler.initialize()
             await scheduler.start()
-            log.success("Web - Scheduler started for web UI")
+            log.success("Scheduler started for web UI")
 
     try:
         await get_app_state().ensure_public_anilist()
     except Exception:
-        log.debug("Web - Failed to initialize public AniList client at startup")
+        log.debug("Failed to initialize public AniList client at startup")
 
     purged_history_count = await get_history_service().purge_ephemeral_items()
     if purged_history_count:
         log.info(
-            "Web - Deleted %s ephemeral dry-run history entries at startup",
+            "Deleted %s ephemeral dry-run history entries at startup",
             purged_history_count,
         )
 
-    root_logger = cast(Logger, log)
     log_ws_handler = get_log_ws_handler()
-    if log_ws_handler not in root_logger.handlers:
-        root_logger.addHandler(log_ws_handler)
+    attach_handler(log_ws_handler)
     try:
         loop = asyncio.get_running_loop()
         log_ws_handler.set_event_loop(loop)
@@ -79,94 +88,120 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             await scheduler.stop()
 
 
-def create_app(scheduler: SchedulerClient | None = None) -> FastAPI:
-    """Create the FastAPI application.
+def litestar_domain_exception_handler(
+    request: LitestarRequest, exc: Exception
+) -> LitestarResponse[dict[str, str]]:
+    """Handle AniBridge errors inside the Litestar shell."""
+    status_code = getattr(exc.__class__, "status_code", 500)
+    return LitestarResponse(
+        content={
+            "error": exc.__class__.__name__,
+            "detail": str(exc) or exc.__class__.__doc__ or "",
+            "path": request.url.path,
+        },
+        status_code=status_code,
+    )
+
+
+async def _serve_frontend_asset(
+    path: str, *, is_head_response: bool = False
+) -> ASGIFileResponse:
+    return await StaticFiles(
+        is_html_mode=False,
+        directories=[FRONTEND_BUILD_DIR],
+        file_system=BaseLocalFileSystem(),
+        send_as_attachment=False,
+    ).handle(
+        path=path,
+        is_head_response=is_head_response,
+    )
+
+
+@get(path=["/", "/{path:path}"], include_in_schema=False)
+async def serve_spa(
+    path: str = "",
+) -> ASGIFileResponse:
+    """Serve built frontend assets and fall back to the SPA entrypoint."""
+    normalized_path = path.lstrip("/")
+
+    if bool(normalized_path) and "." in normalized_path.rsplit("/", 1)[-1]:
+        return await _serve_frontend_asset(normalized_path)
+
+    return await _serve_frontend_asset("index.html")
+
+
+def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
+    """Create the Litestar application.
 
     Args:
         scheduler (SchedulerClient | None): The scheduler client instance.
 
     Returns:
-        FastAPI: The created FastAPI application.
+        Litestar: The created Litestar application.
     """
-    app = FastAPI(title="AniBridge", lifespan=lifespan, version=__version__)
+    config = get_config()
+    middleware: list[ASGIMiddleware | DefineMiddleware] = []
+    compression_config = CompressionConfig(backend="gzip")
 
-    if scheduler:
-        app.extra["scheduler"] = scheduler
-
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-    # Add request logging middleware if in debug mode
-    if cast(Logger, log).level <= DEBUG:
-        app.add_middleware(cast(Any, RequestLoggingMiddleware))
-        log.debug("Web - Request logging enabled (debug mode)")
+    # Use Litestar's request/response logging when debug logging is enabled.
+    if log.getEffectiveLevel() <= DEBUG:
+        middleware.append(
+            LoggingMiddlewareConfig(
+                logger_name=APP_LOGGER_NAME,
+                middleware_class=RequestLoggingMiddleware,
+                request_log_fields=("method", "path", "query", "body"),
+                response_log_fields=("status_code",),
+            ).middleware
+        )
+        log.debug("Request logging enabled in debug mode")
 
     # Add basic auth middleware if configured
     if config.web.has_auth:
-        app.add_middleware(
-            cast(Any, BasicAuthMiddleware),
-            username=config.web.basic_auth.username,
-            password=config.web.basic_auth.password.get_secret_value()
-            if config.web.basic_auth.password
-            else None,
-            htpasswd_path=config.web.basic_auth.htpasswd_path,
-            realm=config.web.basic_auth.realm,
+        middleware.append(
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                username=config.web.basic_auth.username,
+                password=config.web.basic_auth.password.get_secret_value()
+                if config.web.basic_auth.password
+                else None,
+                htpasswd_path=config.web.basic_auth.htpasswd_path,
+                realm=config.web.basic_auth.realm,
+            )
         )
-        log.info("Web - HTTP Basic Authentication enabled for web UI")
+        log.info("HTTP Basic Authentication enabled for web UI")
 
-    app.include_router(router)
+    route_handlers: list[ControllerRouterHandler] = [
+        api_router,
+        ws_router,
+        webhook_router,
+        z_router,
+    ]
 
     index_file = FRONTEND_BUILD_DIR / "index.html"
     if not FRONTEND_BUILD_DIR.exists():
-        log.warning(
-            "Web - Frontend build directory does not exist, no SPA will be served"
-        )
-        return app
-    if not index_file.exists():
-        log.error("Web - Frontend index file does not exist, no SPA will be served")
-        return app
+        log.warning("Frontend build directory does not exist; no SPA will be served")
+    elif not index_file.exists():
+        log.error("Frontend index file does not exist; no SPA will be served")
+    else:
+        route_handlers.append(serve_spa)
 
-    app.mount("/", StaticFiles(directory=FRONTEND_BUILD_DIR, html=True), name="spa")
+    app = Litestar(
+        route_handlers=route_handlers,
+        middleware=middleware,
+        compression_config=compression_config,
+        lifespan=[lifespan],
+        openapi_config=OpenAPIConfig(
+            title="AniBridge",
+            description="AniBridge web API.",
+            version=__version__,
+            use_handler_docstrings=True,
+            path="/docs",
+            render_plugins=[ScalarRenderPlugin()],
+        ),
+        exception_handlers={AnibridgeError: litestar_domain_exception_handler},
+    )
 
-    api_prefixes = ("/api/", "/ws/", "/webhook/")
-
-    @app.exception_handler(StarletteHTTPException)
-    async def spa_404_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> Response:
-        """Serve SPA index.html for unknown routes.
-
-        Args:
-            request (Request): The incoming HTTP request.
-            exc (StarletteHTTPException): The exception instance.
-
-        Returns:
-            Response: The response to return.
-        """
-        if (
-            exc.status_code == 404
-            and not request.url.path.startswith(api_prefixes)
-            and "." not in request.url.path.rsplit("/", 1)[-1]
-        ):
-            return FileResponse(index_file)
-        return await http_exception_handler(request, exc)
-
-    @app.exception_handler(AnibridgeError)
-    def domain_exception_handler(request: Request, exc: AnibridgeError) -> JSONResponse:
-        """Handle AniBridge errors with structured JSON responses.
-
-        Args:
-            request (Request): The incoming HTTP request.
-            exc (AnibridgeError): The exception instance.
-
-        Returns:
-            JSONResponse: Structured JSON response with error details.
-        """
-        cls = exc.__class__
-        payload = {
-            "error": cls.__name__,
-            "detail": str(exc) or cls.__doc__ or "",
-            "path": request.url.path,
-        }
-        return JSONResponse(status_code=cls.status_code, content=payload)
+    if scheduler:
+        app.state.scheduler = scheduler
 
     return app

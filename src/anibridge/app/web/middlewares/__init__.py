@@ -1,1 +1,1 @@
-"""FastAPI middlewares."""
+"""Web middleware package."""

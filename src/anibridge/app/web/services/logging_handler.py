@@ -4,14 +4,22 @@ import asyncio
 import logging
 import threading
 from datetime import UTC, datetime
-from typing import Any
+from typing import Protocol
 
 from anibridge.utils.cache import cache
-from starlette.websockets import WebSocket
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
 
 __all__ = ["WebsocketLogHandler", "get_log_ws_handler"]
+
+log = get_logger(__name__)
+
+
+class LogSocket(Protocol):
+    """Minimal websocket interface required for log streaming."""
+
+    async def send_json(self, data: dict[str, str | None], /) -> None:
+        """Send a JSON payload to the connected websocket client."""
 
 
 class WebsocketLogHandler(logging.Handler):
@@ -20,9 +28,9 @@ class WebsocketLogHandler(logging.Handler):
     def __init__(self) -> None:
         """Initialize the WebsocketLogHandler."""
         super().__init__()
-        self._connections: set[WebSocket] = set()
+        self._connections: set[LogSocket] = set()
         self._lock = threading.RLock()
-        self._tasks: set[asyncio.Task[Any]] = set()  # Prevents early GC
+        self._tasks: set[asyncio.Task[None]] = set()  # Prevents early GC
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -33,7 +41,7 @@ class WebsocketLogHandler(logging.Handler):
         """
         self._loop = loop
 
-    async def add(self, ws: WebSocket) -> None:
+    async def add(self, ws: LogSocket) -> None:
         """Add a websocket connection to the handler.
 
         Args:
@@ -43,7 +51,7 @@ class WebsocketLogHandler(logging.Handler):
             self._connections.add(ws)
         log.debug("Client added (%s total)", len(self._connections))
 
-    async def remove(self, ws: WebSocket) -> None:
+    async def remove(self, ws: LogSocket) -> None:
         """Remove a websocket connection from the handler.
 
         Args:
@@ -98,7 +106,7 @@ class WebsocketLogHandler(logging.Handler):
             return
 
     async def _safe_send(
-        self, ws: WebSocket, msg: str, level: str, created: float | None
+        self, ws: LogSocket, msg: str, level: str, created: float | None
     ) -> None:
         """Send a message to a websocket connection.
 

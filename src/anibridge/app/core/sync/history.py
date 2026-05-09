@@ -9,14 +9,15 @@ from anibridge.library import LibraryEntry
 from anibridge.utils.mappings import AnibridgeDescriptorMapping, descriptor_key
 from sqlalchemy.sql import tuple_
 
-from anibridge.app import log
 from anibridge.app.core.sync.stats import EntrySnapshot
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.animap import AnimapEntry
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 
 __all__ = ["FAILURE_HISTORY_CLEANUP_BATCH_SIZE", "SyncHistoryManager"]
 
 FAILURE_HISTORY_CLEANUP_BATCH_SIZE = 256
+log = get_logger(__name__)
 
 
 class SyncHistoryManager:

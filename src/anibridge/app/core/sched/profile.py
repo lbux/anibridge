@@ -8,16 +8,18 @@ from typing import Any
 
 import msgspec
 
-from anibridge.app import log
 from anibridge.app.config.settings import ScanMode
 from anibridge.app.core.bridge import BridgeClient
 from anibridge.app.exceptions import SchedulerUnavailableError
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.cron import (
     CronStr,
     get_next_interval_seconds,
     get_next_run_datetime,
 )
 from anibridge.app.utils.human import human_duration
+
+log = get_logger(__name__)
 
 
 class _SyncRequest(msgspec.Struct):

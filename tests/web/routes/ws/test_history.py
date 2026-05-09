@@ -1,9 +1,10 @@
 """Tests for history websocket endpoint."""
 
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from fastapi import WebSocketDisconnect
+from litestar.connection.websocket import WebSocket
+from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
 
 from anibridge.app.web.routes.ws import history as history_ws_module
 
@@ -36,12 +37,12 @@ async def test_history_websocket_sends_latest_id_updates(monkeypatch) -> None:
             return 42
 
     async def _disconnect(_seconds: float) -> None:
-        raise WebSocketDisconnect
+        raise WebSocketDisconnect(detail="disconnect event")
 
     monkeypatch.setattr(history_ws_module, "get_history_service", lambda: _Service())
     monkeypatch.setattr(history_ws_module.asyncio, "sleep", _disconnect)
 
-    await history_ws_module.history_websocket(cast(Any, websocket), "default")
+    await history_ws_module.history_websocket.fn(cast(WebSocket, websocket), "default")
 
     assert websocket.accepted is True
     assert websocket.messages == [
@@ -59,7 +60,7 @@ async def test_history_websocket_closes_on_unexpected_errors(monkeypatch) -> Non
 
     monkeypatch.setattr(history_ws_module, "get_history_service", lambda: _Service())
 
-    await history_ws_module.history_websocket(cast(Any, websocket), "default")
+    await history_ws_module.history_websocket.fn(cast(WebSocket, websocket), "default")
 
     assert websocket.accepted is True
     assert websocket.closed is True

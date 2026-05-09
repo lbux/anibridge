@@ -44,15 +44,6 @@ def test_get_pyproject_version_returns_unknown_for_uninstalled_package(
     assert version_module.get_pyproject_version() == "unknown"
 
 
-def test_get_git_hash_returns_unknown_without_project_root(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A missing project root should skip git probing."""
-    monkeypatch.setattr(version_module, "PROJECT_ROOT", None)
-
-    assert version_module.get_git_hash() == "unknown"
-
-
 def test_get_git_hash_reads_direct_head_commit(tmp_path: Path, monkeypatch) -> None:
     """Detached HEAD commits should be returned directly from `.git/HEAD`."""
     git_dir = tmp_path / ".git"

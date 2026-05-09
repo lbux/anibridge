@@ -1,11 +1,14 @@
 """Tests for mappings API routes."""
 
 import asyncio
+from collections.abc import Callable, Coroutine
 from contextlib import contextmanager
+from typing import cast
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from litestar.app import Litestar
+from litestar.router import Router
+from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.config.database import db
 from anibridge.app.exceptions import (
@@ -18,10 +21,12 @@ from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapPro
 from anibridge.app.web.routes.api import mappings as mappings_api_module
 
 
-def _build_app() -> FastAPI:
-    app = FastAPI()
-    app.include_router(mappings_api_module.router, prefix="/api/mappings")
-    return app
+def _build_app() -> Litestar:
+    return Litestar(
+        route_handlers=[
+            Router(path="/api", route_handlers=[mappings_api_module.router])
+        ]
+    )
 
 
 @contextmanager
@@ -71,6 +76,14 @@ def test_query_capabilities_include_distinct_provider_values() -> None:
 
 
 def test_list_mappings_and_override_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    update_mapping = cast(
+        Callable[
+            [str, mappings_api_module.MappingOverridePayload],
+            Coroutine[object, object, mappings_api_module.MappingDetailModel],
+        ],
+        mappings_api_module.update_mapping.fn,
+    )
+
     class _MappingsService:
         async def list_mappings(self, **kwargs):
             assert kwargs["page"] == 2
@@ -150,7 +163,7 @@ def test_list_mappings_and_override_routes(monkeypatch: pytest.MonkeyPatch) -> N
     assert created.status_code == 200
 
     updated = asyncio.run(
-        mappings_api_module.update_mapping(
+        update_mapping(
             "anilist:1",
             mappings_api_module.MappingOverridePayload(
                 descriptor="anilist:1",
@@ -162,7 +175,7 @@ def test_list_mappings_and_override_routes(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(MappingIdMismatchError):
         asyncio.run(
-            mappings_api_module.update_mapping(
+            update_mapping(
                 "anilist:1",
                 mappings_api_module.MappingOverridePayload(
                     descriptor="anilist:2",
@@ -178,7 +191,6 @@ def test_list_mappings_and_override_routes(monkeypatch: pytest.MonkeyPatch) -> N
         (BooruQuerySyntaxError("bad"), 400),
         (AniListFilterError("bad filter"), 400),
         (AniListSearchError("lookup failed"), 502),
-        (asyncio.CancelledError(), 499),
     ],
 )
 def test_list_mappings_translates_service_errors(

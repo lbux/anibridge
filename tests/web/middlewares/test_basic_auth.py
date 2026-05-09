@@ -3,10 +3,18 @@
 import base64
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from litestar.app import Litestar
+from litestar.connection.request import Request
+from litestar.connection.websocket import WebSocket
+from litestar.handlers.http_handlers.decorators import get
+from litestar.handlers.websocket_handlers.route_handler import websocket
+from litestar.middleware.base import DefineMiddleware
+from litestar.testing.client.sync_client import TestClient
+from litestar.types.asgi_types import HeaderScope, Scope, WebSocketReceiveEvent
+from litestar.types.internal_types import ControllerRouterHandler
 from pydantic import SecretStr
 from pytest import MonkeyPatch
 
@@ -25,19 +33,87 @@ def _basic_auth_header(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Basic {token}"}
 
 
-def test_basic_auth_middleware_challenges_and_allows_access() -> None:
-    """BasicAuthMiddleware challenges invalid credentials and allows valid ones."""
-    test_app = FastAPI()
-    test_app.add_middleware(
-        BasicAuthMiddleware,  # type: ignore[arg-type]
-        username="admin",
-        password="secret",
-        realm="Realm",
-    )
-
-    @test_app.get("/protected")
+def _build_app(
+    *, middleware: list[DefineMiddleware], include_probe_routes: bool = False
+) -> Litestar:
+    @get("/protected")
     async def protected() -> dict[str, bool]:
         return {"ok": True}
+
+    route_handlers: list[ControllerRouterHandler] = [protected]
+
+    if include_probe_routes:
+
+        @get("/livez")
+        async def livez() -> dict[str, str]:
+            return {"status": "ok"}
+
+        @get("/healthz")
+        async def healthz() -> dict[str, str]:
+            return {"status": "ok"}
+
+        @get("/readyz")
+        async def readyz() -> dict[str, object]:
+            return {"status": "ok", "ready": True}
+
+        route_handlers.extend([livez, healthz, readyz])
+
+    return Litestar(route_handlers=route_handlers, middleware=middleware)
+
+
+@websocket("/ws-probe")
+async def _ws_probe(socket: WebSocket) -> None:
+    await socket.accept()
+
+
+async def _noop_asgi_app(scope, receive, send) -> None:
+    return None
+
+
+def _make_header_scope(headers: list[tuple[bytes, bytes]]) -> HeaderScope:
+    return {"headers": headers}
+
+
+def _make_websocket_scope() -> Scope:
+    return cast(
+        Scope,
+        {
+            "type": "websocket",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "auth": None,
+            "client": ("127.0.0.1", 12345),
+            "extensions": None,
+            "http_version": "1.1",
+            "path": "/ws-probe",
+            "path_params": {},
+            "path_template": "/ws-probe",
+            "query_string": b"",
+            "raw_path": b"/ws-probe",
+            "root_path": "",
+            "route_handler": _ws_probe,
+            "scheme": "ws",
+            "server": ("testserver", 80),
+            "session": None,
+            "state": {},
+            "subprotocols": [],
+            "user": None,
+            "headers": [],
+        },
+    )
+
+
+def test_basic_auth_middleware_challenges_and_allows_access() -> None:
+    """BasicAuthMiddleware challenges invalid credentials and allows valid ones."""
+    test_app = _build_app(
+        middleware=[
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                username="admin",
+                password="secret",
+                realm="Realm",
+            )
+        ]
+    )
 
     client = TestClient(test_app)
 
@@ -66,16 +142,15 @@ def test_basic_auth_middleware_allows_access_with_htpasswd(
         encoding="utf-8",
     )  # bcrypt hash for "test"
 
-    test_app = FastAPI()
-    test_app.add_middleware(
-        BasicAuthMiddleware,  # type: ignore[arg-type]
-        htpasswd_path=htpasswd_file,
-        realm="Realm",
+    test_app = _build_app(
+        middleware=[
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                htpasswd_path=htpasswd_file,
+                realm="Realm",
+            )
+        ]
     )
-
-    @test_app.get("/protected")
-    async def protected() -> dict[str, bool]:
-        return {"ok": True}
 
     client = TestClient(test_app)
 
@@ -89,6 +164,32 @@ def test_basic_auth_middleware_allows_access_with_htpasswd(
     assert success.json() == {"ok": True}
 
 
+def test_basic_auth_middleware_sets_request_user_and_auth() -> None:
+    """Successful authentication should populate request.user and request.auth."""
+
+    @get("/identity")
+    async def identity(request: Request) -> dict[str, str]:
+        return {"user": request.user, "auth": request.auth}
+
+    test_app = Litestar(
+        route_handlers=[identity],
+        middleware=[
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                username="admin",
+                password="secret",
+                realm="Realm",
+            )
+        ],
+    )
+
+    client = TestClient(test_app)
+    response = client.get("/identity", headers=_basic_auth_header("admin", "secret"))
+
+    assert response.status_code == 200
+    assert response.json() == {"user": "admin", "auth": "basic"}
+
+
 def test_basic_auth_middleware_plain_and_htpasswd(
     tmp_path: Path,
 ) -> None:
@@ -99,18 +200,17 @@ def test_basic_auth_middleware_plain_and_htpasswd(
         encoding="utf-8",
     )  # bcrypt hash for "test"
 
-    test_app = FastAPI()
-    test_app.add_middleware(
-        BasicAuthMiddleware,  # type: ignore[arg-type]
-        username="plainuser",
-        password="plainpass",
-        htpasswd_path=htpasswd_file,
-        realm="Realm",
+    test_app = _build_app(
+        middleware=[
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                username="plainuser",
+                password="plainpass",
+                htpasswd_path=htpasswd_file,
+                realm="Realm",
+            )
+        ]
     )
-
-    @test_app.get("/protected")
-    async def protected() -> dict[str, bool]:
-        return {"ok": True}
 
     client = TestClient(test_app)
 
@@ -131,29 +231,17 @@ def test_basic_auth_middleware_plain_and_htpasswd(
 
 def test_basic_auth_middleware_bypasses_probe_endpoints() -> None:
     """BasicAuthMiddleware should not challenge unauthenticated probe endpoints."""
-    test_app = FastAPI()
-    test_app.add_middleware(
-        BasicAuthMiddleware,  # type: ignore[arg-type]
-        username="admin",
-        password="secret",
-        realm="Realm",
+    test_app = _build_app(
+        middleware=[
+            DefineMiddleware(
+                BasicAuthMiddleware,
+                username="admin",
+                password="secret",
+                realm="Realm",
+            )
+        ],
+        include_probe_routes=True,
     )
-
-    @test_app.get("/livez")
-    async def livez() -> dict[str, str]:
-        return {"status": "ok"}
-
-    @test_app.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
-
-    @test_app.get("/readyz")
-    async def readyz() -> dict[str, object]:
-        return {"status": "ok", "ready": True}
-
-    @test_app.get("/protected")
-    async def protected() -> dict[str, bool]:
-        return {"ok": True}
 
     client = TestClient(test_app)
 
@@ -175,27 +263,18 @@ def test_basic_auth_middleware_bypasses_probe_endpoints() -> None:
 def test_basic_auth_extract_credentials_handles_invalid_headers() -> None:
     """Malformed Authorization headers should be ignored safely."""
 
-    def _app(scope, receive, send):
-        pass
+    middleware = BasicAuthMiddleware(app=_noop_asgi_app)
 
-    middleware = BasicAuthMiddleware(_app)
-
-    scope = {"type": "http", "headers": []}
+    scope = _make_header_scope([])
     assert middleware._extract_credentials(scope) is None
 
-    bad_scheme = {"type": "http", "headers": [(b"authorization", b"Bearer token")]}
+    bad_scheme = _make_header_scope([(b"authorization", b"Bearer token")])
     assert middleware._extract_credentials(bad_scheme) is None
 
-    invalid_base64 = {
-        "type": "http",
-        "headers": [(b"authorization", b"Basic !!!")],
-    }
+    invalid_base64 = _make_header_scope([(b"authorization", b"Basic !!!")])
     assert middleware._extract_credentials(invalid_base64) is None
 
-    missing_separator = {
-        "type": "http",
-        "headers": [(b"authorization", b"Basic dXNlcg==")],
-    }
+    missing_separator = _make_header_scope([(b"authorization", b"Basic dXNlcg==")])
     assert middleware._extract_credentials(missing_separator) is None
 
 
@@ -209,11 +288,8 @@ def test_basic_auth_load_htpasswd_handles_cache_and_errors(
         encoding="utf-8",
     )
 
-    def _app(scope, receive, send):
-        pass
-
-    middleware = BasicAuthMiddleware(  # type: ignore[arg-type]
-        _app,
+    middleware = BasicAuthMiddleware(
+        app=_noop_asgi_app,
         htpasswd_path=htpasswd_file,
     )
 
@@ -231,8 +307,8 @@ def test_basic_auth_load_htpasswd_handles_cache_and_errors(
     assert calls["count"] == 1
     assert middleware._validate_htpasswd("test", "test") is True
 
-    missing = BasicAuthMiddleware(  # type: ignore[arg-type]
-        lambda scope, receive, send: None,
+    missing = BasicAuthMiddleware(
+        app=_noop_asgi_app,
         htpasswd_path=tmp_path / "missing",
     )
     assert missing._load_htpasswd() is None
@@ -241,8 +317,8 @@ def test_basic_auth_load_htpasswd_handles_cache_and_errors(
         def stat(self):
             raise OSError("boom")
 
-    broken = BasicAuthMiddleware(  # type: ignore[arg-type]
-        lambda scope, receive, send: None,
+    broken = BasicAuthMiddleware(
+        app=_noop_asgi_app,
         htpasswd_path=_BrokenPath(),
     )
     assert broken._load_htpasswd() is None
@@ -257,14 +333,14 @@ async def test_basic_auth_middleware_passes_through_non_http() -> None:
         nonlocal called
         called = True
 
-    def _middleware_receive():
-        return {"type": "websocket.receive", "text": "hello"}
+    async def _middleware_receive() -> WebSocketReceiveEvent:
+        return {"type": "websocket.receive", "bytes": None, "text": "hello"}
 
     async def _middleware_send(message) -> None:
         pass
 
     middleware = BasicAuthMiddleware(app)
-    await middleware({"type": "websocket"}, _middleware_receive, _middleware_send)
+    await middleware(_make_websocket_scope(), _middleware_receive, _middleware_send)
 
     assert called is True
 
@@ -282,7 +358,7 @@ def test_create_app_registers_basic_auth_middleware_when_configured(
         )
     )
     test_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", test_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: test_config)
 
     # Ensure the SPA assets check passes
     index_file = tmp_path / "index.html"
@@ -291,8 +367,9 @@ def test_create_app_registers_basic_auth_middleware_when_configured(
 
     app = app_module.create_app()
 
-    middleware_classes = {middleware.cls for middleware in app.user_middleware}
-    assert BasicAuthMiddleware in middleware_classes
+    with TestClient(app) as client:
+        assert client.get("/api/status").status_code == 401
+        assert client.get("/api/status", auth=("admin", "secret")).status_code == 200
 
 
 def test_create_app_skips_basic_auth_without_complete_credentials(
@@ -308,7 +385,7 @@ def test_create_app_skips_basic_auth_without_complete_credentials(
         )
     )
     incomplete_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", incomplete_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: incomplete_config)
 
     index_file = tmp_path / "index.html"
     index_file.write_text("<html></html>", encoding="utf-8")
@@ -316,8 +393,8 @@ def test_create_app_skips_basic_auth_without_complete_credentials(
 
     app = app_module.create_app()
 
-    middleware_classes = {middleware.cls for middleware in app.user_middleware}
-    assert BasicAuthMiddleware not in middleware_classes
+    with TestClient(app) as client:
+        assert client.get("/api/status").status_code == 200
 
 
 def test_create_app_registers_basic_auth_middleware_with_htpasswd(
@@ -339,7 +416,7 @@ def test_create_app_registers_basic_auth_middleware_with_htpasswd(
         )
     )
     test_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", test_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: test_config)
 
     # Ensure the SPA assets check passes
     index_file = tmp_path / "index.html"
@@ -348,8 +425,9 @@ def test_create_app_registers_basic_auth_middleware_with_htpasswd(
 
     app = app_module.create_app()
 
-    middleware_classes = {middleware.cls for middleware in app.user_middleware}
-    assert BasicAuthMiddleware in middleware_classes
+    with TestClient(app) as client:
+        assert client.get("/api/status").status_code == 401
+        assert client.get("/api/status", auth=("test", "test")).status_code == 200
 
 
 def test_create_app_lifespan_purges_ephemeral_history_on_startup(
