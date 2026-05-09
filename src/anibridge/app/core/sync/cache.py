@@ -5,10 +5,12 @@ from typing import Any
 
 from anibridge.list import ListEntry, ListProvider
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.pin import Pin
 
 __all__ = ["SyncCacheManager"]
+
+log = get_logger(__name__)
 
 
 class SyncCacheManager:

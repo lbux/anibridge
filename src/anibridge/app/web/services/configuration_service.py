@@ -10,16 +10,18 @@ import yaml
 from anibridge.utils.cache import cache
 from pydantic import BaseModel, SecretStr
 
-from anibridge.app import log
 from anibridge.app.config.settings import (
     AnibridgeConfig,
     find_yaml_config_file,
     get_config,
 )
 from anibridge.app.exceptions import SchedulerUnavailableError
+from anibridge.app.logging import get_logger
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["ConfigurationService", "get_configuration_service"]
+
+log = get_logger(__name__)
 
 _RESTART_REQUIRED_FIELDS: tuple[str, ...] = (
     "log_level",

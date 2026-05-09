@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from anibridge.app import config as app_config
+from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import (
     MappingError,
     MissingDescriptorError,
@@ -35,6 +35,7 @@ class DummyScheduler:
 @pytest.fixture()
 def overrides_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Set up environment for mapping overrides tests."""
+    app_config = get_config()
     monkeypatch.setattr(app_config, "data_path", tmp_path)
     monkeypatch.setattr(
         MappingOverridesService,

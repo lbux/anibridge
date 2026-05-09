@@ -10,71 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 import uvicorn
 from pydantic import ValidationError
 
-from anibridge.app import ANIBDRIGE_HEADER, log
-from anibridge.app.config.settings import get_config
+from anibridge.app import ANIBDRIGE_HEADER, initialize_runtime
 from anibridge.app.core.sched import SchedulerClient
+from anibridge.app.logging import APP_LOGGER_NAME, configure_logging, get_logger
 from anibridge.app.utils.terminal import supports_color
 from anibridge.app.web.app import create_app
 from anibridge.app.web.state import get_app_state
 
-
-def validate_configuration():
-    """Validate the application configuration and display profile information.
-
-    Returns:
-        bool: True if configuration is valid, False otherwise
-    """
-    config = get_config()
-
-    def _profile_error(profile_name: str) -> str | None:
-        try:
-            profile_config = config.get_profile(profile_name)
-            log.info(f"AniBridge - Profile $$'{profile_name}'$$: {profile_config!s}")
-        except KeyError as e:
-            return f"AniBridge - Profile $$'{profile_name}'$$ not found: {e}"
-        except ValidationError as e:
-            return (
-                f"AniBridge - Invalid configuration for profile "
-                f"$$'{profile_name}'$$: {e}"
-            )
-        except ValueError as e:
-            return (
-                f"AniBridge - Configuration error for profile $$'{profile_name}'$$: {e}"
-            )
-        except (AttributeError, TypeError) as e:
-            return (
-                f"AniBridge - Configuration structure error for profile "
-                f"$$'{profile_name}'$$: {e}"
-            )
-        return None
-
-    try:
-        if len(config.profiles) == 0:
-            log.warning("AniBridge - No sync profiles configured")
-            return True
-
-        errors = [
-            message
-            for profile_name in config.profiles
-            if (message := _profile_error(profile_name)) is not None
-        ]
-
-        for message in errors:
-            log.error(message)
-
-        return not errors
-    except ValidationError as e:
-        log.error(f"AniBridge - Global configuration validation failed: {e}")
-        return False
-    except ValueError as e:
-        log.error(f"AniBridge - Configuration value error: {e}")
-        return False
-    except (OSError, PermissionError) as e:
-        log.error(f"AniBridge - File system error during configuration: {e}")
-        return False
-    except Exception as e:
-        log.error(f"AniBridge - Unexpected configuration error: {e}", exc_info=True)
-        return False
+log = get_logger(APP_LOGGER_NAME)
 
 
 async def run() -> int:
@@ -88,10 +31,12 @@ async def run() -> int:
     app_scheduler: SchedulerClient | None = None
     server_task: asyncio.Task | None = None
     server: uvicorn.Server | None = None
-    config = get_config()
 
     ret = 0
     try:
+        config = initialize_runtime()
+        configure_logging(level=config.log_level, log_dir=config.data_path / "logs")
+
         loop = asyncio.get_running_loop()
         old_executor = loop._default_executor  # ty:ignore[unresolved-attribute]
         executor = ThreadPoolExecutor(max_workers=config.threads)
@@ -100,9 +45,6 @@ async def run() -> int:
             old_executor.shutdown(wait=False)
 
         log.info("\n" + ANIBDRIGE_HEADER)
-
-        if not validate_configuration():
-            return 1
 
         if config.web.enabled:
             app = create_app()
@@ -123,7 +65,7 @@ async def run() -> int:
             server_task = asyncio.create_task(server._serve())
 
             log.success(
-                "AniBridge - Web UI started at "
+                "Web UI started at "
                 f"\033[92mhttp://{config.web.host}:{config.web.port} "
                 "(ctrl+c to stop)\033[0m"
                 if supports_color()
@@ -142,33 +84,33 @@ async def run() -> int:
 
         await app_scheduler.wait_for_completion()
     except KeyboardInterrupt:
-        log.info("AniBridge - Keyboard interrupt received, shutting down...")
+        log.info("Keyboard interrupt received, shutting down")
     except ValidationError as e:
-        log.error(f"AniBridge - Configuration validation error: {e}")
+        log.error("Configuration validation error: %s", e)
         return 1
     except ConnectionError as e:
-        log.error(f"AniBridge - Connection error: {e}")
+        log.error("Connection error: %s", e)
         return 1
     except (OSError, PermissionError) as e:
-        log.error(f"AniBridge - File system error: {e}")
+        log.error("File system error: %s", e)
         return 1
     except asyncio.CancelledError:
-        log.info("AniBridge - Application cancelled")
+        log.info("Application cancelled")
         return 0
     except Exception as e:
-        log.error(f"AniBridge - Unexpected application error: {e}", exc_info=True)
+        log.error("Unexpected application error: %s", e, exc_info=True)
         return 1
     finally:
         if app_scheduler:
-            log.info("AniBridge - Shutting down application...")
+            log.info("Shutting down application")
             try:
                 await app_scheduler.stop()
-                log.success("AniBridge - Application shutdown complete")
+                log.success("Application shutdown complete")
             except asyncio.CancelledError:
-                log.info("AniBridge - Shutdown cancelled")
+                log.info("Shutdown cancelled")
                 ret = 1
             except Exception as e:
-                log.error(f"AniBridge - Error during shutdown: {e}", exc_info=True)
+                log.error("Error during shutdown: %s", e, exc_info=True)
                 ret = 1
 
         if server and server_task and not server_task.done():
@@ -176,12 +118,12 @@ async def run() -> int:
 
     app_state = get_app_state()
     if app_state.restart_requested:
-        log.info("AniBridge - Restart requested, re-executing process...")
+        log.info("Restart requested, re-executing process")
         app_state.restart_requested = False
         try:
             os.execv(sys.executable, [sys.executable, *sys.argv])
         except Exception as e:
-            log.error(f"AniBridge - Failed to restart process: {e}", exc_info=True)
+            log.error("Failed to restart process: %s", e, exc_info=True)
             ret = 1
 
     return ret
@@ -196,7 +138,7 @@ def _setup_signal_handlers_for_scheduler(scheduler: SchedulerClient) -> None:
 
     def _on_signal(sig):
         name = signal.Signals(sig).name if sig else "UNKNOWN"
-        log.info(f"AniBridge - Received {name} signal, initiating graceful shutdown...")
+        log.info("Received %s signal, initiating graceful shutdown", name)
         try:
             scheduler.request_shutdown()
         except Exception:
@@ -231,7 +173,7 @@ async def _shutdown_web_server(
         return
     except TimeoutError:
         log.warning(
-            "AniBridge - Web server shutdown timed out after %.1fs; forcing exit",
+            "Web server shutdown timed out after %.1fs; forcing exit",
             timeout_duration,
         )
 
@@ -241,8 +183,7 @@ async def _shutdown_web_server(
             await asyncio.shield(server_task)
     except TimeoutError:
         log.error(
-            "AniBridge - Forced web server shutdown timed out after %.1fs; "
-            "cancelling server task",
+            "Forced web server shutdown timed out after %.1fs; cancelling server task",
             force_timeout_duration,
         )
         server_task.cancel()
@@ -264,10 +205,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return asyncio.run(run())
     except KeyboardInterrupt:
-        log.info("AniBridge - Application interrupted")
+        log.info("Application interrupted")
         return 0
     except Exception as e:
-        log.error(f"AniBridge - Fatal error: {e}", exc_info=True)
+        log.error("Fatal error: %s", e, exc_info=True)
         return 1
 
 

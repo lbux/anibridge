@@ -42,22 +42,26 @@ _TEST_CONFIG_FILE.write_text(
 
 from anibridge.utils.limiter import Limiter  # noqa: E402
 
+import anibridge.app.logging as logging_module  # noqa: E402
+from anibridge.app import initialize_runtime  # noqa: E402
 from anibridge.app.config import settings as settings_module  # noqa: E402
 from anibridge.app.config.database import db as db_factory  # noqa: E402
 from anibridge.app.models.db.base import Base  # noqa: E402
-from anibridge.app.utils import logging as logging_module  # noqa: E402
 from anibridge.app.web.state import get_app_state  # noqa: E402
 
 settings_module.get_config.cache_clear()
-logging_module.get_logger.cache_clear()
+logging_module.reset_logging()
 db_factory.cache_clear()
 
 src_module = sys.modules.get("anibridge.app")
 if src_module is None:
     src_module = importlib.import_module("anibridge.app")
 
-src_module.config = settings_module.get_config()  # type: ignore
-src_module.log = logging_module.get_logger()  # type: ignore
+config = initialize_runtime()
+logging_module.configure_logging(
+    level=config.log_level,
+    log_dir=config.data_path / "logs",
+)
 
 Limiter.DISABLED = True
 

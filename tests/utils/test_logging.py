@@ -6,9 +6,9 @@ from logging.handlers import RotatingFileHandler
 import colorama
 import pytest
 
-import anibridge.app.utils.logging as logging_module
+import anibridge.app.logging as logging_module
 import anibridge.app.utils.terminal as terminal_module
-from anibridge.app.utils.logging import CleanFormatter, ColorFormatter, Logger
+from anibridge.app.logging import CleanFormatter, ColorFormatter, Logger
 
 
 def test_color_formatter_applies_color_codes():
@@ -55,8 +55,8 @@ def test_clean_formatter_removes_markers():
     assert record.msg == original_message
 
 
-def test_logger_prefixes_class_name():
-    """Test that Logger prefixes messages with the class name."""
+def test_logger_preserves_instance_messages():
+    """Logger should not rewrite messages emitted from instance methods."""
     logger = Logger("test")
     logger.setLevel(logging.DEBUG)
     captured = []
@@ -76,11 +76,11 @@ def test_logger_prefixes_class_name():
 
     Sample(logger).run()
 
-    assert captured and captured[0] == "Sample - hello"
+    assert captured and captured[0] == "hello"
 
 
-def test_logger_prefixes_classmethod_calls():
-    """Logger should prefix classmethod calls using the cls variable when debug."""
+def test_logger_preserves_classmethod_messages():
+    """Logger should not rewrite messages emitted from class methods."""
     logger = Logger("test")
     logger.setLevel(logging.DEBUG)
     captured: list[str] = []
@@ -100,7 +100,7 @@ def test_logger_prefixes_classmethod_calls():
 
     Sample.run()
 
-    assert captured and captured[0] == "Sample - clazz"
+    assert captured and captured[0] == "clazz"
 
 
 def test_logger_success_level_records_message():

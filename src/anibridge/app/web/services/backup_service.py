@@ -8,7 +8,6 @@ import msgspec
 import msgspec.json
 from anibridge.utils.cache import cache
 
-from anibridge.app import log
 from anibridge.app.exceptions import (
     BackupFileNotFoundError,
     BackupParseError,
@@ -17,9 +16,12 @@ from anibridge.app.exceptions import (
     SchedulerNotInitializedError,
     SchedulerUnavailableError,
 )
+from anibridge.app.logging import get_logger
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BackupService", "get_backup_service"]
+
+log = get_logger(__name__)
 
 
 class BackupMeta(msgspec.Struct):

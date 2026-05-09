@@ -2,8 +2,7 @@
 
 from anibridge.utils.cache import set_default_cache_dir
 
-from anibridge.app.config.settings import get_config
-from anibridge.app.utils.logging import get_logger
+from anibridge.app.config.settings import AnibridgeConfig
 from anibridge.app.utils.terminal import supports_utf8
 from anibridge.app.utils.version import (
     get_docker_status,
@@ -18,10 +17,6 @@ __maintainer__ = "eliasbenb"
 __email__ = "eliasbenbourenane@gmail.com"
 __version__ = get_pyproject_version()
 __git_hash__ = get_git_hash()
-
-
-config = get_config()
-log = get_logger()
 
 if supports_utf8():
     ANIBDRIGE_HEADER = f"""
@@ -54,4 +49,11 @@ else:
 |                                                                               |
 +-------------------------------------------------------------------------------+""".strip()
 
-set_default_cache_dir(config.data_path / ".cache")
+
+def initialize_runtime() -> AnibridgeConfig:
+    """Initialize runtime paths that depend on the resolved config."""
+    from anibridge.app.config.settings import get_config
+
+    config = get_config()
+    set_default_cache_dir(config.data_path / ".cache")
+    return config

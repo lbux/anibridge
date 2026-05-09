@@ -16,7 +16,6 @@ from anibridge.library import (
 from anibridge.list import ListProvider
 from litestar.connection.request import Request
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import AnibridgeConfig, AnibridgeProfileConfig
 from anibridge.app.core.animap import AnimapClient
@@ -25,6 +24,7 @@ from anibridge.app.core.sync.movie import MovieSyncClient
 from anibridge.app.core.sync.show import ShowSyncClient
 from anibridge.app.core.sync.stats import SyncProgress, SyncStats
 from anibridge.app.exceptions import MediaTypeError
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.housekeeping import Housekeeping
 from anibridge.app.models.db.sync_history import SyncOutcome
 from anibridge.app.utils.cron import get_next_interval_seconds
@@ -33,6 +33,8 @@ from anibridge.app.utils.terminal import ARROW
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["BridgeClient"]
+
+log = get_logger(__name__)
 
 
 class BridgeClient:

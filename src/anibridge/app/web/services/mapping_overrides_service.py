@@ -15,7 +15,6 @@ from anibridge.utils.mappings import (
     parse_mapping_descriptor,
 )
 
-from anibridge.app import config
 from anibridge.app.config.settings import get_config
 from anibridge.app.core.mappings import MappingsClient
 from anibridge.app.exceptions import (
@@ -45,8 +44,9 @@ class MappingOverridesService:
     def __init__(self) -> None:
         """Initialise synchronization primitives for override operations."""
         self._lock = asyncio.Lock()
+        self._config = get_config()
         self._mapping_client = MappingsClient(
-            config.data_path, get_config().mappings_url
+            self._config.data_path, self._config.mappings_url
         )
 
     def _ensure_scheduler(self):
@@ -58,9 +58,11 @@ class MappingOverridesService:
 
     def _resolve_custom_file(self) -> tuple[Path, str]:
         """Determine the path and format of the custom mappings override file."""
-        candidates = [config.data_path / name for name in MappingsClient.MAPPING_FILES]
+        candidates = [
+            self._config.data_path / name for name in MappingsClient.MAPPING_FILES
+        ]
         if not candidates or not candidates[0].exists():
-            return config.data_path / "mappings.json", "json"
+            return self._config.data_path / "mappings.json", "json"
         if candidates[0].suffix.lower() == ".json":
             return candidates[0], "json"
         return candidates[0], "yaml"
@@ -99,7 +101,7 @@ class MappingOverridesService:
 
     async def _load_upstream(self) -> dict[str, Any]:
         """Load the upstream mappings payload (without merging custom)."""
-        upstream_url = get_config().mappings_url
+        upstream_url = self._config.mappings_url
         if not upstream_url:
             return {}
         return await self._mapping_client.load_source(upstream_url)

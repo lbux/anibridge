@@ -11,7 +11,6 @@ from anibridge.utils.cache import cache
 from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import func
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.core.sync.stats import EntrySnapshot
 from anibridge.app.exceptions import (
@@ -19,6 +18,7 @@ from anibridge.app.exceptions import (
     HistoryPermissionError,
     SchedulerNotInitializedError,
 )
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.pin import Pin
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 from anibridge.app.models.schemas.provider import ProviderMediaMetadata
@@ -26,6 +26,8 @@ from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state, get_bridge
 
 __all__ = ["HistoryService", "get_history_service"]
+
+log = get_logger(__name__)
 
 
 class HistoryItem(msgspec.Struct):

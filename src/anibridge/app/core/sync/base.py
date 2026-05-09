@@ -12,7 +12,6 @@ from anibridge.list import ListEntry, ListProvider, ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping
 from anibridge.utils.types import Comparable
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import SyncField, SyncRulesConfig
 from anibridge.app.core.animap import AnimapClient
@@ -26,10 +25,13 @@ from anibridge.app.core.sync.stats import (
     SyncStats,
 )
 from anibridge.app.core.sync.targeting import SyncTarget, diff_snapshots
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.sync_history import SyncOutcome
 from anibridge.app.utils.terminal import ARROW
 
 __all__ = ["BaseSyncClient"]
+
+log = get_logger(__name__)
 
 
 class _FieldApplicationState(msgspec.Struct):

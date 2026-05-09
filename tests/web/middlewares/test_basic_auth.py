@@ -358,7 +358,7 @@ def test_create_app_registers_basic_auth_middleware_when_configured(
         )
     )
     test_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", test_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: test_config)
 
     # Ensure the SPA assets check passes
     index_file = tmp_path / "index.html"
@@ -385,7 +385,7 @@ def test_create_app_skips_basic_auth_without_complete_credentials(
         )
     )
     incomplete_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", incomplete_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: incomplete_config)
 
     index_file = tmp_path / "index.html"
     index_file.write_text("<html></html>", encoding="utf-8")
@@ -416,7 +416,7 @@ def test_create_app_registers_basic_auth_middleware_with_htpasswd(
         )
     )
     test_config = AnibridgeConfig(web=web_config)
-    monkeypatch.setattr(app_module, "config", test_config, raising=False)
+    monkeypatch.setattr(app_module, "get_config", lambda: test_config)
 
     # Ensure the SPA assets check passes
     index_file = tmp_path / "index.html"

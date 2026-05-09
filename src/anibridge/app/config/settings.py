@@ -29,8 +29,8 @@ from anibridge.app.config.sync_rules import (
     SyncRuleTemplateId,
 )
 from anibridge.app.exceptions import ProfileConfigError, ProfileNotFoundError
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.cron import CronStr
-from anibridge.app.utils.logging import _get_logger
 
 __all__ = [
     "AnibridgeConfig",
@@ -44,7 +44,8 @@ __all__ = [
     "get_config",
 ]
 
-_log = _get_logger(__name__)
+log = get_logger(__name__)
+
 _SCHEMA_EXTRA_BEHAVIOR_KEY = "x-anibridge-extraBehavior"
 
 
@@ -390,7 +391,7 @@ class AnibridgeConfig(BaseSettings):
 
         # If there are no explicit profiles, attempt to bootstrap a default from globals
         if not self.profiles and self.global_config.model_fields_set:
-            _log.info(
+            log.info(
                 "No profiles configured; creating implicit 'default' profile from "
                 "globals"
             )
@@ -406,7 +407,7 @@ class AnibridgeConfig(BaseSettings):
             self.threads = len(self.profiles) + 1
 
         if (not self.web.basic_auth.username) != (not self.web.basic_auth.password):
-            _log.warning(
+            log.warning(
                 "Both web.basic_auth.username and web.basic_auth.password must be set "
                 "to enable static HTTP Basic Authentication credentials; ignoring "
                 "partial values"
@@ -563,7 +564,7 @@ def find_yaml_config_file() -> Path:
     for ext in ("yaml", "yml"):
         yaml_file = data_path / f"config.{ext}"
         if yaml_file.exists():
-            _log.debug("Using YAML config file: %s", yaml_file.resolve())
+            log.debug("Using YAML config file: %s", yaml_file.resolve())
             return yaml_file.resolve()
 
     return data_path / "config.yaml"
@@ -618,7 +619,7 @@ def _ensure_default_config_file() -> Path:
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(_render_default_config_template(), encoding="utf-8")
-    _log.info(
+    log.info(
         "AnibridgeConfig: Created default configuration template at %s", config_path
     )
     return config_path

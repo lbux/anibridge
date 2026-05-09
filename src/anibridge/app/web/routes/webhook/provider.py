@@ -4,12 +4,14 @@ from litestar.connection.request import Request
 from litestar.handlers.http_handlers.decorators import post
 from litestar.router import Router
 
-from anibridge.app import log
 from anibridge.app.exceptions import SchedulerNotInitializedError
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.async_tasks import schedule_task
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["router"]
+
+log = get_logger(__name__)
 
 
 @post(path="/{provider_namespace:str}", status_code=200)
@@ -23,13 +25,10 @@ async def provider_webhook(
         provider_namespace (str): The provider namespace from the URL path.
         request (Request): The incoming HTTP request.
     """
-    log.info(
-        "Webhook: Received webhook for provider '%s'",
-        provider_namespace,
-    )
+    log.info("Received webhook for provider '%s'", provider_namespace)
     scheduler = get_app_state().scheduler
     if not scheduler:
-        log.warning("Webhook - Scheduler not available")
+        log.warning("Scheduler not available")
         raise SchedulerNotInitializedError("Scheduler not available")
 
     candidates = scheduler.get_profiles_for_library_provider(provider_namespace)
@@ -42,7 +41,7 @@ async def provider_webhook(
                 continue
 
             log.info(
-                "Webhook: Triggering sync for profile '%s' and library keys: %s",
+                "Triggering sync for profile '%s' and library keys: %s",
                 profile_name,
                 library_keys,
             )
@@ -56,10 +55,7 @@ async def provider_webhook(
                 name=f"webhook_sync:{profile_name}",
             )
         except KeyError:
-            log.error(
-                "Webhook: No bridge client found for profile '%s'",
-                profile_name,
-            )
+            log.error("No bridge client found for profile '%s'", profile_name)
             continue
 
 

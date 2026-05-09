@@ -64,7 +64,11 @@ def test_db_cached_factory_uses_configured_data_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The cached db factory should honor the configured data path."""
-    monkeypatch.setattr(database_module, "config", SimpleNamespace(data_path=tmp_path))
+    monkeypatch.setattr(
+        database_module,
+        "get_config",
+        lambda: SimpleNamespace(data_path=tmp_path),
+    )
     monkeypatch.setattr(AnibridgeDb, "_do_migrations", lambda self: None)
     db.cache_clear()
     instance: AnibridgeDb | None = None

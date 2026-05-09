@@ -16,10 +16,12 @@ from litestar.middleware.authentication import (
 )
 from litestar.types.asgi_types import ASGIApp, HeaderScope
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
 from anibridge.app.utils.htpasswd import HtpasswdFile
 
 __all__ = ["BasicAuthMiddleware"]
+
+log = get_logger(__name__)
 
 
 class BasicAuthMiddleware(AbstractAuthenticationMiddleware):

@@ -8,9 +8,11 @@ from typing import Protocol
 
 from anibridge.utils.cache import cache
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
 
 __all__ = ["WebsocketLogHandler", "get_log_ws_handler"]
+
+log = get_logger(__name__)
 
 
 class LogSocket(Protocol):

@@ -5,12 +5,14 @@ from typing import Any
 
 from anibridge.utils.tasks import schedule_task as schedule_shared_task
 
-from anibridge.app import log
+from anibridge.app.logging import get_logger
+
+log = get_logger(__name__)
 
 
 def _on_task_error(name: str, _: Exception) -> None:
     """Log background task failures with web-specific context."""
-    log.exception("Web - Background task '%s' failed", name)
+    log.exception("Background task '%s' failed", name)
 
 
 def schedule_task(coro: Coroutine[Any, Any, Any], *, name: str) -> None:

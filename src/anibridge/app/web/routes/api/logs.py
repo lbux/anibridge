@@ -9,10 +9,13 @@ import msgspec
 from litestar.handlers.http_handlers.decorators import get
 from litestar.router import Router
 
-from anibridge.app import config
+from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import InvalidLogFileNameError, LogFileNotFoundError
+from anibridge.app.logging import APP_LOGGER_NAME, get_logger
 
 __all__ = ["router"]
+
+LOG_DIR: Path | None = None
 
 
 class LogFileModel(msgspec.Struct):
@@ -78,7 +81,10 @@ class LogEntryModel(msgspec.Struct):
     ) = None
 
 
-LOG_DIR: Path = (config.data_path / "logs").resolve()
+def _get_log_dir() -> Path:
+    if LOG_DIR is not None:
+        return LOG_DIR.resolve()
+    return (get_config().data_path / "logs").resolve()
 
 
 def _is_log_filename(name: str) -> bool:
@@ -88,17 +94,19 @@ def _is_log_filename(name: str) -> bool:
 
 LINE_RE = re.compile(
     r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "
-    r"(?P<logger>[^ ]+?) - (?P<level>[A-Z]+)\t(?P<message>.*)$"
+    r"(?P<level>[A-Z]+) - (?P<logger>[^ ]+?)"
+    r"(?: - (?P<source>[^ ]+:\d+))? - (?P<message>.*)$"
 )
 
 
 def _list_log_files() -> list[Path]:
-    if not LOG_DIR.exists():
+    log_dir = _get_log_dir()
+    if not log_dir.exists():
         return []
     # Include the active log file and rotated backups.
     files = {
         path.name: path
-        for path in LOG_DIR.iterdir()
+        for path in log_dir.iterdir()
         if path.is_file() and _is_log_filename(path.name)
     }
 
@@ -116,7 +124,7 @@ def list_log_files() -> list[LogFileModel]:
     res: list[LogFileModel] = []
 
     # Determine current effective log level to identify active file.
-    root_logger = logging.getLogger("anibridge")
+    root_logger = get_logger(APP_LOGGER_NAME)
     current_level_name = logging.getLevelName(root_logger.getEffectiveLevel())
     active_basename = f"anibridge.{current_level_name}.log"
 
@@ -148,9 +156,10 @@ def _safe_resolve(name: str) -> Path:
     if "/" in name or ".." in name:
         raise InvalidLogFileNameError("Invalid log file name")
 
-    target = (LOG_DIR / name).resolve()
+    log_dir = _get_log_dir()
+    target = (log_dir / name).resolve()
 
-    if not str(target).startswith(str(LOG_DIR)):
+    if not str(target).startswith(str(log_dir)):
         raise InvalidLogFileNameError("Invalid log file name")
 
     if not target.exists() or not target.is_file():

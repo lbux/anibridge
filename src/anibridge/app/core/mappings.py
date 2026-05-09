@@ -13,9 +13,12 @@ import msgspec.json
 import yaml
 from yaml import CSafeLoader as YamlLoader
 
-from anibridge.app import __version__, log
+from anibridge.app import __version__
+from anibridge.app.logging import get_logger
 
 __all__ = ["AnimapDict", "MappingsClient"]
+
+log = get_logger(__name__)
 
 type AnimapDict = dict[str, dict[str, Any]]
 

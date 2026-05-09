@@ -9,11 +9,14 @@ import msgspec
 from anibridge.providers.list.anilist.client import global_anilist_limiter
 from anibridge.utils.cache import LRUDict, cache, ttl_cache
 
-from anibridge.app import __version__, log
+from anibridge.app import __version__
 from anibridge.app.exceptions import AniListFilterError, AniListSearchError
+from anibridge.app.logging import get_logger
 from anibridge.app.models.schemas.anilist import Media
 
 __all__ = ["AnilistClient"]
+
+log = get_logger(__name__)
 
 
 class AnilistClient:

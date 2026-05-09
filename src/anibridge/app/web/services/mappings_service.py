@@ -12,7 +12,6 @@ from anibridge.utils.cache import cache
 from anibridge.utils.mappings import descriptor_key, parse_mapping_descriptor
 from sqlalchemy.sql import func, or_, select
 
-from anibridge.app import log
 from anibridge.app.config.database import db
 from anibridge.app.config.settings import get_config
 from anibridge.app.exceptions import (
@@ -22,6 +21,7 @@ from anibridge.app.exceptions import (
     BooruQuerySyntaxError,
     MappingNotFoundError,
 )
+from anibridge.app.logging import get_logger
 from anibridge.app.models.db.animap import AnimapEntry, AnimapMapping, AnimapProvenance
 from anibridge.app.models.schemas.anilist import Media
 from anibridge.app.utils.booru_query import (
@@ -43,6 +43,8 @@ from anibridge.app.web.services.mappings_query_spec import (
 from anibridge.app.web.state import get_app_state
 
 __all__ = ["MappingsService", "get_mappings_service"]
+
+log = get_logger(__name__)
 
 
 class EdgeView(msgspec.Struct, frozen=True):

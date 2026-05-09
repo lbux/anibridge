@@ -3,8 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from logging import DEBUG, Logger
-from typing import cast
+from logging import DEBUG
 
 from litestar.app import Litestar
 from litestar.config.compression import CompressionConfig
@@ -20,9 +19,11 @@ from litestar.response.file import ASGIFileResponse
 from litestar.static_files.base import StaticFiles
 from litestar.types.internal_types import ControllerRouterHandler
 
-from anibridge.app import __version__, config, log
+from anibridge.app import __version__
+from anibridge.app.config.settings import get_config
 from anibridge.app.core.sched import SchedulerClient
 from anibridge.app.exceptions import AnibridgeError
+from anibridge.app.logging import APP_LOGGER_NAME, attach_handler, get_logger
 from anibridge.app.utils.paths import PROJECT_ROOT
 from anibridge.app.web.middlewares.basic_auth import BasicAuthMiddleware
 from anibridge.app.web.middlewares.request_logging import RequestLoggingMiddleware
@@ -37,6 +38,7 @@ from anibridge.app.web.state import get_app_state
 __all__ = ["create_app"]
 
 FRONTEND_BUILD_DIR = PROJECT_ROOT / "frontend" / "build"
+log = get_logger(APP_LOGGER_NAME)
 
 
 @asynccontextmanager
@@ -51,30 +53,28 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None]:
     """
     scheduler: SchedulerClient | None = getattr(app.state, "scheduler", None)
     if scheduler is None:
-        log.info("Web - No scheduler passed; external lifecycle management expected")
+        log.info("No scheduler passed; external lifecycle management expected")
     else:
         get_app_state().set_scheduler(scheduler)
         if not scheduler._running:
             await scheduler.initialize()
             await scheduler.start()
-            log.success("Web - Scheduler started for web UI")
+            log.success("Scheduler started for web UI")
 
     try:
         await get_app_state().ensure_public_anilist()
     except Exception:
-        log.debug("Web - Failed to initialize public AniList client at startup")
+        log.debug("Failed to initialize public AniList client at startup")
 
     purged_history_count = await get_history_service().purge_ephemeral_items()
     if purged_history_count:
         log.info(
-            "Web - Deleted %s ephemeral dry-run history entries at startup",
+            "Deleted %s ephemeral dry-run history entries at startup",
             purged_history_count,
         )
 
-    root_logger = cast(Logger, log)
     log_ws_handler = get_log_ws_handler()
-    if log_ws_handler not in root_logger.handlers:
-        root_logger.addHandler(log_ws_handler)
+    attach_handler(log_ws_handler)
     try:
         loop = asyncio.get_running_loop()
         log_ws_handler.set_event_loop(loop)
@@ -139,20 +139,21 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
     Returns:
         Litestar: The created Litestar application.
     """
+    config = get_config()
     middleware: list[ASGIMiddleware | DefineMiddleware] = []
     compression_config = CompressionConfig(backend="gzip")
 
     # Use Litestar's request/response logging when debug logging is enabled.
-    if cast(Logger, log).level <= DEBUG:
+    if log.getEffectiveLevel() <= DEBUG:
         middleware.append(
             LoggingMiddlewareConfig(
-                logger_name="anibridge",
+                logger_name=APP_LOGGER_NAME,
                 middleware_class=RequestLoggingMiddleware,
                 request_log_fields=("method", "path", "query", "body"),
                 response_log_fields=("status_code",),
             ).middleware
         )
-        log.debug("Web - Request logging enabled (debug mode)")
+        log.debug("Request logging enabled in debug mode")
 
     # Add basic auth middleware if configured
     if config.web.has_auth:
@@ -167,7 +168,7 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
                 realm=config.web.basic_auth.realm,
             )
         )
-        log.info("Web - HTTP Basic Authentication enabled for web UI")
+        log.info("HTTP Basic Authentication enabled for web UI")
 
     route_handlers: list[ControllerRouterHandler] = [
         api_router,
@@ -178,11 +179,9 @@ def create_app(scheduler: SchedulerClient | None = None) -> Litestar:
 
     index_file = FRONTEND_BUILD_DIR / "index.html"
     if not FRONTEND_BUILD_DIR.exists():
-        log.warning(
-            "Web - Frontend build directory does not exist, no SPA will be served"
-        )
+        log.warning("Frontend build directory does not exist; no SPA will be served")
     elif not index_file.exists():
-        log.error("Web - Frontend index file does not exist, no SPA will be served")
+        log.error("Frontend index file does not exist; no SPA will be served")
     else:
         route_handlers.append(serve_spa)
 
