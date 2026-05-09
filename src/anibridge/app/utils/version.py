@@ -27,9 +27,6 @@ def get_git_hash() -> str:
         str: AniBridge's current commit hash
     """
     try:
-        if PROJECT_ROOT is None:
-            return "unknown"
-
         git_dir_path = PROJECT_ROOT / ".git"
         if not git_dir_path.exists() or not git_dir_path.is_dir():
             return "unknown"

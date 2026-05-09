@@ -5,34 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from anibridge.app.web.routes.api import status as status_api_module
-
-
-class _DummyScheduler:
-    async def get_status(self) -> dict[str, dict[str, dict[str, object]]]:
-        return {
-            "primary": {
-                "config": {
-                    "library_namespace": "plex",
-                    "list_namespace": "anilist",
-                    "library_user": "Library User",
-                    "list_user": "List User",
-                    "poll_interval": 60,
-                    "scan_interval": "0 * * * *",
-                    "scan_modes": ["poll", "periodic"],
-                    "full_scan": True,
-                    "destructive_sync": False,
-                },
-                "status": {
-                    "running": True,
-                    "last_synced": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
-                    "current_sync": {"state": "running"},
-                    "initialization_error": None,
-                },
-            }
-        }
-
-    async def get_runtime_metrics(self) -> dict[str, dict[str, bool]]:
-        return {"coordinator": {"running": True}}
+from tests.web.support import SchedulerStub
 
 
 @pytest.mark.asyncio
@@ -47,7 +20,33 @@ async def test_status_route_returns_empty_without_scheduler(patch_app_state) -> 
 
 @pytest.mark.asyncio
 async def test_status_route_serializes_scheduler_payload(patch_app_state) -> None:
-    patch_app_state(status_api_module, scheduler=_DummyScheduler())
+    patch_app_state(
+        status_api_module,
+        scheduler=SchedulerStub(
+            status_payload={
+                "primary": {
+                    "config": {
+                        "library_namespace": "plex",
+                        "list_namespace": "anilist",
+                        "library_user": "Library User",
+                        "list_user": "List User",
+                        "poll_interval": 60,
+                        "scan_interval": "0 * * * *",
+                        "scan_modes": ["poll", "periodic"],
+                        "full_scan": True,
+                        "destructive_sync": False,
+                    },
+                    "status": {
+                        "running": True,
+                        "last_synced": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+                        "current_sync": {"state": "running"},
+                        "initialization_error": None,
+                    },
+                }
+            },
+            runtime_metrics={"coordinator": {"running": True}},
+        ),
+    )
 
     response = await status_api_module.status.fn()
 

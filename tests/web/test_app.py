@@ -13,6 +13,7 @@ from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.exceptions import AnibridgeError, ProfileNotFoundError
 from anibridge.app.web import app as app_module
+from tests.web.support import SchedulerStub
 
 _ExceptionHandler = Callable[[object, Exception], Response[dict[str, str]]]
 
@@ -52,25 +53,6 @@ class _DummyState:
 
     async def shutdown(self) -> None:
         self.shutdown_called = True
-
-
-class _DummyScheduler:
-    def __init__(self, *, running: bool = False) -> None:
-        self._running = running
-        self.initialized = False
-        self.started = False
-        self.stopped = False
-
-    async def initialize(self) -> None:
-        self.initialized = True
-
-    async def start(self) -> None:
-        self.started = True
-        self._running = True
-
-    async def stop(self) -> None:
-        self.stopped = True
-        self._running = False
 
 
 class _DummyHistoryService:
@@ -115,7 +97,7 @@ async def test_lifespan_manages_scheduler_startup_and_shutdown(
     log_handler: _DummyHandler,
 ) -> None:
     history_service.count = 2
-    scheduler = _DummyScheduler(running=False)
+    scheduler = SchedulerStub(running=False)
 
     app = app_module.Litestar(route_handlers=[])
     app.state.scheduler = scheduler

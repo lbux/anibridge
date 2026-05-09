@@ -17,7 +17,7 @@ from anibridge.app.config.settings import SyncField, SyncRulesConfig
 from anibridge.app.core.animap import AnimapClient
 from anibridge.app.core.sync.cache import SyncCacheManager
 from anibridge.app.core.sync.history import SyncHistoryManager
-from anibridge.app.core.sync.rules import SyncRuleEngine
+from anibridge.app.core.sync.rules import SyncRuleEngine, build_rule_context
 from anibridge.app.core.sync.stats import (
     BatchUpdate,
     EntrySnapshot,
@@ -393,7 +393,7 @@ class BaseSyncClient[
             field_name=SyncField.STATUS.value,
             current_values=current_values,
             computed_values=computed_values,
-            rule_context=self._build_rule_context(
+            rule_context=build_rule_context(
                 item=item,
                 child_item=child_item,
                 grandchild_items=grandchild_items,
@@ -687,7 +687,7 @@ class BaseSyncClient[
             if self._sync_rule_engine.is_disabled(sync_field.value):
                 continue
 
-            rule_context = self._build_rule_context(
+            rule_context = build_rule_context(
                 item=item,
                 child_item=child_item,
                 grandchild_items=grandchild_items,
@@ -742,85 +742,6 @@ class BaseSyncClient[
             )
 
         return computed
-
-    @staticmethod
-    def _build_rule_context(
-        *,
-        item,
-        child_item,
-        grandchild_items,
-        list_media_key,
-        required_media_fields: frozenset[str],
-        mappings: Sequence[AnibridgeDescriptorMapping] | None = None,
-    ) -> dict[str, Any]:
-        """Build the shimmed `ctx` object exposed to sync rule expressions."""
-        return {
-            "list_media_key": list_media_key,
-            "item": BaseSyncClient._shim_rule_media(item, required_media_fields),
-            "child": BaseSyncClient._shim_rule_media(child_item, required_media_fields),
-            "grandchildren": [
-                BaseSyncClient._shim_rule_media(g, required_media_fields)
-                for g in grandchild_items
-            ],
-            "mappings": [
-                BaseSyncClient._shim_rule_mapping(m) for m in (mappings or ())
-            ],
-        }
-
-    @staticmethod
-    def _shim_rule_mapping(mapping: AnibridgeDescriptorMapping) -> dict[str, Any]:
-        """Build a stable rule-facing view of a descriptor mapping."""
-        return {
-            "source": mapping.source,
-            "target": mapping.target,
-            "mappings": [
-                {
-                    "source_range": {
-                        "start": m.source_range.start,
-                        "end": m.source_range.end,
-                        "length": m.source_range.length,
-                    },
-                    "target_ranges": [
-                        {
-                            "start": r.start,
-                            "end": r.end,
-                            "length": r.length,
-                        }
-                        for r in m.target_ranges
-                    ],
-                    "target_ratio": m.target_ratio,
-                    "source_weight": m.source_weight,
-                    "target_weight": m.target_weight,
-                }
-                for m in mapping.mappings
-            ],
-        }
-
-    @staticmethod
-    def _shim_rule_media(
-        media: Any, required_media_fields: frozenset[str]
-    ) -> dict[str, Any]:
-        """Build a stable rule-facing view of a library media object."""
-        payload = {
-            "key": getattr(media, "key", None),
-            "title": getattr(media, "title", None),
-            "media_kind": getattr(getattr(media, "media_kind", None), "value", None),
-        }
-
-        if "on_watching" in required_media_fields:
-            payload["on_watching"] = getattr(media, "on_watching", None)
-        if "on_watchlist" in required_media_fields:
-            payload["on_watchlist"] = getattr(media, "on_watchlist", None)
-        if "user_rating" in required_media_fields:
-            payload["user_rating"] = getattr(media, "user_rating", None)
-        if "view_count" in required_media_fields:
-            payload["view_count"] = getattr(media, "view_count", None)
-        if "index" in required_media_fields and hasattr(media, "index"):
-            payload["index"] = getattr(media, "index", None)
-        if "season_index" in required_media_fields and hasattr(media, "season_index"):
-            payload["season_index"] = getattr(media, "season_index", None)
-
-        return payload
 
     def _status_gate_reason(
         self, field: SyncField, final_status: ListStatus | None

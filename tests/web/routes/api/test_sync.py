@@ -6,38 +6,12 @@ import pytest
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
 from anibridge.app.web.routes.api import sync as sync_api_module
-
-
-class _DummyScheduler:
-    def __init__(self) -> None:
-        self.reinitialized_profiles: list[str] = []
-        self.profile_sync_calls: list[tuple[str, bool, list[str] | None, str]] = []
-        self.all_sync_calls: list[tuple[bool, str]] = []
-        self.database_sync_calls: list[str] = []
-
-    async def reinitialize_profile(self, profile: str) -> None:
-        self.reinitialized_profiles.append(profile)
-
-    async def trigger_all_profiles_sync(self, *, poll: bool, source: str) -> None:
-        self.all_sync_calls.append((poll, source))
-
-    async def trigger_database_sync(self, *, source: str) -> None:
-        self.database_sync_calls.append(source)
-
-    async def trigger_profile_sync(
-        self,
-        profile: str,
-        *,
-        poll: bool,
-        library_keys: list[str] | None,
-        source: str,
-    ) -> None:
-        self.profile_sync_calls.append((profile, poll, library_keys, source))
+from tests.web.support import SchedulerStub
 
 
 @pytest.fixture
-def scheduler() -> _DummyScheduler:
-    return _DummyScheduler()
+def scheduler() -> SchedulerStub:
+    return SchedulerStub()
 
 
 @pytest.fixture
@@ -65,7 +39,7 @@ def scheduled_tasks(
 )
 async def test_sync_routes_schedule_background_tasks(
     patch_app_state,
-    scheduler: _DummyScheduler,
+    scheduler: SchedulerStub,
     scheduled_tasks,
     operation: str,
     expected_task_name: str,
@@ -86,7 +60,7 @@ async def test_sync_routes_schedule_background_tasks(
 @pytest.mark.asyncio
 async def test_reinitialize_profile_calls_scheduler(
     patch_app_state,
-    scheduler: _DummyScheduler,
+    scheduler: SchedulerStub,
 ) -> None:
     """Reinitialize endpoint should target the requested profile."""
     patch_app_state(sync_api_module, scheduler=scheduler)

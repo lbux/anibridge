@@ -7,18 +7,7 @@ from litestar.app import Litestar
 from litestar.testing.client.sync_client import TestClient
 
 from anibridge.app.web.routes.z import readyz as readyz_module
-
-
-class _DummyScheduler:
-    def __init__(self, *, running: bool = False) -> None:
-        self._running = running
-        self.bridge_clients: dict[str, object] = {}
-        self.failed_profile_errors: dict[str, str] = {}
-        self.global_config = SimpleNamespace(profiles={})
-
-    @property
-    def is_running(self) -> bool:
-        return self._running
+from tests.web.support import SchedulerStub
 
 
 @pytest.fixture
@@ -31,12 +20,12 @@ def test_readyz_reports_scheduler_failures(
     monkeypatch: pytest.MonkeyPatch,
     readyz_client: TestClient,
 ) -> None:
-    scheduler = _DummyScheduler(running=True)
-    scheduler.global_config = SimpleNamespace(
-        profiles={"one": object(), "two": object()}
+    scheduler = SchedulerStub(
+        running=True,
+        profiles={"one": object(), "two": object()},
+        bridge_clients={"one": object()},
+        failed_profile_errors={"two": "Provider auth failed"},
     )
-    scheduler.bridge_clients = {"one": object()}
-    scheduler.failed_profile_errors = {"two": "Provider auth failed"}
     monkeypatch.setattr(
         readyz_module,
         "get_app_state",
@@ -87,9 +76,11 @@ def test_readyz_is_ok_when_scheduler_is_running(
     monkeypatch: pytest.MonkeyPatch,
     readyz_client: TestClient,
 ) -> None:
-    scheduler = _DummyScheduler(running=True)
-    scheduler.global_config = SimpleNamespace(profiles={"one": object()})
-    scheduler.bridge_clients = {"one": object()}
+    scheduler = SchedulerStub(
+        running=True,
+        profiles={"one": object()},
+        bridge_clients={"one": object()},
+    )
     monkeypatch.setattr(
         readyz_module,
         "get_app_state",

@@ -7,47 +7,17 @@ import pytest
 from anibridge.library import MediaKind
 from anibridge.list import ListStatus
 from anibridge.utils.mappings import AnibridgeDescriptorMapping
-from sqlalchemy.engine import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from anibridge.app.core.sync.history import SyncHistoryManager
 from anibridge.app.core.sync.stats import EntrySnapshot
 from anibridge.app.models.db.animap import AnimapEntry
-from anibridge.app.models.db.base import Base
 from anibridge.app.models.db.sync_history import SyncHistory, SyncOutcome
 
 
 @pytest.fixture
-def history_db_factory():
+def history_db_factory(sqlite_db_factory):
     """Provide an in-memory db factory for history manager tests."""
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, future=True, autoflush=False)
-
-    class _DB:
-        def __init__(self) -> None:
-            self._session = None
-
-        def __enter__(self):
-            self._session = session_factory()
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-            if self._session is not None:
-                self._session.close()
-                self._session = None
-
-        @property
-        def session(self):
-            if self._session is None:
-                self._session = session_factory()
-            return self._session
-
-    def _factory():
-        return _DB()
-
-    yield _factory
-    engine.dispose()
+    return sqlite_db_factory
 
 
 @pytest.fixture

@@ -1,50 +1,19 @@
 """Unit tests for sync cache helpers."""
 
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from anibridge.list import ListEntry, ListMediaType, ListProvider, ListStatus
-from sqlalchemy.engine import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from anibridge.app.core.sync.cache import SyncCacheManager
-from anibridge.app.models.db.base import Base
 from anibridge.app.models.db.pin import Pin
 from tests.core.sync.conftest import FakeListEntry, FakeListProvider
 
 
 @pytest.fixture
-def pin_db_factory(tmp_path: Path):
+def pin_db_factory(sqlite_db_factory):
     """Provide a lightweight SQLite-backed db factory for pin lookups."""
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, future=True, autoflush=False)
-
-    class _DB:
-        def __init__(self) -> None:
-            self._session = None
-
-        def __enter__(self):
-            self._session = session_factory()
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-            if self._session is not None:
-                self._session.close()
-                self._session = None
-
-        @property
-        def session(self):
-            if self._session is None:
-                self._session = session_factory()
-            return self._session
-
-    def _factory():
-        return _DB()
-
-    yield _factory
-    engine.dispose()
+    return sqlite_db_factory
 
 
 @pytest.fixture
