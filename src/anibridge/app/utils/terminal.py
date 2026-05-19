@@ -35,7 +35,7 @@ def supports_color() -> bool:
         bool: True if the terminal supports color, False otherwise
     """
 
-    def vt_codes_enabled_in_windows_registry():
+    def vt_codes_enabled_in_windows_registry() -> bool:
         if sys.platform != "win32":
             return False
 

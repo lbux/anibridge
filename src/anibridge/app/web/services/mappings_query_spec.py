@@ -8,6 +8,7 @@ import msgspec
 from anibridge.utils.cache import cache
 from sqlalchemy import case, literal
 from sqlalchemy.sql import select
+from sqlalchemy.sql.elements import ColumnElement
 
 from anibridge.app.config.database import db
 from anibridge.app.models.db.animap import AnimapEntry
@@ -91,7 +92,9 @@ _STRING_OPS = (
 )
 
 
-def _descriptor_expr(entry_model=AnimapEntry):
+def _descriptor_expr(
+    entry_model: type[AnimapEntry] = AnimapEntry,
+) -> ColumnElement[str]:
     """Build a SQL expression matching a serialized mapping descriptor."""
     return (
         entry_model.provider

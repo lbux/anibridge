@@ -5,15 +5,18 @@ import calendar
 import re
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import msgspec
 from anibridge.utils.cache import cache
 from anibridge.utils.mappings import descriptor_key, parse_mapping_descriptor
 from sqlalchemy.sql import func, or_, select
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.sql.selectable import Select
 
-from anibridge.app.config.database import db
+from anibridge.app.config.database import AnibridgeDb, db
 from anibridge.app.config.settings import get_config
+from anibridge.app.core.anilist import AnilistClient
 from anibridge.app.exceptions import (
     AniListFilterError,
     AniListSearchError,
@@ -92,7 +95,7 @@ class MappingsService:
         self.upstream_url: str | None = get_config().mappings_url
 
     @staticmethod
-    def _fetch_ids(ctx, stmt) -> set[int]:
+    def _fetch_ids(ctx: AnibridgeDb, stmt: Select[tuple[int]]) -> set[int]:
         """Execute a statement and return integer identifiers."""
         return {int(val) for val in ctx.session.execute(stmt).scalars()}
 
@@ -119,7 +122,7 @@ class MappingsService:
 
     @staticmethod
     def _parse_numeric_filters(
-        raw: Any,
+        raw: object,
     ) -> tuple[tuple[str, int] | None, tuple[int, int] | None, str]:
         """Parse comparison and range tokens from raw filter input."""
         text = "" if raw is None else str(raw)
@@ -300,7 +303,7 @@ class MappingsService:
 
     async def _resolve_anilist_term(
         self,
-        client,
+        client: AnilistClient,
         spec: QueryFieldSpec,
         raw_value: str,
         *,
@@ -327,7 +330,7 @@ class MappingsService:
         groups: list[list[KeyTerm]] = []
         assigned: set[int] = set()
 
-        def visit(current: Any) -> None:
+        def visit(current: object) -> None:
             if isinstance(current, And):
                 direct_terms: list[KeyTerm] = []
                 for child in current.children:
@@ -464,63 +467,71 @@ class MappingsService:
         return {field: parsed}
 
     @staticmethod
-    def _scalar_cmp(column, operator: str, num: int):
+    def _scalar_cmp(
+        column: object,
+        operator: str,
+        num: int,
+    ) -> ColumnElement[bool] | None:
         """Build a scalar comparison expression for numeric columns."""
+        numeric_column = cast(ColumnElement[int], column)
         if operator == ">":
-            return column > num
+            return numeric_column > num
         if operator == ">=":
-            return column >= num
+            return numeric_column >= num
         if operator == "<":
-            return column < num
+            return numeric_column < num
         if operator == "<=":
-            return column <= num
+            return numeric_column <= num
         return None
 
     def _filter_entry_column(
         self,
-        ctx,
-        column,
+        ctx: AnibridgeDb,
+        column: object,
         raw_value: str | None,
         values: tuple[str | None, ...] | None = None,
     ) -> set[int]:
         """Filter entries by a scalar column supporting wildcards and IN lists."""
         stmt = select(AnimapEntry.id)
+        sql_column = cast(ColumnElement[str | None], column)
         if values:
             clauses = []
             for part in values:
                 if part is None:
-                    clauses.append(column.is_(None))
+                    clauses.append(sql_column.is_(None))
                 elif self._has_wildcards(part):
-                    clauses.append(column.like(self._like_pattern(part)))
+                    clauses.append(sql_column.like(self._like_pattern(part)))
                 else:
-                    clauses.append(column == part)
+                    clauses.append(sql_column == part)
             if not clauses:
                 return set()
             return self._fetch_ids(ctx, stmt.where(or_(*clauses)))
 
         if raw_value is None:
-            return self._fetch_ids(ctx, stmt.where(column.is_(None)))
+            return self._fetch_ids(ctx, stmt.where(sql_column.is_(None)))
 
         if self._has_wildcards(raw_value):
             return self._fetch_ids(
-                ctx, stmt.where(column.like(self._like_pattern(raw_value)))
+                ctx,
+                stmt.where(sql_column.like(self._like_pattern(raw_value))),
             )
 
-        return self._fetch_ids(ctx, stmt.where(column == raw_value))
+        return self._fetch_ids(ctx, stmt.where(sql_column == raw_value))
 
     def _filter_edge_target(
         self,
-        ctx,
-        attr_or_column,
+        ctx: AnibridgeDb,
+        attr_or_column: str | object,
         raw_value: str | None,
         values: tuple[str | None, ...] | None = None,
     ) -> set[int]:
         """Filter entries that have outgoing edges matching destination attributes."""
-        dest_column = (
+        raw_dest_column = (
             getattr(AnimapEntry, attr_or_column)
             if isinstance(attr_or_column, str)
             else attr_or_column
         )
+        dest_column = cast(ColumnElement[str | None], raw_dest_column)
         stmt = select(AnimapMapping.source_entry_id).join(
             AnimapEntry, AnimapEntry.id == AnimapMapping.destination_entry_id
         )
@@ -542,13 +553,13 @@ class MappingsService:
 
     def _filter_edge_range(
         self,
-        ctx,
+        ctx: AnibridgeDb,
         attr: str,
         raw_value: str | None,
         values: tuple[str | None, ...] | None = None,
     ) -> set[int]:
         """Filter entries by source/destination ranges on mappings."""
-        column = getattr(AnimapMapping, attr)
+        column = cast(ColumnElement[str | None], getattr(AnimapMapping, attr))
         stmt = select(AnimapMapping.source_entry_id)
         clauses = []
         target_values = values or (raw_value,)
@@ -624,7 +635,7 @@ class MappingsService:
             ) from exc
         return self._entry_ids_for_anilist_ids(ids)
 
-    def _resolve_db_term(self, ctx, term: KeyTerm) -> set[int]:
+    def _resolve_db_term(self, ctx: AnibridgeDb, term: KeyTerm) -> set[int]:
         """Resolve a KeyTerm into matching entry identifiers."""
         spec = self._FIELD_MAP.get(term.key.lower())
         if not spec:

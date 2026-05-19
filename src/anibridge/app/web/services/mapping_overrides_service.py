@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import msgspec.json
 import yaml
@@ -24,10 +24,13 @@ from anibridge.app.exceptions import (
 )
 from anibridge.app.web.state import get_app_state
 
+if TYPE_CHECKING:
+    from anibridge.app.core.sched import SchedulerClient
+
 __all__ = ["MappingOverridesService", "get_mapping_overrides_service"]
 
 
-def _sort_keys(obj: Any) -> Any:
+def _sort_keys(obj: object) -> object:
     """Recursively sort dictionary keys for deterministic JSON output."""
     if isinstance(obj, dict):
         return {k: _sort_keys(v) for k, v in sorted(obj.items())}
@@ -49,7 +52,7 @@ class MappingOverridesService:
             self._config.data_path, self._config.mappings_url
         )
 
-    def _ensure_scheduler(self):
+    def _ensure_scheduler(self) -> SchedulerClient:
         """Ensure the scheduler is available and return it."""
         scheduler = get_app_state().scheduler
         if not scheduler:
@@ -106,7 +109,10 @@ class MappingOverridesService:
             return {}
         return await self._mapping_client.load_source(upstream_url)
 
-    def _normalize_targets(self, raw: Any) -> dict[str, dict[str, str | None] | None]:
+    def _normalize_targets(
+        self,
+        raw: object,
+    ) -> dict[str, dict[str, str | None] | None]:
         """Normalize a raw descriptor payload into target-range maps.
 
         A value of None for a target means the target is explicitly disabled.
@@ -141,7 +147,7 @@ class MappingOverridesService:
             cleaned[target_str] = normalized_ranges
         return cleaned
 
-    def _normalize_includes(self, raw: Any) -> list[str]:
+    def _normalize_includes(self, raw: object) -> list[str]:
         """Normalize the top-level include list from the raw mappings payload."""
         if not isinstance(raw, list):
             return []

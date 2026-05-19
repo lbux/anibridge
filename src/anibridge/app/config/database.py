@@ -15,15 +15,14 @@ from anibridge.app.exceptions import DataPathError
 from anibridge.app.logging import get_logger
 from anibridge.app.utils.paths import PROJECT_ROOT
 
-__all__ = ["AnibridgeDb", "db"]
-
-log = get_logger(__name__)
-
-
 if TYPE_CHECKING:
     from sqlalchemy.connectors.aioodbc import AsyncAdapt_aioodbc_connection
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
+
+__all__ = ["AnibridgeDb", "db"]
+
+log = get_logger(__name__)
 
 
 class AnibridgeDb:
@@ -107,7 +106,10 @@ class AnibridgeDb:
         log.debug("SQLite engine created at $$'%s'$$", self.db_path)
 
         @sqlalchemy.event.listens_for(engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection: AsyncAdapt_aioodbc_connection, _):
+        def _set_sqlite_pragma(
+            dbapi_connection: AsyncAdapt_aioodbc_connection,
+            _: object,
+        ) -> None:
             """Set SQLite PRAGMA settings on new connections."""
             cur = dbapi_connection.cursor()
             try:

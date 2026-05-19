@@ -1,7 +1,5 @@
 """Reusable SQL utility functions."""
 
-from typing import Any
-
 from sqlalchemy.orm.base import Mapped
 from sqlalchemy.sql import and_, cast, column, exists, false, func, select
 from sqlalchemy.sql.elements import BinaryExpression, ColumnElement, UnaryExpression
@@ -19,7 +17,7 @@ __all__ = [
 ]
 
 
-def json_array_contains(field: Mapped, values: list[Any]) -> ColumnElement[bool]:
+def json_array_contains(field: Mapped, values: list[object]) -> ColumnElement[bool]:
     """Generates a JSON_CONTAINS function for the given field.
 
     Creates SQL conditions to check if any of the provided values exist
@@ -118,7 +116,7 @@ def json_dict_has_key(field: Mapped, key: str) -> BinaryExpression:
     return func.json_type(field, f"$.{key}").is_not(None)
 
 
-def json_dict_has_value(field: Mapped, value: Any) -> UnaryExpression:
+def json_dict_has_value(field: Mapped, value: object) -> UnaryExpression:
     """Generate a SQL expression for checking if a JSON field contains a value.
 
     Uses SQLite's json_each function to check if a specific value exists
@@ -182,7 +180,7 @@ def json_dict_value_like(
     return exists(select(1).select_from(func.json_each(field)).where(cond))
 
 
-def json_array_between(field: Mapped, lo: int, hi: int):
+def json_array_between(field: Mapped, lo: int, hi: int) -> ColumnElement[bool]:
     """Check if any element of a JSON numeric array is within [lo, hi].
 
     Args:

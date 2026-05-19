@@ -14,6 +14,7 @@ import pytest
 import yaml
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -141,7 +142,12 @@ def _reset_app_state():
 @pytest.fixture
 def sqlite_db_factory():
     """Build SQLite-backed DB stubs that share one in-memory database per test."""
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = create_engine(
+        "sqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(
         bind=engine,

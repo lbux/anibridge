@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, ClassVar, get_args, get_origin
+from typing import ClassVar, get_args, get_origin
 
 import msgspec
 from anibridge.utils.cache import cache
@@ -176,7 +176,7 @@ class AniListBaseModel(
         return f"<{' : '.join(values)}>"
 
 
-def _resolve_model_type(annotation: Any) -> type[AniListBaseModel] | None:
+def _resolve_model_type(annotation: object) -> type[AniListBaseModel] | None:
     """Recursively resolve a type annotation to find an AniListBaseModel subclass."""
     if isinstance(annotation, type) and issubclass(annotation, AniListBaseModel):
         return annotation
