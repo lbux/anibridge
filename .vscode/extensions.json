@@ -1,17 +1,17 @@
 {
     "recommendations": [
         "astral-sh.ty",
+        "bradlc.vscode-tailwindcss",
         "charliermarsh.ruff",
         "dbaeumer.vscode-eslint",
-        "eamodio.gitlens",
         "esbenp.prettier-vscode",
         "ms-python.python",
         "rafaelha.vscode-flamegraph",
         "redhat.vscode-yaml",
+        "SmallMain.vscode-unify-chat-provider",
+        "svelte.svelte-vscode",
         "tamasfe.even-better-toml",
         "yy0931.vscode-sqlite3-editor",
-        "yzhang.markdown-all-in-one",
-        "svelte.svelte-vscode",
-        "bradlc.vscode-tailwindcss"
+        "yzhang.markdown-all-in-one"
     ]
 }

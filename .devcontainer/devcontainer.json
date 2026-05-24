@@ -2,31 +2,31 @@
     "name": "anibridge",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
     "features": {
-        "ghcr.io/devcontainers/features/node:1": {
+        "ghcr.io/devcontainers/features/node:2": {
             "version": "25"
         },
         "ghcr.io/devcontainers/features/github-cli:1": {},
         "ghcr.io/devcontainers-extra/features/apt-packages:1": {
-            "packages": "sqlite3"
+            "packages": "ripgrep,sqlite3"
         },
-        "ghcr.io/devcontainers-extra/features/uv": {}
+        "ghcr.io/devcontainers-extra/features/uv:1": {}
     },
     "customizations": {
         "vscode": {
             "extensions": [
                 "astral-sh.ty",
+                "bradlc.vscode-tailwindcss",
                 "charliermarsh.ruff",
                 "dbaeumer.vscode-eslint",
-                "eamodio.gitlens",
                 "esbenp.prettier-vscode",
                 "ms-python.python",
                 "rafaelha.vscode-flamegraph",
                 "redhat.vscode-yaml",
+                "SmallMain.vscode-unify-chat-provider",
+                "svelte.svelte-vscode",
                 "tamasfe.even-better-toml",
                 "yy0931.vscode-sqlite3-editor",
-                "yzhang.markdown-all-in-one",
-                "svelte.svelte-vscode",
-                "bradlc.vscode-tailwindcss"
+                "yzhang.markdown-all-in-one"
             ],
             "settings": {
                 "python-envs.terminal.autoActivationType": "shellStartup"
