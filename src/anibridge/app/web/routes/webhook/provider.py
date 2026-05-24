@@ -1,7 +1,10 @@
 """Provider Webhook endpoint."""
 
+from typing import Annotated
+
 from litestar.connection.request import Request
 from litestar.handlers.http_handlers.decorators import post
+from litestar.params import PathParameter
 from litestar.router import Router
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
@@ -16,7 +19,7 @@ log = get_logger(__name__)
 
 @post(path="/{provider_namespace:str}", status_code=200)
 async def provider_webhook(
-    provider_namespace: str,
+    provider_namespace: Annotated[str, PathParameter()],
     request: Request,
 ) -> None:
     """Receive Provider webhook and trigger a targeted sync.

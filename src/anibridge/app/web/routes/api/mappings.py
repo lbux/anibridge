@@ -5,7 +5,7 @@ from typing import Annotated
 import msgspec
 from litestar.exceptions.http_exceptions import HTTPException
 from litestar.handlers.http_handlers.decorators import get, post, put
-from litestar.params import Body
+from litestar.params import Body, PathParameter, QueryParameter
 from litestar.router import Router
 
 from anibridge.app.exceptions import (
@@ -657,11 +657,11 @@ class QueryCapabilitiesResponse(msgspec.Struct):
 
 @get(path="")
 async def list_mappings(
-    page: int = 1,
-    per_page: int = 25,
-    q: str | None = None,
-    custom_only: bool = False,
-    with_anilist: bool = False,
+    page: Annotated[int, QueryParameter()] = 1,
+    per_page: Annotated[int, QueryParameter()] = 25,
+    q: Annotated[str | None, QueryParameter()] = None,
+    custom_only: Annotated[bool, QueryParameter()] = False,
+    with_anilist: Annotated[bool, QueryParameter()] = False,
 ) -> ListMappingsResponse:
     svc = get_mappings_service()
 
@@ -716,7 +716,9 @@ def query_capabilities() -> QueryCapabilitiesResponse:
 
 
 @get(path="/{descriptor:str}")
-async def get_mapping(descriptor: str) -> MappingDetailModel:
+async def get_mapping(
+    descriptor: Annotated[str, PathParameter()],
+) -> MappingDetailModel:
     svc = get_mapping_overrides_service()
     data = await svc.get_mapping_detail(descriptor)
     return msgspec.convert(data, type=MappingDetailModel)
@@ -743,7 +745,7 @@ async def create_mapping(
 
 @put(path="/{descriptor:str}")
 async def update_mapping(
-    descriptor: str,
+    descriptor: Annotated[str, PathParameter()],
     data: Annotated[MappingOverridePayload, Body()],
 ) -> MappingDetailModel:
     if data.descriptor != descriptor:

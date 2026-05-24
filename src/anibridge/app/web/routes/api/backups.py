@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import get, post
-from litestar.params import Body
+from litestar.params import Body, PathParameter
 from litestar.router import Router
 
 from anibridge.app.web.services.backup_service import BackupMeta, get_backup_service
@@ -38,7 +38,7 @@ class RestoreRequest(msgspec.Struct):
 
 
 @get(path="/{profile:str}", sync_to_thread=True)
-def list_backups(profile: str) -> ListBackupsResponse:
+def list_backups(profile: Annotated[str, PathParameter()]) -> ListBackupsResponse:
     """List backups for a profile.
 
     Args:
@@ -56,7 +56,9 @@ def list_backups(profile: str) -> ListBackupsResponse:
 
 
 @post(path="/{profile:str}/restore", status_code=200)
-async def restore_backup(profile: str, data: Annotated[RestoreRequest, Body()]) -> None:
+async def restore_backup(
+    profile: Annotated[str, PathParameter()], data: Annotated[RestoreRequest, Body()]
+) -> None:
     """Restore a backup file (no dry-run mode).
 
     Raises:
@@ -70,7 +72,9 @@ async def restore_backup(profile: str, data: Annotated[RestoreRequest, Body()]) 
 
 
 @get(path="/{profile:str}/raw/{filename:str}", sync_to_thread=True)
-def get_backup_raw(profile: str, filename: str) -> Any:
+def get_backup_raw(
+    profile: Annotated[str, PathParameter()], filename: Annotated[str, PathParameter()]
+) -> Any:
     """Return raw JSON content of a backup.
 
     The response is unvalidated JSON so the UI can present a preview.

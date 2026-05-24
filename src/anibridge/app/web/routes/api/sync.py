@@ -4,6 +4,7 @@ from typing import Annotated
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import post
+from litestar.params import PathParameter, QueryParameter
 from litestar.router import Router
 
 from anibridge.app.exceptions import SchedulerNotInitializedError
@@ -24,7 +25,7 @@ class OkResponse(msgspec.Struct):
 
 
 @post(path="")
-async def sync_all(poll: bool = False) -> OkResponse:
+async def sync_all(poll: Annotated[bool, QueryParameter()] = False) -> OkResponse:
     """Trigger a sync for all profiles.
 
     Args:
@@ -67,7 +68,10 @@ async def sync_database() -> OkResponse:
 
 
 @post(path="/profile/{profile:str}")
-async def sync_profile(profile: str, poll: bool = False) -> OkResponse:
+async def sync_profile(
+    profile: Annotated[str, PathParameter()],
+    poll: Annotated[bool, QueryParameter()] = False,
+) -> OkResponse:
     """Trigger a sync for a specific profile.
 
     Args:
@@ -97,7 +101,7 @@ async def sync_profile(profile: str, poll: bool = False) -> OkResponse:
 
 
 @post(path="/profile/{profile:str}/reinitialize")
-async def reinitialize_profile(profile: str) -> OkResponse:
+async def reinitialize_profile(profile: Annotated[str, PathParameter()]) -> OkResponse:
     """Rebuild and restart a single profile.
 
     Args:

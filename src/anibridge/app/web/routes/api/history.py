@@ -4,6 +4,7 @@ from typing import Annotated
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import delete, get, post
+from litestar.params import PathParameter, QueryParameter
 from litestar.router import Router
 
 from anibridge.app.web.services.history_service import (
@@ -62,14 +63,14 @@ class RetryResponse(msgspec.Struct):
 
 @get(path="/{profile:str}")
 async def get_history(
-    profile: str,
-    limit: int = 25,
-    before_id: int | None = None,
-    after_id: int | None = None,
-    include_stats: bool = True,
-    outcome: str | None = None,
-    library_namespace: str | None = None,
-    list_namespace: str | None = None,
+    profile: Annotated[str, PathParameter()],
+    limit: Annotated[int, QueryParameter()] = 25,
+    before_id: Annotated[int | None, QueryParameter()] = None,
+    after_id: Annotated[int | None, QueryParameter()] = None,
+    include_stats: Annotated[bool, QueryParameter()] = True,
+    outcome: Annotated[str | None, QueryParameter()] = None,
+    library_namespace: Annotated[str | None, QueryParameter()] = None,
+    list_namespace: Annotated[str | None, QueryParameter()] = None,
 ) -> GetHistoryResponse:
     """Get paginated timeline for profile.
 
@@ -103,7 +104,10 @@ async def get_history(
 
 
 @delete(path="/{profile:str}/{item_id:int}", status_code=200)
-async def delete_history(profile: str, item_id: int) -> OkResponse:
+async def delete_history(
+    profile: Annotated[str, PathParameter()],
+    item_id: Annotated[int, PathParameter()],
+) -> OkResponse:
     """Delete a history item.
 
     Args:
@@ -121,7 +125,10 @@ async def delete_history(profile: str, item_id: int) -> OkResponse:
 
 
 @post(path="/{profile:str}/{item_id:int}/undo", status_code=200)
-async def undo_history(profile: str, item_id: int) -> UndoResponse:
+async def undo_history(
+    profile: Annotated[str, PathParameter()],
+    item_id: Annotated[int, PathParameter()],
+) -> UndoResponse:
     """Undo a history item if possible.
 
     Args:
@@ -141,7 +148,10 @@ async def undo_history(profile: str, item_id: int) -> UndoResponse:
 
 
 @post(path="/{profile:str}/{item_id:int}/retry", status_code=200)
-async def retry_history(profile: str, item_id: int) -> RetryResponse:
+async def retry_history(
+    profile: Annotated[str, PathParameter()],
+    item_id: Annotated[int, PathParameter()],
+) -> RetryResponse:
     """Retry a failed or missing history item.
 
     Args:

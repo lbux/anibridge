@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from anibridge.app.config.database import db
+from anibridge.app.core.anilist import AnilistClient
 from anibridge.app.exceptions import (
     AniListFilterError,
     AniListSearchError,
@@ -637,7 +638,9 @@ async def test_resolve_anilist_term_wraps_generic_errors() -> None:
             raise RuntimeError("boom")
 
     with pytest.raises(AniListSearchError):
-        await service._resolve_anilist_term(BrokenClient(), spec, "title")
+        await service._resolve_anilist_term(
+            cast(AnilistClient, BrokenClient()), spec, "title"
+        )
 
 
 @pytest.mark.asyncio
@@ -651,7 +654,9 @@ async def test_resolve_anilist_term_propagates_cancellation() -> None:
             raise asyncio.CancelledError
 
     with pytest.raises(asyncio.CancelledError):
-        await service._resolve_anilist_term(CancelledClient(), spec, "title")
+        await service._resolve_anilist_term(
+            cast(AnilistClient, CancelledClient()), spec, "title"
+        )
 
 
 def test_collect_anilist_and_groups_handles_nested_nodes() -> None:

@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import DEBUG
 from pathlib import Path
+from typing import Annotated
 
 import msgspec
 from litestar.app import Litestar
@@ -18,6 +19,7 @@ from litestar.middleware.base import ASGIMiddleware, DefineMiddleware
 from litestar.middleware.logging import LoggingMiddlewareConfig
 from litestar.openapi.config import OpenAPIConfig
 from litestar.openapi.plugins import ScalarRenderPlugin
+from litestar.params import PathParameter
 from litestar.response.base import Response as LitestarResponse
 from litestar.response.file import File
 from litestar.router import Router
@@ -153,7 +155,7 @@ def _serve_frontend_asset(path: str) -> File:
 
 @get(path=["/", "/{path:path}"], include_in_schema=False)
 async def serve_spa(
-    path: str = "",
+    path: Annotated[str, PathParameter()] = "",
 ) -> LitestarResponse[bytes] | LitestarResponse[str]:
     """Serve built frontend assets and fall back to the SPA entrypoint."""
     normalized_path = path.lstrip("/")

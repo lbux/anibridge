@@ -5,7 +5,7 @@ from typing import Annotated
 import msgspec
 from litestar.exceptions.http_exceptions import HTTPException
 from litestar.handlers.http_handlers.decorators import delete, get, put
-from litestar.params import Body
+from litestar.params import Body, PathParameter, QueryParameter
 from litestar.router import Router
 
 from anibridge.app.config.settings import SyncField
@@ -127,8 +127,8 @@ def get_pin_fields() -> PinOptionsResponse:
 
 @get(path="/{profile:str}")
 async def list_pins(
-    profile: str,
-    with_media: bool = False,
+    profile: Annotated[str, PathParameter()],
+    with_media: Annotated[bool, QueryParameter()] = False,
 ) -> PinListResponse:
     """Return all pins for a profile.
 
@@ -143,9 +143,9 @@ async def list_pins(
 
 @get(path="/{profile:str}/{media_key:str}")
 async def get_pin(
-    profile: str,
-    media_key: str,
-    with_media: bool = False,
+    profile: Annotated[str, PathParameter()],
+    media_key: Annotated[str, PathParameter()],
+    with_media: Annotated[bool, QueryParameter()] = False,
 ) -> PinEntry:
     """Retrieve pin configuration for a specific list entry.
 
@@ -167,9 +167,9 @@ async def get_pin(
 @put(path="/{profile:str}/{media_key:str}")
 async def upsert_pin(
     data: Annotated[UpdatePinRequest, Body()],
-    profile: str,
-    media_key: str,
-    with_media: bool = False,
+    profile: Annotated[str, PathParameter()],
+    media_key: Annotated[str, PathParameter()],
+    with_media: Annotated[bool, QueryParameter()] = False,
 ) -> PinEntry:
     """Create or update pin fields for a media item.
 
@@ -208,8 +208,8 @@ async def upsert_pin(
 
 @delete(path="/{profile:str}/{media_key:str}", status_code=200, sync_to_thread=True)
 def delete_pin(
-    profile: str,
-    media_key: str,
+    profile: Annotated[str, PathParameter()],
+    media_key: Annotated[str, PathParameter()],
 ) -> OkResponse:
     """Delete pin configuration for an list entry.
 

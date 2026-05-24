@@ -7,6 +7,7 @@ from typing import Annotated
 
 import msgspec
 from litestar.handlers.http_handlers.decorators import get
+from litestar.params import PathParameter, QueryParameter
 from litestar.router import Router
 
 from anibridge.app.config.settings import get_config
@@ -214,7 +215,10 @@ def _tail_lines(path: Path, max_lines: int) -> list[str]:
 
 
 @get(path="/file/{name:str}", sync_to_thread=True)
-def get_log_file(name: str, lines: int = 500) -> list[LogEntryModel]:
+def get_log_file(
+    name: Annotated[str, PathParameter()],
+    lines: Annotated[int, QueryParameter()] = 500,
+) -> list[LogEntryModel]:
     """Return the last N lines of a log file parsed into JSON entries.
 
     Args:

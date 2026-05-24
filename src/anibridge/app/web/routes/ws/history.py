@@ -1,10 +1,12 @@
 """WebSocket endpoint for real-time timeline updates."""
 
 import asyncio
+from typing import Annotated
 
 from litestar.connection.websocket import WebSocket
 from litestar.exceptions.websocket_exceptions import WebSocketDisconnect
 from litestar.handlers.websocket_handlers.route_handler import websocket
+from litestar.params import PathParameter
 from litestar.router import Router
 
 from anibridge.app.web.services.history_service import get_history_service
@@ -13,7 +15,9 @@ __all__ = ["router"]
 
 
 @websocket(path="/{profile:str}")
-async def history_websocket(socket: WebSocket, profile: str) -> None:
+async def history_websocket(
+    profile: Annotated[str, PathParameter()], socket: WebSocket
+) -> None:
     """Stream live history updates to client.
 
     Polls for latest id and pushes only cursor updates when it changes.
