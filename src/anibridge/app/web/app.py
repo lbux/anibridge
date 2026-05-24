@@ -146,10 +146,20 @@ def _serve_frontend_asset(path: str) -> File:
     if not file_path.is_file():
         raise NotFoundException(f"Asset not found: {path}")
 
+    normalized_path = path.lstrip("/")
+    headers = {
+        "cache-control": (
+            "public, max-age=31536000, immutable"
+            if normalized_path.startswith("_app/immutable/")
+            else "public, max-age=3600"
+        )
+    }
+
     return File(
         path=file_path,
         filename=Path(path).name,
         content_disposition_type="inline",
+        headers=headers,
     )
 
 
@@ -169,7 +179,7 @@ async def serve_spa(
         return LitestarResponse(
             content=_render_frontend_spa(path_prefix),
             media_type=MediaType.HTML,
-            headers={"content-disposition": "inline"},
+            headers={"content-disposition": "inline", "cache-control": "no-cache"},
         )
 
     return _serve_frontend_asset(normalized_path)
