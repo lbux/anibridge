@@ -279,22 +279,28 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if not episodes:
                 continue
 
+            season_descriptors = list(seasons[season_index].mapping_descriptors())
+
             episode_descriptors = []
             for ep in episodes:
                 for desc in ep.mapping_descriptors():
-                    if desc not in episode_descriptors:
+                    if (
+                        desc not in episode_descriptors
+                        and desc not in season_descriptors
+                    ):
                         episode_descriptors.append(desc)
+
+            final_descriptors = [*episode_descriptors, *season_descriptors]
+
+            if not any(d[0] == "anidb" for d in final_descriptors):
+                final_descriptors.extend(item.mapping_descriptors())
 
             payloads.append(
                 (
                     season_index,
                     seasons[season_index],
                     tuple(episodes),
-                    (
-                        *episode_descriptors,
-                        *seasons[season_index].mapping_descriptors(),
-                        *item.mapping_descriptors(),
-                    ),
+                    tuple(final_descriptors),
                 )
             )
 
