@@ -280,24 +280,16 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if not episodes:
                 continue
 
-            season_descriptors = list(seasons[season_index].mapping_descriptors())
+            season = seasons[season_index]
+            pids = getattr(season, "provider_ids", None)
 
-            episode_descriptors = []
-            for ep in episodes:
-                for desc in ep.mapping_descriptors():
-                    if (
-                        desc not in episode_descriptors
-                        and desc not in season_descriptors
-                    ):
-                        episode_descriptors.append(desc)
-
-            final_descriptors = [*episode_descriptors, *season_descriptors]
-
-            if not final_descriptors:
-                final_descriptors.extend(item.mapping_descriptors())
+            raw_item = getattr(season, "_item", getattr(season, "item", None))
+            raw_pids = (
+                getattr(raw_item, "provider_ids", None) if raw_item else "No raw item"
+            )
 
             log.warning(
-                f"--- SHOKO DEBUG S{season_index} --- Root: {list(item.mapping_descriptors())} | S_IDs: {season_descriptors} | E_IDs: {episode_descriptors} | Final: {final_descriptors}"  # noqa: E501
+                f"--- S{season_index} PIDS --- Direct: {pids} | Raw DTO: {raw_pids}"
             )
 
             payloads.append(
@@ -305,7 +297,7 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     season_index,
                     seasons[season_index],
                     tuple(episodes),
-                    tuple(final_descriptors),
+                    tuple(item.mapping_descriptors()),
                 )
             )
 
