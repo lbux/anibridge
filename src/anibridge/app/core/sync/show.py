@@ -280,30 +280,21 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 continue
 
             season = seasons[season_index]
-            shoko_descriptors = []
-
             raw_item = getattr(season, "_item", getattr(season, "item", None))
             pids = getattr(
                 season, "provider_ids", getattr(raw_item, "provider_ids", {})
             )
 
+            s_anidb = None
             if isinstance(pids, dict):
-                anidb_id = pids.get("anidb") or pids.get("AniDB") or pids.get("Anidb")
-                if anidb_id:
-                    shoko_descriptors.append(("anidb", str(anidb_id), None))
-
-            item_descriptors = item.mapping_descriptors()
-            season_descriptors = season.mapping_descriptors()
-            if shoko_descriptors:
-                item_descriptors = ()
-                season_descriptors = ()
-
-            final_descriptors = (
-                *shoko_descriptors,
-                *season_descriptors,
-                *item_descriptors,
-            )
-
+                s_anidb = pids.get("anidb") or pids.get("AniDB") or pids.get("Anidb")
+            if s_anidb:
+                final_descriptors = (("anidb", str(s_anidb), "R"),)
+            else:
+                final_descriptors = (
+                    *season.mapping_descriptors(),
+                    *item.mapping_descriptors(),
+                )
             payloads.append(
                 (
                     season_index,
