@@ -281,23 +281,30 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 continue
 
             season = seasons[season_index]
-            pids = getattr(season, "provider_ids", None)
+            shoko_descriptors = []
 
             raw_item = getattr(season, "_item", getattr(season, "item", None))
-            raw_pids = (
-                getattr(raw_item, "provider_ids", None) if raw_item else "No raw item"
+            pids = getattr(
+                season, "provider_ids", getattr(raw_item, "provider_ids", {})
             )
 
-            log.warning(
-                f"--- S{season_index} PIDS --- Direct: {pids} | Raw DTO: {raw_pids}"
+            if isinstance(pids, dict):
+                anidb_id = pids.get("anidb") or pids.get("AniDB") or pids.get("Anidb")
+                if anidb_id:
+                    shoko_descriptors.append(("anidb", str(anidb_id), None))
+
+            final_descriptors = (
+                *shoko_descriptors,
+                *season.mapping_descriptors(),
+                *item.mapping_descriptors(),
             )
 
             payloads.append(
                 (
                     season_index,
-                    seasons[season_index],
+                    season,
                     tuple(episodes),
-                    tuple(item.mapping_descriptors()),
+                    final_descriptors,
                 )
             )
 
