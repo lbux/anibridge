@@ -288,6 +288,8 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                 season, "provider_ids", getattr(raw_item, "provider_ids", {})
             )
 
+            log.warning(f"--- S{season_index} PIDS --- Raw Dictionary: {pids}")
+
             if isinstance(pids, dict):
                 anidb_id = pids.get("anidb") or pids.get("AniDB") or pids.get("Anidb")
                 if anidb_id:
