@@ -15,7 +15,6 @@ from anibridge.utils.mappings import (
 )
 from anibridge.utils.types import MappingDescriptor
 
-from anibridge.app import log
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
 from anibridge.app.core.sync.targeting import (
