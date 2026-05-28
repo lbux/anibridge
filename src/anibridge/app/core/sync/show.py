@@ -273,19 +273,32 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
             if episode.season_index in seasons:
                 episodes_by_season[episode.season_index].append(episode)
 
-        return tuple(
-            (
-                season_index,
-                seasons[season_index],
-                tuple(episodes_by_season[season_index]),
+        payloads = []
+        for season_index in sorted(seasons):
+            episodes = episodes_by_season.get(season_index)
+            if not episodes:
+                continue
+
+            episode_descriptors = []
+            for ep in episodes:
+                for desc in ep.mapping_descriptors():
+                    if desc not in episode_descriptors:
+                        episode_descriptors.append(desc)
+
+            payloads.append(
                 (
-                    *seasons[season_index].mapping_descriptors(),
-                    *item.mapping_descriptors(),
-                ),
+                    season_index,
+                    seasons[season_index],
+                    tuple(episodes),
+                    (
+                        *episode_descriptors,
+                        *seasons[season_index].mapping_descriptors(),
+                        *item.mapping_descriptors(),
+                    ),
+                )
             )
-            for season_index in sorted(seasons)
-            if episodes_by_season.get(season_index)
-        )
+
+        return tuple(payloads)
 
     @lru_cache(maxsize=32)
     async def _resolve_season_targets(
