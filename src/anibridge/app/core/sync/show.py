@@ -15,6 +15,7 @@ from anibridge.utils.mappings import (
 )
 from anibridge.utils.types import MappingDescriptor
 
+from anibridge.app import log
 from anibridge.app.core.sync.base import BaseSyncClient
 from anibridge.app.core.sync.stats import ItemIdentifier
 from anibridge.app.core.sync.targeting import (
@@ -292,8 +293,12 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
 
             final_descriptors = [*episode_descriptors, *season_descriptors]
 
-            if not any(d[0] == "anidb" for d in final_descriptors):
+            if not final_descriptors:
                 final_descriptors.extend(item.mapping_descriptors())
+
+            log.warning(
+                f"--- SHOKO DEBUG S{season_index} --- Root: {list(item.mapping_descriptors())} | S_IDs: {season_descriptors} | E_IDs: {episode_descriptors} | Final: {final_descriptors}"  # noqa: E501
+            )
 
             payloads.append(
                 (
