@@ -293,13 +293,15 @@ class ShowSyncClient(BaseSyncClient[LibraryShow, LibrarySeason, LibraryEpisode])
                     shoko_descriptors.append(("anidb", str(anidb_id), None))
 
             item_descriptors = item.mapping_descriptors()
+            season_descriptors = season.mapping_descriptors()
             if shoko_descriptors:
-                item_descriptors = tuple(d for d in item_descriptors if d[0] != "anidb")
+                item_descriptors = ()
+                season_descriptors = ()
 
             final_descriptors = (
                 *shoko_descriptors,
-                *season.mapping_descriptors(),
-                *item.mapping_descriptors(),
+                *season_descriptors,
+                *item_descriptors,
             )
 
             payloads.append(
